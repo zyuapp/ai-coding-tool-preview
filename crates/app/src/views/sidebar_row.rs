@@ -468,8 +468,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .relative()
         .rounded(px(10.0))
         .when(!context.inert, |entry| entry.track_focus(&focus))
-        // Its menu's target stays outlined while the menu is open (`[data-menu-target]`).
-        .when(focus_ring || root.menus.is_open(&format!("task:{}", thread.id)), |entry| entry.border_2().border_color(t.focus_ring).m(px(-2.0)))
+        .when(focus_ring, |entry| entry.border_2().border_color(t.focus_ring).m(px(-2.0)))
         .on_hover(cx.listener(move |root, hovered: &bool, _, cx| {
             let next = if *hovered { Some(hover_id.clone()) } else { root.sidebar.hovered_row.clone().filter(|row| *row != hover_id) };
             if root.sidebar.hovered_row != next {

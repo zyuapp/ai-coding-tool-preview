@@ -144,12 +144,38 @@ def render_node(node):
     return f"<{node['tag']}{attrs}/>"
 
 
-# Glyphs the stylesheets draw with borders rather than an icon font.
+def conic_sweep(wedges=90):
+    """`.run-bead::before`: conic-gradient(from 0deg, transparent 20%, ink 78%, transparent), as
+    wedges of even opacity cut from a circle."""
+    import math
+
+    def alpha(p):
+        if p < 0.2:
+            return 0.0
+        if p < 0.78:
+            return (p - 0.2) / 0.58
+        return (1.0 - p) / 0.22
+
+    def rim(p):
+        angle = 2 * math.pi * p
+        return f"{12 + 12 * math.sin(angle):.3f} {12 - 12 * math.cos(angle):.3f}"
+
+    paths = []
+    for i in range(wedges):
+        start, end = i / wedges, (i + 1) / wedges
+        a = alpha((start + end) / 2)
+        if a > 0:
+            paths.append(f'<path fill-opacity="{a:.3f}" d="M12 12L{rim(start)}A12 12 0 0 1 {rim(end)}Z"/>')
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">' + "".join(paths) + "</svg>"
+
+
+# Glyphs the stylesheets draw with borders or gradients rather than an icon font.
 CUSTOM_ICONS = {
     # .list-heading-chevron: a 7px box's right and bottom edges, turned 45 degrees.
     # .btn-spinner: a 12px ring, 2px thick, with its right quarter clear.
     "SpinnerRing": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.536 9.536A5 5 0 1 1 9.536 2.464"/></svg>',
     "HeadingChevron": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"><path d="M2.1 3.9 6 7.8 9.9 3.9"/></svg>',
+    "ConicSweep": conic_sweep(),
 }
 
 

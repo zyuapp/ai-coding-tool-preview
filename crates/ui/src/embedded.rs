@@ -86,6 +86,7 @@ pub(crate) static FILES: &[(&str, &[u8])] = &[
     ("icons/code.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/code.svg"))),
     ("icons/columns2.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/columns2.svg"))),
     ("icons/command.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/command.svg"))),
+    ("icons/conic-sweep.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/conic-sweep.svg"))),
     ("icons/copy.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/copy.svg"))),
     ("icons/corner-down-left.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/corner-down-left.svg"))),
     ("icons/corner-down-right.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/corner-down-right.svg"))),

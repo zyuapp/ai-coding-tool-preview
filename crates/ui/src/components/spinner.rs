@@ -73,11 +73,18 @@ pub struct Spinning {
     icon: IconName,
     size: Pixels,
     color: Option<Hsla>,
+    pace: Option<(Duration, u32)>,
 }
 
 impl Spinning {
     pub fn new(id: impl Into<ElementId>, icon: IconName) -> Self {
-        Self { id: id.into(), icon, size: px(16.0), color: None }
+        Self { id: id.into(), icon, size: px(16.0), color: None, pace: None }
+    }
+
+    /// One turn per `period` in `steps` even steps, under reduced motion too.
+    pub fn pace(mut self, period: Duration, steps: u32) -> Self {
+        self.pace = Some((period, steps));
+        self
     }
 
     pub fn size(mut self, size: impl Into<Pixels>) -> Self {
@@ -112,7 +119,8 @@ impl RenderOnce for Spinning {
         style.size.height = Some(size.into());
         style.flex_shrink = Some(0.0);
         let id = self.id.clone();
-        super::live::live(self.id, style, window, cx, move |window, cx| build(stepped_progress(id.clone(), turn(reduced), TURN_STEPS, window, cx) * 360.0)).into_any_element()
+        let (period, steps) = self.pace.unwrap_or((turn(reduced), TURN_STEPS));
+        super::live::live(self.id, style, window, cx, move |window, cx| build(stepped_progress(id.clone(), period, steps, window, cx) * 360.0)).into_any_element()
     }
 }
 

@@ -21,7 +21,7 @@ pub fn bead(id: impl Into<SharedString>, size: f32, t: &Tokens, held: bool) -> i
     } else {
         base.bg(with_alpha(t.accent_text, 0.16))
             .shadow(vec![gpui::BoxShadow { color: with_alpha(t.accent_text, 0.28).into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(7.0), spread_radius: px(0.0) }])
-            .child(div().absolute().inset_0().flex().items_center().justify_center().child(Spinning::new(gpui::ElementId::Name(id.into()), IconName::SpinnerRing).size(px(size)).color(t.accent_text)))
+            .child(div().absolute().inset_0().flex().items_center().justify_center().child(Spinning::new(gpui::ElementId::Name(id.into()), IconName::ConicSweep).pace(std::time::Duration::from_millis(1500), 30).size(px(size)).color(t.accent_text)))
     };
     // A highlight that stays put, over a shade toward the rim.
     base.child(circle(0.34, 0.26, 0.9915, (with_alpha(gpui::white().into(), 0.75), 0.0), (clear, 0.34)))

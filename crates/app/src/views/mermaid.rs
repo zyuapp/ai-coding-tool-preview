@@ -452,7 +452,7 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
     };
     let scroll = window.use_keyed_state(scroll_key, cx, |_, _| gpui::ScrollHandle::new()).read(cx).clone();
     let expand_focus = window.use_keyed_state(SharedString::from(format!("mermaid-expand-{id}")), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
-    let frame = div()
+    let mut frame = div()
         .id(gpui::ElementId::NamedChild(Box::new(id.clone()), "frame".into()))
         .min_h(px(76.0))
         .overflow_x_scroll()
@@ -462,6 +462,7 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
         .rounded(px(10.0))
         .p(px(15.0))
         .bg(t.sunken);
+    frame.style().restrict_scroll_to_axis = Some(true);
     let drawn = if pending { None } else { drawn(&source, ASSUMED_ROOM, window, cx) };
     let mut outer = div().relative().group(group.clone());
     match drawn {

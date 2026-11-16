@@ -205,6 +205,7 @@ pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx:
         gpui::EdgeFade::horizontal().start(px(0.0), px(28.0 * (progress / 0.04).min(1.0))).end(px(0.0), px(28.0 * ((1.0 - progress) / 0.04).min(1.0)))
     });
     let mut row = div().id(gpui::SharedString::from(format!("message-images-{}", scope.message_id))).flex().gap(px(12.0)).max_w_full().overflow_x_scroll().track_scroll(&strip).pt(px(2.0)).pb(px(8.0)).mt(px(16.0));
+    row.style().restrict_scroll_to_axis = Some(true);
     if let Some(fade) = fade {
         row = row.edge_fade(fade);
     }

@@ -287,6 +287,8 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     let dismiss_focus = _window.use_keyed_state(SharedString::from(format!("{}-dismiss-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let actions_focused = more_focus.is_focused(_window) || dismiss_focus.is_focused(_window);
     let menu_open = root.menus.is_open(&format!("task:{}", thread.id)) || focus_ring || actions_focused;
+    // Layout never sees hover styles, so the rail widens from the hovered row held in state.
+    let revealed = menu_open || root.sidebar.hovered_row.as_deref() == Some(thread.id.as_str());
     let menu_id = id.clone();
     let open_menu = cx.listener(move |root, event: &gpui::ClickEvent, window, cx| {
         cx.stop_propagation();
@@ -299,6 +301,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .track_focus(&more_focus)
         .focus_ring(true)
         .size(px(28.0))
+        .m(px(-3.0))
         .flex()
         .items_center()
         .justify_center()
@@ -315,8 +318,9 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .id("actions")
         .transition(gpui::Transition::ease(90))
         .absolute()
-        .top(px(-3.0))
-        .right(px(-3.0))
+        .top_0()
+        .right_0()
+        .h(px(m.row_slot))
         .flex()
         .items_center()
         .when(!menu_open, |actions| actions.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)))
@@ -328,6 +332,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
                     .track_focus(&dismiss_focus)
                     .focus_ring(true)
                     .size(px(28.0))
+                    .m(px(-3.0))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -367,8 +372,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .flex()
         .items_center()
         .justify_end()
-        .min_w(px(if menu_open { m.row_slot * covered as f32 } else { 0.0 }))
-        .group_hover(group.clone(), |style| style.min_w(px(m.row_slot * covered as f32)))
+        .min_w(px(m.row_slot * if revealed { covered.max(1) } else { 1 } as f32))
         .child(marks_layer)
         .when(!away, |rail| rail.child(actions));
 
@@ -457,6 +461,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         div().absolute().top(px(10.0)).bottom(px(10.0)).left(px(3.0)).w(px(2.0)).rounded(px(2.0)).bg(act_ui::color::alpha(color, 0.7))
     });
     let key_id = id.clone();
+    let hover_id = id.clone();
     div()
         .id(SharedString::from(format!("entry-{}", thread.id)))
         .group(group)
@@ -465,6 +470,13 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .when(!context.inert, |entry| entry.track_focus(&focus))
         // Its menu's target stays outlined while the menu is open (`[data-menu-target]`).
         .when(focus_ring || root.menus.is_open(&format!("task:{}", thread.id)), |entry| entry.border_2().border_color(t.focus_ring).m(px(-2.0)))
+        .on_hover(cx.listener(move |root, hovered: &bool, _, cx| {
+            let next = if *hovered { Some(hover_id.clone()) } else { root.sidebar.hovered_row.clone().filter(|row| *row != hover_id) };
+            if root.sidebar.hovered_row != next {
+                root.sidebar.hovered_row = next;
+                cx.notify();
+            }
+        }))
         .on_key_down(cx.listener(move |root, event: &gpui::KeyDownEvent, window, cx| {
             if !root.sidebar.row_focus.get(&key_id).is_some_and(|focus| focus.is_focused(window)) {
                 return;

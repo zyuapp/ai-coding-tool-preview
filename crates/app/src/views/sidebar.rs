@@ -320,6 +320,8 @@ pub struct SidebarState {
     pub row_focus: HashMap<String, gpui::FocusHandle>,
     /// The row the keyboard is on, measured each frame, under which its menu opens from the keyboard.
     pub focused_probe: BoundsCell,
+    /// The row under the pointer, whose rail widens to its actions.
+    pub hovered_row: Option<String>,
     /// The computers switch and the project filter, which the arrow keys open.
     pub computer_focus: Option<gpui::FocusHandle>,
     pub filter_focus: Option<gpui::FocusHandle>,
@@ -338,7 +340,7 @@ pub struct SidebarState {
 
 impl Default for SidebarState {
     fn default() -> Self {
-        SidebarState { scroll: ScrollHandle::new(), filter_probe: bounds_cell(), computer_probe: bounds_cell(), width: None, floating: None, folded: false, followed: None, resizer_focus: None, active_probe: bounds_cell(), row_focus: HashMap::new(), focused_probe: bounds_cell(), computer_focus: None, filter_focus: None, row_height: Rc::default(), list_tops: HashMap::new(), drawn: Vec::new(), model: None, shown: None, slide_start: None }
+        SidebarState { scroll: ScrollHandle::new(), filter_probe: bounds_cell(), computer_probe: bounds_cell(), width: None, floating: None, folded: false, followed: None, resizer_focus: None, active_probe: bounds_cell(), row_focus: HashMap::new(), focused_probe: bounds_cell(), hovered_row: None, computer_focus: None, filter_focus: None, row_height: Rc::default(), list_tops: HashMap::new(), drawn: Vec::new(), model: None, shown: None, slide_start: None }
     }
 }
 

@@ -2361,12 +2361,12 @@ mod tests {
     fn an_auto_margin_keeps_the_gap_beside_it() {
         let mut tree: TaffyTree<()> = TaffyTree::new();
         let item = |tree: &mut TaffyTree<()>, margin_left| {
-            let style = Style { size: Size { width: length(50.0), height: length(10.0) }, margin: Rect { left: margin_left, right: zero(), top: zero(), bottom: zero() }, ..Default::default() };
+            let style = Style { size: Size { width: length(50.0_f32), height: length(10.0_f32) }, margin: Rect { left: margin_left, right: zero(), top: zero(), bottom: zero() }, ..Default::default() };
             tree.new_leaf(style).unwrap()
         };
         let first = item(&mut tree, zero());
         let pushed = item(&mut tree, auto());
-        let row = Style { size: Size { width: length(300.0), height: length(10.0) }, gap: Size { width: length(10.0), height: zero() }, ..Default::default() };
+        let row = Style { size: Size { width: length(300.0_f32), height: length(10.0_f32) }, gap: Size { width: length(10.0_f32), height: zero() }, ..Default::default() };
         let root = tree.new_with_children(row, &[first, pushed]).unwrap();
         tree.compute_layout(root, Size::MAX_CONTENT).unwrap();
         assert_eq!(tree.layout(first).unwrap().location.x, 0.0);

@@ -1,0 +1,17 @@
+[package]
+name = "act_store"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+act_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rusqlite = { workspace = true, features = ["functions", "backup"] }
+futures-channel = "0.3"
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

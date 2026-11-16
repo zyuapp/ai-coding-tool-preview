@@ -1,0 +1,41 @@
+[package]
+name = "ai-coding-tool"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui.workspace = true
+act_core.workspace = true
+act_host.workspace = true
+act_store.workspace = true
+act_engines.workspace = true
+act_terminal.workspace = true
+act_markdown.workspace = true
+act_ui.workspace = true
+act_browser = { path = "../browser" }
+act_devices = { path = "../devices" }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "signal"] }
+tokio-util = "0.7"
+futures = "0.3"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+qrcode = { version = "0.14", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSGeometry", "NSString", "NSThread"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSPasteboard", "NSPasteboardItem", "NSResponder", "NSView", "NSEvent"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+wry = "0.57"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui = { workspace = true, features = ["wayland", "x11"] }
+gtk = "0.18"
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }

@@ -1,0 +1,56 @@
+[package]
+name = "act_devices"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[features]
+default = []
+# Parakeet through ONNX Runtime, which the Linux dictation helper runs. Downloads ONNX Runtime at build time.
+onnx = ["dep:ort", "dep:ureq"]
+
+[dependencies]
+gpui.workspace = true
+act_core.workspace = true
+act_host.workspace = true
+act_ui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "process", "sync", "time", "io-util", "fs", "macros"] }
+futures = "0.3"
+regex = "1"
+base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
+libc = "0.2"
+ureq = { version = "3", optional = true }
+
+# Linux loads ONNX Runtime's shared library at run time, as the package ships it beside the helper:
+# the prebuilt static one needs a newer C++ runtime than the distributions the package targets.
+[target.'cfg(target_os = "linux")'.dependencies]
+ort = { version = "=2.0.0-rc.15", optional = true, default-features = false, features = ["std", "ndarray", "load-dynamic", "api-31"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+ort = { version = "=2.0.0-rc.15", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "=0.10.0"
+core-video = { version = "0.4.3", features = ["metal"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSValue", "NSGeometry", "NSObject", "NSUserDefaults"] }
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSPanel", "NSResponder", "NSScreen", "NSColor", "NSGraphics", "NSAnimationContext", "NSApplication", "NSRunningApplication", "NSEvent", "NSPasteboard", "block2", "objc2-core-foundation"] }
+objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat", "block2"] }
+block2 = "0.6"
+raw-window-handle = "0.6"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "aic-dictation-onnx"
+path = "src/bin/aic-dictation-onnx.rs"
+required-features = ["onnx"]

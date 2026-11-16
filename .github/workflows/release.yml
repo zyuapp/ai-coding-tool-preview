@@ -1,0 +1,269 @@
+name: Release
+
+# Releases the version in Cargo.toml as v<version>: on a pushed tag, which must match it, or by hand
+# from main. Builds the macOS app (signed and notarized when the signing secrets are set, else signed
+# ad hoc) and the Linux packages, with the update feeds `act_host::updates` reads.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  prepare:
+    if: github.ref_type == 'tag' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      name: ${{ steps.version.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read the version
+        id: version
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          TAG="v$VERSION"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the workspace version $VERSION." >&2
+            exit 1
+          fi
+          NAME="$(sed -n 's/^pub const APP_NAME: [^=]* = "\(.*\)";$/\1/p' crates/core/src/identity.rs)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+      - name: Open a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          NAME: ${{ steps.version.outputs.name }}
+        # A draft left by a failed run is replaced, so its notes and packages are current.
+        run: |
+          if [ "$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null)" = "false" ]; then
+            echo "$TAG is already published." >&2
+            exit 1
+          fi
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" --title "$NAME $TAG" --generate-notes --draft --target "$GITHUB_SHA"
+
+  build-mac:
+    needs: prepare
+    runs-on: macos-latest
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Restore the Cargo cache
+        id: cargo-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: release-${{ runner.os }}-${{ runner.arch }}-
+      - name: Check for signing credentials
+        id: signing
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          if [ -n "$MAC_CERTIFICATE_P12" ] && [ -n "$MAC_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_API_KEY_P8" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER_ID" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Signing secrets are not set, so the app is signed ad hoc and not notarized."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Restore signing credentials
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          umask 077
+          printf '%s' "$MAC_CERTIFICATE_P12" | base64 -D > "$RUNNER_TEMP/signing.p12"
+          printf '%s' "$APPLE_API_KEY_P8" | base64 -D > "$RUNNER_TEMP/apple.p8"
+          SIGNING_KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          SIGNING_KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$SIGNING_KEYCHAIN_PASSWORD"
+          security create-keychain -p "$SIGNING_KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$SIGNING_KEYCHAIN"
+          security unlock-keychain -p "$SIGNING_KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN"
+          security import "$RUNNER_TEMP/signing.p12" -k "$SIGNING_KEYCHAIN" -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$SIGNING_KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$SIGNING_KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          IDENTITY="$(security find-identity -v -p codesigning "$SIGNING_KEYCHAIN" | sed -n 's/.*"\(Developer ID Application: .*\)".*/\1/p' | head -1)"
+          if [ -z "$IDENTITY" ]; then
+            echo "The certificate holds no Developer ID Application identity." >&2
+            exit 1
+          fi
+          echo "MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+      - name: Build the app
+        run: zsh scripts/package-mac.sh "$RUNNER_TEMP/package"
+      - name: Save the Cargo cache
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
+      - name: Notarize the app
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          APP="$(ls -d "$RUNNER_TEMP"/package/*.app | head -1)"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --key "$RUNNER_TEMP/apple.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
+          xcrun stapler staple "$APP"
+          rm -f "$RUNNER_TEMP/notarize.zip"
+      - name: Make the zip and disk image
+        env:
+          SIGNED: ${{ steps.signing.outputs.enabled }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          APP="$(ls -d "$RUNNER_TEMP"/package/*.app | head -1)"
+          NAME="$(sed -n 's/^pub const ARTIFACT_NAME: [^=]* = "\(.*\)";$/\1/p' crates/core/src/identity.rs)-$VERSION-arm64"
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "release/$NAME.zip"
+          mkdir -p "$RUNNER_TEMP/dmg"
+          cp -R "$APP" "$RUNNER_TEMP/dmg/"
+          ln -s /Applications "$RUNNER_TEMP/dmg/Applications"
+          hdiutil create -volname "$(basename "$APP" .app)" -srcfolder "$RUNNER_TEMP/dmg" -ov -format UDZO "release/$NAME.dmg"
+          if [ "$SIGNED" = true ]; then
+            codesign --force --sign "$MAC_SIGN_IDENTITY" --timestamp "release/$NAME.dmg"
+            xcrun notarytool submit "release/$NAME.dmg" --key "$RUNNER_TEMP/apple.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
+            xcrun stapler staple "release/$NAME.dmg"
+          fi
+          scripts/release-feed.sh "$VERSION" "release/$NAME.zip" "release/$NAME.dmg" > release/latest-mac.yml
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          SIGNING_KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          if [ -f "$SIGNING_KEYCHAIN" ]; then
+            security delete-keychain "$SIGNING_KEYCHAIN"
+          fi
+          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP/apple.p8"
+      - name: Upload macOS packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" release/*.zip release/*.dmg release/latest-mac.yml --clobber
+
+  build-linux:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            feed: latest-linux.yml
+            appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            feed: latest-linux-arm64.yml
+            appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake pkg-config libasound2-dev libfontconfig-dev libfreetype-dev libssl-dev \
+            libvulkan1 libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libzstd-dev libdbus-1-dev curl file xz-utils libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev
+      - name: Install appimagetool
+        env:
+          APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-$ARCH.AppImage"
+          echo "$APPIMAGETOOL_SHA256  $RUNNER_TEMP/appimagetool" | sha256sum -c -
+          chmod 755 "$RUNNER_TEMP/appimagetool"
+          mkdir -p "$RUNNER_TEMP/bin"
+          mv "$RUNNER_TEMP/appimagetool" "$RUNNER_TEMP/bin/appimagetool"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          # Runners have no FUSE for AppImages.
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Restore the Cargo cache
+        id: cargo-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: release-${{ runner.os }}-${{ matrix.arch }}-
+      - name: Build Linux packages
+        run: bash scripts/package-linux.sh "$ARCH" "$PWD/release"
+      - name: Save the Cargo cache
+        if: steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
+      - name: Write the update feed
+        env:
+          FEED: ${{ matrix.feed }}
+        run: scripts/release-feed.sh "$VERSION" release/*.AppImage > "release/$FEED"
+      - name: Upload Linux packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FEED: ${{ matrix.feed }}
+        run: gh release upload "$TAG" release/*.tar.gz release/*.AppImage "release/$FEED" --clobber
+
+  publish:
+    needs:
+      - prepare
+      - build-mac
+      - build-linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

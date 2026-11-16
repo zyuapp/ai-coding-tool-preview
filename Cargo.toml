@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+exclude = ["vendor"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+act_core = { path = "crates/core" }
+act_store = { path = "crates/store" }
+act_engines = { path = "crates/engines" }
+act_host = { path = "crates/host" }
+act_terminal = { path = "crates/terminal" }
+act_markdown = { path = "crates/markdown" }
+act_ui = { path = "crates/ui" }
+gpui = { version = "0.2.2", default-features = false, features = ["font-kit", "runtime_shaders"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[patch.crates-io]
+gpui = { path = "vendor/gpui" }
+# 0.2.3 with ENODATA on Linux, which current libc no longer aliases as ENOATTR.
+xattr = { path = "vendor/xattr" }
+# 0.9.0 with flex gaps kept between items when auto margins take the free space.
+taffy = { path = "vendor/taffy" }

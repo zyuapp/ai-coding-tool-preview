@@ -1,0 +1,6 @@
+This directory is a modified copy of the taffy 0.9.0 crate
+(https://github.com/DioxusLabs/taffy), licensed under the MIT License in
+LICENSE.md. zyuapp changed it in 2026: flex gaps stay
+between items when auto margins take the free space; a `flex: none` item with a
+negative margin keeps its size in intrinsic sizing; nodes with `snap_origin`
+sit on whole pixels. The examples and their manifest entries were removed.

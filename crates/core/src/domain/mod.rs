@@ -1,0 +1,29 @@
+//! Domain types: what threads, projects, runs and the rest of the workspace are made of.
+
+pub mod appearance;
+pub mod automation;
+pub mod conversation;
+pub mod coordination;
+pub mod diff;
+pub mod engine;
+pub mod find;
+pub mod finding;
+pub mod message_origin;
+pub mod mobile;
+pub mod platform;
+pub mod project;
+pub mod pull_request;
+pub mod question;
+pub mod run;
+pub mod session_resources;
+pub mod settings_catalog;
+pub mod shortcuts;
+pub mod sidebar;
+pub mod terminal;
+pub mod thread;
+pub mod thread_role;
+pub mod toast;
+pub mod tool_call;
+pub mod usage_limit;
+pub mod workflow;
+pub mod worktree;

@@ -88,8 +88,8 @@ jobs:
             target
           key: release-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-key.outputs.key }}
           restore-keys: release-${{ runner.os }}-${{ runner.arch }}-
-      - name: Keep the vendored crates' build
-        run: bash scripts/cargo-cache.sh vendor
+      - name: Keep the cached builds of unchanged sources
+        run: bash scripts/cargo-cache.sh fresh
       - name: Check for signing credentials
         id: signing
         env:
@@ -254,8 +254,8 @@ jobs:
             target
           key: release-${{ runner.os }}-${{ matrix.arch }}-${{ steps.cache-key.outputs.key }}
           restore-keys: release-${{ runner.os }}-${{ matrix.arch }}-
-      - name: Keep the vendored crates' build
-        run: bash scripts/cargo-cache.sh vendor
+      - name: Keep the cached builds of unchanged sources
+        run: bash scripts/cargo-cache.sh fresh
       - name: Build Linux packages
         run: bash scripts/package-linux.sh "$ARCH" "$PWD/release"
       - name: Save the Cargo cache

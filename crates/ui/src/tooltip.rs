@@ -363,19 +363,24 @@ pub fn tip_parts(text: &str) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+/// The tip's words, with keys as caps. Words run together in one text that may wrap; a flex row
+/// sizes text to its full line, so each run of words must be free to shrink.
 fn tip_content(text: &str) -> Vec<AnyElement> {
     let mut children = Vec::new();
+    let mut words = String::new();
     for (index, (label, keys)) in tip_parts(text).into_iter().enumerate() {
         if index > 0 {
-            children.push(" · ".into_any_element());
+            words.push_str(" · ");
         }
-        match keys {
-            Some(keys) => {
-                children.push(format!("{label} ").into_any_element());
-                children.push(Kbd::inline([keys]).into_any_element());
-            }
-            None => children.push(label.into_any_element()),
+        words.push_str(&label);
+        if let Some(keys) = keys {
+            words.push(' ');
+            children.push(div().min_w_0().child(std::mem::take(&mut words)).into_any_element());
+            children.push(div().flex_none().child(Kbd::inline([keys])).into_any_element());
         }
+    }
+    if !words.is_empty() {
+        children.push(div().min_w_0().child(words).into_any_element());
     }
     children
 }

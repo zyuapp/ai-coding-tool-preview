@@ -173,6 +173,7 @@ pub(crate) static FILES: &[(&str, &[u8])] = &[
     ("icons/sparkles.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/sparkles.svg"))),
     ("icons/spinner-ring.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/spinner-ring.svg"))),
     ("icons/square-arrow-out-up-right.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/square-arrow-out-up-right.svg"))),
+    ("icons/square-fill.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/square-fill.svg"))),
     ("icons/square-pen.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/square-pen.svg"))),
     ("icons/square-terminal.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/square-terminal.svg"))),
     ("icons/square.svg", include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/icons/square.svg"))),

@@ -443,9 +443,9 @@ pub fn processes_section(processes: &[BackgroundProcess], workflows: &[Workflow]
 /// Stop asks once more; while the stop is in flight a spinner holds its place.
 fn stop_process(id: &str, name: &str, stopping: bool) -> AnyElement {
     if stopping {
-        div().id(SharedString::from(format!("stopping-{id}"))).child(Button::new(SharedString::from(format!("stopping-button-{id}")), "").name(format!("Stopping {name}")).icon(IconName::LoaderCircle).variant(ButtonVariant::Danger).disabled(true)).tip("Stopping…").into_any_element()
+        div().id(SharedString::from(format!("stopping-{id}"))).child(Button::bare(SharedString::from(format!("stopping-button-{id}"))).name(format!("Stopping {name}")).icon(IconName::LoaderCircle).spinning(true).variant(ButtonVariant::Danger).disabled(true)).tip("Stopping…").into_any_element()
     } else {
         let process = id.to_string();
-        ConfirmAction::new(SharedString::from(format!("stop-{id}")), "", "Stop", move |_, cx| dispatch(AppCommand::RunStopProcess { task_id: None, process_id: process.clone() }, cx)).icon(IconName::Square).variant(ButtonVariant::Danger).tip("Stop").name(format!("Stop {name}")).into_any_element()
+        ConfirmAction::new(SharedString::from(format!("stop-{id}")), "", "Stop", move |_, cx| dispatch(AppCommand::RunStopProcess { task_id: None, process_id: process.clone() }, cx)).icon(IconName::SquareFill).icon_size(12.0).variant(ButtonVariant::Danger).tip("Stop").name(format!("Stop {name}")).into_any_element()
     }
 }

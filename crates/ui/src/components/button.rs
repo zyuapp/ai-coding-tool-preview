@@ -78,6 +78,7 @@ pub struct Button {
     size: ButtonSize,
     pill: bool,
     busy: bool,
+    spinning: bool,
     armed: bool,
     tone: FillTone,
     pressed: Option<bool>,
@@ -111,6 +112,7 @@ impl Button {
             size: ButtonSize::Md,
             pill: false,
             busy: false,
+            spinning: false,
             armed: false,
             tone: FillTone::Accent,
             pressed: None,
@@ -146,8 +148,9 @@ impl Button {
         self
     }
 
+    /// An empty label leaves the button without one.
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = Some(label.into());
+        self.label = Some(label.into()).filter(|label| !label.is_empty());
         self
     }
 
@@ -180,6 +183,12 @@ impl Button {
     /// Swaps the label for a spinner, keeping the button's width.
     pub fn busy(mut self, busy: bool) -> Self {
         self.busy = busy;
+        self
+    }
+
+    /// The icon turns for as long as it is drawn.
+    pub fn spinning(mut self, spinning: bool) -> Self {
+        self.spinning = spinning;
         self
     }
 
@@ -449,7 +458,11 @@ impl RenderOnce for Button {
 
         let mut content: Vec<AnyElement> = Vec::new();
         if let Some(icon) = self.icon {
-            content.push(Icon::new(icon).size(px(self.icon_size)).into_any_element());
+            content.push(if self.spinning {
+                crate::components::spinner::Spinning::new(ElementId::NamedChild(Box::new(self.id.clone()), "icon".into()), icon).size(px(self.icon_size)).into_any_element()
+            } else {
+                Icon::new(icon).size(px(self.icon_size)).into_any_element()
+            });
         }
         if let Some(label) = self.label {
             content.push(label.into_any_element());

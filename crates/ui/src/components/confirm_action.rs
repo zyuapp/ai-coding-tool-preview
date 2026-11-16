@@ -15,6 +15,7 @@ pub struct ConfirmAction {
     label: SharedString,
     confirm: SharedString,
     icon: Option<IconName>,
+    icon_size: Option<f32>,
     variant: ButtonVariant,
     size: ButtonSize,
     pill: bool,
@@ -38,6 +39,7 @@ impl ConfirmAction {
             label: label.into(),
             confirm: confirm.into(),
             icon: None,
+            icon_size: None,
             variant: ButtonVariant::Secondary,
             size: ButtonSize::Md,
             pill: false,
@@ -57,6 +59,11 @@ impl ConfirmAction {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    pub fn icon_size(mut self, size: f32) -> Self {
+        self.icon_size = Some(size);
         self
     }
 
@@ -171,6 +178,9 @@ impl RenderOnce for ConfirmAction {
                 });
             if let Some(icon) = self.icon {
                 button = button.icon(icon);
+            }
+            if let Some(size) = self.icon_size {
+                button = button.icon_size(size);
             }
             if let Some(tip) = self.tip {
                 button = button.tip(tip);

@@ -277,6 +277,8 @@ pub enum IconName {
     HeadingChevron,
     /// `custom`
     ConicSweep,
+    /// `custom`
+    SquareFill,
 }
 
 impl IconName {
@@ -418,6 +420,7 @@ impl IconName {
         IconName::SpinnerRing,
         IconName::HeadingChevron,
         IconName::ConicSweep,
+        IconName::SquareFill,
     ];
 
     /// The asset path the icon's SVG is served at.
@@ -560,6 +563,7 @@ impl IconName {
             IconName::SpinnerRing => "icons/spinner-ring.svg",
             IconName::HeadingChevron => "icons/heading-chevron.svg",
             IconName::ConicSweep => "icons/conic-sweep.svg",
+            IconName::SquareFill => "icons/square-fill.svg",
         }
     }
 }

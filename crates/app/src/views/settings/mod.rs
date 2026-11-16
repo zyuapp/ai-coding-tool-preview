@@ -879,7 +879,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 .cursor_pointer()
                 .hover(|style| style.bg(t.wash).text_color(t.ink_soft))
                 .child(ink_icon(IconName::ArrowLeft, 18.0))
-                .child(concat!("Back to ", act_core::app_name!()))
+                .child("Back")
                 .on_click(|_, _, cx| dispatch(AppCommand::SetSettingsOpen { open: false, section: None, setting_id: None }, cx)),
         )
         .child(

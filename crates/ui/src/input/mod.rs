@@ -859,6 +859,11 @@ impl TextInput {
 
     // Pointer
 
+    /// A press at `event.position`, which may lie outside the field: the caret goes to the nearest place.
+    pub fn press(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_mouse_down(event, window, cx);
+    }
+
     fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.disabled {
             return;

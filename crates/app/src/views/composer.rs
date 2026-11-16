@@ -720,6 +720,16 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
         .line_height(relative(1.5))
         .text_color(t.ink)
         .cursor_text()
+        // A press on the padding around the text places the caret as a press on the text does.
+        .on_mouse_down(gpui::MouseButton::Left, {
+            let input = root.composer.input.clone();
+            move |event, window, cx| {
+                if !window.default_prevented() {
+                    window.prevent_default();
+                    input.update(cx, |input, cx| input.press(event, window, cx));
+                }
+            }
+        })
         .capture_action(root.composer_listener(cx, |root, _: &text_input::Enter, _, cx| {
             if root.menu_choose(cx) {
                 cx.stop_propagation();

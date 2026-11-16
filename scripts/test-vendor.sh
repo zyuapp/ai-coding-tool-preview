@@ -8,6 +8,8 @@ root=${0:A:h:h}
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$root/target}
 export CARGO_INCREMENTAL=${CARGO_INCREMENTAL:-0}
 jobs=${JOBS:-2}
+# Upstream code: a lint a newer compiler adds must not fail its tests.
+export RUSTFLAGS="${RUSTFLAGS:-} --cap-lints warn"
 
 only=""
 if [[ $# -gt 0 && $1 != "--" ]]; then

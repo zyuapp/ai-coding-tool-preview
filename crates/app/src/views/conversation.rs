@@ -729,7 +729,13 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     let estimates: Vec<f32> = groups.iter().map(Group::estimate).chain(statuses.iter().map(|_| STATUS_ESTIMATE)).collect();
     root.conversation.sync(signatures, &estimates);
 
-    // What arrives while this thread is open moves a view that follows it.
+    if root.conversation.scrolled.replace(false) {
+        let foot = remaining(&root.conversation.list) < FOOT_SLACK;
+        root.conversation.at_foot.set(foot);
+        *root.conversation.view.borrow_mut() = if foot { View::Foot } else { View::Rest };
+    }
+    // What arrives while this thread is open moves a view that follows it; a prompt the user sent
+    // takes the view to the foot wherever it was.
     let answer_id = tail.as_ref().map(|tail| tail.message_id.clone()).or_else(|| thread.messages.last().filter(|message| message.kind == act_core::domain::conversation::MessageKind::Assistant).map(|message| message.id.clone()));
     let tool_id = thread.messages.last().filter(|message| message.kind == act_core::domain::conversation::MessageKind::Tool).map(|message| message.id.clone());
     let prompt_id = newest_prompt(&thread.messages);
@@ -740,8 +746,10 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             let view = root.conversation.view.borrow();
             matches!(*view, View::Foot | View::Row { .. }) || (matches!(*view, View::Kept { .. }) && root.conversation.at_foot.get())
         };
-        if prompt_id.is_some() && prompt_id != seen_prompt && matches!(*root.conversation.view.borrow(), View::Kept { .. }) {
+        if prompt_id.is_some() && prompt_id != seen_prompt {
             *root.conversation.view.borrow_mut() = View::Foot;
+            root.conversation.at_foot.set(true);
+            root.conversation.unplaced = true;
         } else if answer_id.is_some() && answer_id != seen_answer && follows {
             let id = answer_id.clone().unwrap();
             let row = rows.get(&id).and_then(|row| groups.get(*row)).map(|group| group.id().to_string()).unwrap_or(id);
@@ -760,11 +768,6 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     if root.conversation.put_back.replace(false) {
         root.conversation.unplaced = true;
         root.conversation.moved = true;
-    }
-    if root.conversation.scrolled.replace(false) {
-        let foot = remaining(&root.conversation.list) < FOOT_SLACK;
-        root.conversation.at_foot.set(foot);
-        *root.conversation.view.borrow_mut() = if foot { View::Foot } else { View::Rest };
     }
     // Reading a match takes the view over, the way scrolling by hand does.
     if let Some(hit) = find.as_ref().and_then(|find| find.hit.clone()) {

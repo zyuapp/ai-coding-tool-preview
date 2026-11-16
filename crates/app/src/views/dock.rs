@@ -109,6 +109,16 @@ impl DockState {
         }
     }
 
+    /// Hands the keyboard back to `previous` when it lies in a dock tab, or to that tab's composer
+    /// when the tab is a chat. False when `previous` is outside the dock.
+    pub fn restore_focus(&mut self, previous: &FocusHandle, window: &mut Window, cx: &mut Context<Root>) -> bool {
+        let Some(tab) = self.bodies.iter().find(|(_, body)| body.contains(previous, window)).map(|(tab, _)| tab.clone()) else { return false };
+        if !self.chats.focus(&tab, window, cx) {
+            window.focus(previous);
+        }
+        true
+    }
+
     /// The width the dock's track takes, remembering where the workspace ends for a drag.
     pub fn track_width(&mut self, viewport: f32, workspace: f32, right: f32) -> f32 {
         self.workspace = (right, workspace);

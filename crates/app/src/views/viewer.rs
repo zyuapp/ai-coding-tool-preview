@@ -63,7 +63,7 @@ pub struct ViewerState {
     scroll: ScrollHandle,
     focus: Option<FocusHandle>,
     focused_for: Option<String>,
-    /// What had the keys before the viewer opened; it gets them back when the viewer closes.
+    /// What had the keys before the viewer opened, which decides where they go when it closes.
     previous: Option<FocusHandle>,
 }
 
@@ -87,7 +87,6 @@ pub fn open(cx: &App) -> bool {
 }
 
 pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: &mut Context<Root>) -> Option<AnyElement> {
-    let _ = root;
     if let Some(source) = super::visual::opened(cx) {
         return Some(visual_viewer(source, window, cx));
     }
@@ -100,9 +99,12 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         return Some(paste_viewer(text, label, window, cx));
     }
     let Some(source) = state.viewing_image.clone() else {
-        let previous = with_state(|viewer| viewer.focused_for.take().and(viewer.previous.take()));
-        if let Some(previous) = previous {
-            window.focus(&previous);
+        // Keys go back to the dock tab that held them, else to the thread's composer.
+        let closed = with_state(|viewer| viewer.focused_for.take().map(|_| viewer.previous.take()));
+        if let Some(previous) = closed {
+            if !previous.is_some_and(|previous| root.dock.restore_focus(&previous, window, cx)) {
+                cx.defer(|cx| dispatch(AppCommand::FocusComposer { recover: Some(true) }, cx));
+            }
         }
         return None;
     };

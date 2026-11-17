@@ -14,7 +14,7 @@ use gpui::{
 
 use crate::gutter::OverflowGutter;
 use crate::highlight;
-use crate::layout::{measure, RichText, SpanFont, SpanPaint, TextAlign, TextPaint, TextSpec};
+use crate::layout::{measure, measure_width, RichText, SpanFont, SpanPaint, TextAlign, TextPaint, TextSpec};
 use crate::links::LinkTarget;
 use crate::metrics::*;
 use crate::parse::{
@@ -1381,9 +1381,9 @@ impl<'a> Ctx<'a> {
                     CELL_PADDING_X
                 };
                 let padding = CELL_PADDING_X + right;
-                let widest = f32::from(measure(cell, &spec, None, false, &system).width) + padding;
+                let widest = f32::from(measure_width(cell, &spec, None, false, &system)) + padding;
                 let narrowest =
-                    f32::from(measure(cell, &spec, Some(px(0.)), true, &system).width) + padding;
+                    f32::from(measure_width(cell, &spec, Some(px(0.)), true, &system)) + padding;
                 max[column] = max[column].max(widest);
                 min[column] = min[column].max(narrowest);
             }

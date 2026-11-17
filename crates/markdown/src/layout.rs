@@ -1287,6 +1287,23 @@ pub fn measure(
     size(lines.width, spec.line_height * lines.lines.len() as f32)
 }
 
+/// The widest line, in Chromium's 1/64px layout units rather than whole pixels, as a table's
+/// columns are sized.
+pub fn measure_width(
+    text: &InlineText,
+    spec: &TextSpec,
+    width: Option<Pixels>,
+    min_content: bool,
+    system: &WindowTextSystem,
+) -> Pixels {
+    let lines = text
+        .cache
+        .borrow_mut()
+        .lines(text, spec, WrapMode { width, min_content }, system);
+    let widest = lines.lines.iter().map(|line| f32::from(line.width)).fold(0., f32::max);
+    px((widest * 64.).ceil() / 64.)
+}
+
 /// The rectangles a range covers as last drawn, one per line, in window coordinates.
 pub fn range_rects(text: &InlineText, range: Range<usize>) -> Option<Vec<Bounds<Pixels>>> {
     let cache = text.cache.borrow();

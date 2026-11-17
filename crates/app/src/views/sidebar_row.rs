@@ -16,7 +16,7 @@ use act_core::state::WorkspaceState;
 use act_core::view::sidebar::ThreadHost;
 use act_core::workspace::coordination::row_headline;
 use act_core::AppCommand;
-use act_ui::components::menu::{Menu, MenuEntry, MenuItem, MenuPointerEntered};
+use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
 use act_ui::overlay::Placement;
 use act_ui::theme::ActiveTheme;
 use act_ui::tooltip::Tippable;
@@ -290,12 +290,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     let more_focus = _window.use_keyed_state(SharedString::from(format!("{}-more-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let dismiss_focus = _window.use_keyed_state(SharedString::from(format!("{}-dismiss-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let actions_focused = more_focus.is_focused(_window) || dismiss_focus.is_focused(_window);
-    let open_menu = root.menus.entity(&format!("task:{}", thread.id));
-    let menu_target = open_menu.is_some();
-    // The row its menu acts on stays ringed while the menu is open, unless the menu was opened
-    // from the row itself while focus is quiet and the pointer has not yet taken it to a menu row,
-    // as `:focus` without `:focus-visible` hides it.
-    let menu_ring = open_menu.is_some_and(|menu| !root.sidebar.menu_from_row || act_ui::focus::keyboard_focus_visible(cx) || menu.read(cx).pointer_entered());
+    let menu_target = root.menus.entity(&format!("task:{}", thread.id)).is_some();
     let menu_open = menu_target || focus_ring || actions_focused;
     // Layout never sees hover styles, so the rail widens from the hovered row held in state.
     let revealed = menu_open || root.sidebar.hovered_row.as_deref() == Some(thread.id.as_str());
@@ -309,7 +304,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
             Some(button) => point(button.left(), button.bottom() + px(4.0)),
             None => point(event.position().x, event.position().y + px(4.0)),
         };
-        root.open_thread_menu(&menu_id, position, priority, false, window, cx);
+        root.open_thread_menu(&menu_id, position, priority, window, cx);
     });
     let more = div()
         .id(SharedString::from(format!("{}-more", thread.id)))
@@ -466,7 +461,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
             } else {
                 // The menu keeps the keyboard; the entry under it must not take it back.
                 window.prevent_default();
-                root.open_thread_menu(&context_id, event.position, priority, true, window, cx);
+                root.open_thread_menu(&context_id, event.position, priority, window, cx);
             }
         }))
         .when(!editing, |body| body.child(text).child(rail))
@@ -535,7 +530,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
             if keys.key == "f10" && keys.modifiers.shift && !away {
                 // The context-menu key opens the row's menu under the row.
                 let row = root.sidebar.focused_probe.get().unwrap_or_default();
-                root.open_thread_menu(&key_id, point(row.left() + px(12.0), row.bottom() + px(4.0)), priority, true, window, cx);
+                root.open_thread_menu(&key_id, point(row.left() + px(12.0), row.bottom() + px(4.0)), priority, window, cx);
                 cx.stop_propagation();
                 return;
             }
@@ -549,7 +544,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .child(hover_probe)
         .child(body)
         .children(role_bar)
-        .when(focus_ring || menu_ring, |entry| entry.child(div().absolute().inset_0().rounded(px(10.0)).border_2().border_color(t.focus_ring)))
+        .when(focus_ring, |entry| entry.child(div().absolute().inset_0().rounded(px(10.0)).border_2().border_color(t.focus_ring)))
         .when(active, |entry| entry.child(act_ui::overlay::bounds_probe(&root.sidebar.active_probe)))
         .when(focus.is_focused(_window), |entry| entry.child(act_ui::overlay::bounds_probe(&root.sidebar.focused_probe)))
 }
@@ -662,8 +657,7 @@ pub fn move_entries(state: &WorkspaceState, thread: &Thread) -> Option<MenuEntry
 }
 
 impl Root {
-    /// `from_row`: opened from the row itself (a right-click or the context-menu key) rather than its More button.
-    pub fn open_thread_menu(&mut self, thread_id: &str, position: gpui::Point<gpui::Pixels>, priority: bool, from_row: bool, window: &mut Window, cx: &mut Context<Root>) {
+    pub fn open_thread_menu(&mut self, thread_id: &str, position: gpui::Point<gpui::Pixels>, priority: bool, window: &mut Window, cx: &mut Context<Root>) {
         let local = self.workspace.read(cx).state.clone();
         // A paired computer's thread is offered what its own computer holds, and stays where it is.
         let (state, remote) = match local.thread(thread_id) {
@@ -693,9 +687,7 @@ impl Root {
         if let Some(row) = self.sidebar.row_focus.get(thread_id) {
             window.focus(row);
         }
-        self.sidebar.menu_from_row = from_row;
         let menu = Menu::build(entries, Placement::At { position }, window, cx, |menu| menu.from_frame());
-        cx.subscribe(&menu, |_, _, _: &MenuPointerEntered, cx| cx.notify()).detach();
         self.menus.show(&format!("task:{thread_id}"), menu, cx);
     }
 }

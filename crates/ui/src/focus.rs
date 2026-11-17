@@ -14,10 +14,10 @@ pub struct FocusAppearance {
 
 impl Global for FocusAppearance {}
 
-const ACTIVATION_KEYS: &[&str] = &["tab", "enter", "space", "escape"];
+const ACTIVATION_KEYS: &[&str] = &["tab", "enter", "space"];
 const MOVEMENT_KEYS: &[&str] = &["up", "down", "left", "right", "home", "end", "pageup", "pagedown"];
 
-/// Starts watching keystrokes. Tab, Escape, and Enter or Space outside a text field turn rings on;
+/// Starts watching keystrokes. Tab, and Enter or Space outside a text field, turn rings on;
 /// an arrow does only when it moved focus, since arrows also edit text and scroll.
 pub fn init(cx: &mut App) {
     cx.set_global(FocusAppearance::default());

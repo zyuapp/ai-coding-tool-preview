@@ -1179,6 +1179,8 @@ impl Render for Menu {
         if !edge.is_empty() {
             surface = surface.child(div().flex_none().flex().flex_col().px(px(PAD)).pb(px(PAD)).children(edge));
         }
+        // Glass drawn over the menu, such as a toast, frosts it even where the page under it is hidden from backdrops.
+        surface = surface.child(gpui::canvas(|_, _, _| {}, |bounds, _, window, _| window.show_to_backdrops(bounds)).absolute().top_0().left_0().size_full());
         let submenu = self.submenu.as_ref().map(|open| open.menu.clone());
         let surface = div()
             .id("menu")

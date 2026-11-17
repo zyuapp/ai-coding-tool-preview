@@ -492,11 +492,13 @@ impl TextLayout {
 
                 // Widths keep Chromium's LayoutUnit precision (1/64 px); layout snaps edges to
                 // device pixels, so a run of inline texts keeps its fractional advances.
+                // The first line's indent counts toward its width, as it does toward max-content.
                 let mut size: Size<Pixels> = Size::default();
-                for line in &lines {
+                for (index, line) in lines.iter().enumerate() {
                     let line_size = line.size(line_height);
                     size.height += line_size.height;
-                    size.width = size.width.max(line_size.width);
+                    let indent = if index == 0 && line.wrap_boundaries().is_empty() { text_style.text_indent } else { Pixels::ZERO };
+                    size.width = size.width.max(line_size.width + indent);
                 }
                 size.width = Pixels((size.width.0 * 64.0).ceil() / 64.0);
                 // As CSS shrink-to-fit does, wrapped text takes the whole width it wrapped in rather

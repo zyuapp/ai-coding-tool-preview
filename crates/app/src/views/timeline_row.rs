@@ -683,13 +683,15 @@ fn notice(model: &RowModel, message: &ConversationMessage, window: &mut Window, 
     let fill = if error { act_ui::theme::Pane { fill: act_ui::color::mix(t.danger, 0.14, t.tone_glass_ground), sheen: t.glass_blur } } else { t.glass_control };
     let mut pane = rimmed(div(), &t, 14.0).min_w_0().max_w_full().pl(px(10.0)).pr(px(if copy { 40.0 } else { 13.0 })).py(px(6.0)).pane(fill).text_color(if error { t.danger } else { t.ink_dim });
     pane = pane.child(
+        // The icon sits in the text's first line, so a wrapped line starts under it.
         div()
-            .flex()
-            .items_start()
+            .relative()
+            .min_w_0()
             .text_size(px(m.text_menu))
             .line_height(px(18.0))
-            .child(div().mt(px(2.0)).mr(px(7.0)).flex_none().child(icon(if error { IconName::CircleAlert } else { IconName::Info }, 14.0, if error { t.danger } else { t.info })))
-            .child(div().flex_1().min_w_0().child(lit(model, &message.id, FindField::Text, &message.text, cx))),
+            .text_indent(px(21.0))
+            .child(div().absolute().top(px(2.0)).left_0().child(icon(if error { IconName::CircleAlert } else { IconName::Info }, 14.0, if error { t.danger } else { t.info })))
+            .child(lit(model, &message.id, FindField::Text, &message.text, cx)),
     );
     if let Some(detail) = &message.detail {
         pane = pane.child(div().mt(px(3.0)).text_color(if error { t.muted } else { t.quiet_strong }).text_size(px(m.text_meta)).child(lit(model, &message.id, FindField::Detail, detail, cx)));

@@ -59,6 +59,16 @@ pub trait Raised: ParentElement + Sized {
         self.child(overlay(corners).border_1().border_color(color))
     }
 
+    /// A glass pane's edge with its rim inside it, as the pane's inset shadows sit within its border.
+    fn edged_rim(self, edge: Rgba, rim: Rim, corners: Corners) -> Self {
+        let inner = match corners {
+            Corners::Radius(radius) => Corners::Radius((radius - 1.0).max(0.0)),
+            Corners::Full => Corners::Full,
+        };
+        let inside = inner.apply(div().absolute().top(px(1.0)).left(px(1.0)).right(px(1.0)).bottom(px(1.0))).children(rim_layers(rim, inner));
+        self.edge(edge, corners).child(inside)
+    }
+
     /// An elevation's glint, if it has one.
     fn elevation_glint(self, elevation: &Elevation, tokens: &Tokens, corners: Corners) -> Self {
         if elevation.glint {

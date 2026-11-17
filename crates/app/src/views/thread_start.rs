@@ -402,9 +402,13 @@ fn tray(content: gpui::Div, cx: &mut Context<Root>) -> AnyElement {
         .rounded_t(px(17.0))
         .pane(t.glass)
         .glass_backdrop(&t)
-        .elevation(&t.shadow_float)
-        .edge(t.glass_edge, Corners::Radius(17.0))
-        .rim(t.glass_rim, Corners::Radius(17.0))
+        .shadow({
+            // `.glass-pane::before`'s dark hairline outside the edge.
+            let mut shadows = t.shadow_float.box_shadows();
+            shadows.insert(0, act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
+            shadows
+        })
+        .edged_rim(t.glass_edge, t.glass_rim, Corners::Radius(17.0))
         .child(content)
         .into_any_element()
 }

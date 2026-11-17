@@ -806,6 +806,8 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
     if let Some((color, spread)) = ring {
         shadows.insert(0, BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(spread) });
     }
+    // `.glass-pane::before`'s dark hairline outside the edge, drawn over the composer's own shadows.
+    shadows.insert(0, act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
 
     let pane_probe = root.composer.pane_probe.clone();
     let radius = if docked { 14.0 } else { 17.0 };
@@ -820,8 +822,8 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
         .pane(t.glass)
         .glass_backdrop(t)
         .shadow(shadows)
-        .edge(t.glass_edge, Corners::Radius(radius))
-        .rim(t.glass_rim, Corners::Radius(radius))
+        .edged_rim(t.glass_edge, t.glass_rim, Corners::Radius(radius))
+        .elevation_glint(&t.shadow_composer, t, Corners::Radius(radius))
         .child(bounds_probe(&pane_probe))
         .child(super::common::seen_by_backdrops());
     if let Some(reason) = unopenable {

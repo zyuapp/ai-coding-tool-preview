@@ -660,7 +660,8 @@ fn follow_row(probe: BoundsCell, scroll: ScrollHandle, edge: Option<FollowEdge>,
             return;
         }
         let mut offset = scroll.offset();
-        offset.y += delta;
+        // Whole pixels, as Chromium snaps `scrollTop`.
+        offset.y = (offset.y + delta).round();
         scroll.set_offset(offset);
         window.refresh();
         if passes > 1 {
@@ -728,21 +729,77 @@ fn list_top_probe(cell: &Rc<Cell<Option<Pixels>>>, scroll: &ScrollHandle) -> imp
     .inset_0()
 }
 
-/// Records a row's height; a change draws the sidebar again.
-fn row_height_probe(cell: &Rc<Cell<Option<Pixels>>>) -> impl IntoElement {
-    let cell = cell.clone();
-    gpui::canvas(
-        move |bounds, window, _| {
-            let height = bounds.size.height;
-            if height > px(0.0) && cell.get().is_none_or(|old| (old - height).abs() > px(0.5)) {
-                cell.set(Some(height));
-                window.request_animation_frame();
-            }
-        },
-        |_, _, _, _| {},
-    )
-    .absolute()
-    .inset_0()
+/// Records a row's height before rounding to device pixels, so the rows left out stack in layout
+/// units as Chromium's do; a change draws the sidebar again.
+fn row_height_probe(cell: &Rc<Cell<Option<Pixels>>>) -> RowHeightProbe {
+    RowHeightProbe(cell.clone())
+}
+
+struct RowHeightProbe(Rc<Cell<Option<Pixels>>>);
+
+impl IntoElement for RowHeightProbe {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl gpui::Element for RowHeightProbe {
+    type RequestLayoutState = gpui::LayoutId;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<gpui::ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        window: &mut Window,
+        cx: &mut gpui::App,
+    ) -> (gpui::LayoutId, gpui::LayoutId) {
+        let mut style = gpui::Style { position: gpui::Position::Absolute, ..gpui::Style::default() };
+        style.inset.top = px(0.0).into();
+        style.inset.left = px(0.0).into();
+        style.size.width = relative(1.0).into();
+        style.size.height = relative(1.0).into();
+        let id = window.request_layout(style, [], cx);
+        (id, id)
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        _: gpui::Bounds<Pixels>,
+        layout_id: &mut gpui::LayoutId,
+        window: &mut Window,
+        _: &mut gpui::App,
+    ) {
+        let height = window.unrounded_layout_size(*layout_id).height;
+        if height > px(0.0) && self.0.get().is_none_or(|old| (old - height).abs() > px(0.01)) {
+            self.0.set(Some(height));
+            window.request_animation_frame();
+        }
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        _: gpui::Bounds<Pixels>,
+        _: &mut gpui::LayoutId,
+        _: &mut (),
+        _: &mut Window,
+        _: &mut gpui::App,
+    ) {
+    }
 }
 
 /// The box the sidebar takes in the window as it slides in and out, which its drawn part fills.

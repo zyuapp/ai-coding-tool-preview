@@ -475,6 +475,8 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .id(SharedString::from(format!("entry-{}", thread.id)))
         .group(group)
         .relative()
+        // `content-visibility: auto` paint-contains the entry, so Chromium paints it from a whole pixel.
+        .snap_origin()
         .rounded(px(10.0))
         .when(!context.inert, |entry| entry.track_focus(&focus))
         .on_hover(cx.listener(move |root, hovered: &bool, _, cx| {

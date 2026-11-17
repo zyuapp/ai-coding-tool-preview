@@ -1465,7 +1465,7 @@ impl RenderOnce for MenuTrigger {
         }
         trigger = trigger.text_color(color);
         if let Some(probe) = &self.probe {
-            trigger = trigger.child(bounds_probe(probe));
+            trigger = trigger.child(bounds_probe(probe).border(px(if pill { 0.0 } else { 1.0 })));
         }
         // The chevron sits 2px closer than the gap between the other parts.
         let mut body = div().flex().items_center().gap(px(6.0));

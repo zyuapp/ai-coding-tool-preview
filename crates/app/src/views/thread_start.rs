@@ -355,7 +355,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &Window, cx: &mut
             let selected = state.draft_branch.as_ref().map(|branch| branch.name.clone()).or(current);
             let branch_label = selected.unwrap_or_else(|| if unreadable { "Branches unavailable".into() } else { "Current branch".into() });
             let branch_name = format!("Starting branch: {branch_label}{}", if state.draft_branch.as_ref().is_some_and(|branch| branch.create) { " (new)" } else { "" });
-            let mut branch = MenuTrigger::new("start-branch").name(branch_name).variant(TriggerVariant::Field).icon(if unreadable { IconName::CircleAlert } else { IconName::GitBranch }).label(branch_label).danger(unreadable).open(root.menus.is_open(BRANCH_MENU)).probe(&root.composer.start.branch);
+            let mut branch = MenuTrigger::new("start-branch").max_width(px(220.0)).name(branch_name).variant(TriggerVariant::Field).icon(if unreadable { IconName::CircleAlert } else { IconName::GitBranch }).label(branch_label).danger(unreadable).open(root.menus.is_open(BRANCH_MENU)).probe(&root.composer.start.branch);
             if state.draft_branch.as_ref().is_some_and(|branch| branch.create) {
                 branch = branch.child(Chip::tag("new"));
             }

@@ -1355,6 +1355,7 @@ impl MenuTrigger {
 
     pub fn chevron(mut self, chevron: bool) -> Self {
         self.chevron = chevron;
+    max_width: Option<Pixels>,
         self
     }
 
@@ -1374,9 +1375,16 @@ impl MenuTrigger {
         self.tip = Some(tip.into());
         self
     }
+            max_width: None,
 
     /// Records where the trigger was drawn, for placing its menu.
     pub fn probe(mut self, cell: &BoundsCell) -> Self {
+    /// Caps its width, cutting the label with an ellipsis when it runs over.
+    pub fn max_width(mut self, width: Pixels) -> Self {
+        self.max_width = Some(width);
+        self
+    }
+
         self.probe = Some(cell.clone());
         self
     }
@@ -1477,7 +1485,11 @@ impl RenderOnce for MenuTrigger {
             });
         }
         if let Some(label) = self.label {
-            body = body.child(div().whitespace_nowrap().child(label));
+            body = body.child(div().whitespace_nowrap().when(self.max_width.is_some(), |label| label.min_w_0().overflow_hidden().text_ellipsis()).child(label));
+        }
+        if let Some(width) = self.max_width {
+            trigger = trigger.flex_shrink().min_w_0().max_w(width);
+            body = body.min_w_0();
         }
         trigger = trigger.gap(px(if pill { 4.0 } else { 6.0 })).child(body.children(self.children));
         if self.chevron && !self.disabled {

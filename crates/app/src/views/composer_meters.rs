@@ -28,22 +28,26 @@ fn js_round(value: f64) -> i64 {
     (value + 0.5).floor() as i64
 }
 
-/// 3.1M, 240K, as `toLocaleString("en-US", { notation: "compact" })` writes them.
+/// 3.1M, 22K, as `toLocaleString("en-US", { notation: "compact" })` writes them: one decimal
+/// below 10 of a unit, whole units above, rounding half up into the next unit (999.5K is 1M).
 pub fn compact_tokens(tokens: i64) -> String {
-    let value = tokens as f64;
-    let (scaled, suffix) = if value >= 1e12 {
-        (value / 1e12, "T")
-    } else if value >= 1e9 {
-        (value / 1e9, "B")
-    } else if value >= 1e6 {
-        (value / 1e6, "M")
-    } else if value >= 1e3 {
-        (value / 1e3, "K")
-    } else {
-        (value, "")
+    const UNITS: [(i64, &str); 4] = [(1_000, "K"), (1_000_000, "M"), (1_000_000_000, "B"), (1_000_000_000_000, "T")];
+    let tokens = tokens.max(0);
+    let Some(mut index) = UNITS.iter().rposition(|(unit, _)| tokens >= *unit) else {
+        return tokens.to_string();
     };
-    let text = if scaled >= 100.0 || suffix.is_empty() { format!("{}", scaled.round()) } else { format!("{:.1}", (scaled * 10.0).round() / 10.0).trim_end_matches(".0").to_string() };
-    format!("{text}{suffix}")
+    loop {
+        let (unit, suffix) = UNITS[index];
+        let tenths = (i128::from(tokens) * 10 + i128::from(unit) / 2) / i128::from(unit);
+        if tenths < 100 {
+            return if tenths % 10 == 0 { format!("{}{suffix}", tenths / 10) } else { format!("{}.{}{suffix}", tenths / 10, tenths % 10) };
+        }
+        let whole = (i128::from(tokens) + i128::from(unit) / 2) / i128::from(unit);
+        if whole < 1000 || index + 1 == UNITS.len() {
+            return format!("{whole}{suffix}");
+        }
+        index += 1;
+    }
 }
 
 /// "Resets 3:40pm" today, "Resets Nov 14 at 3:40pm" further out.
@@ -282,5 +286,9 @@ mod tests {
         assert_eq!(compact_tokens(240_000), "240K");
         assert_eq!(compact_tokens(3_140_000), "3.1M");
         assert_eq!(compact_tokens(1_000_000), "1M");
+        assert_eq!(compact_tokens(1_050), "1.1K");
+        assert_eq!(compact_tokens(9_950), "10K");
+        assert_eq!(compact_tokens(21_749), "22K");
+        assert_eq!(compact_tokens(999_500), "1M");
     }
 }

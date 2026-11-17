@@ -657,7 +657,9 @@ fn notice(model: &RowModel, message: &ConversationMessage, window: &mut Window, 
     let m = cx.theme().metrics.clone();
     let error = message.tone == Some(MessageTone::Error);
     let copy = error && message.detail.is_some();
-    let mut pane = rimmed(div(), &t, 14.0).min_w_0().max_w_full().pl(px(10.0)).pr(px(if copy { 40.0 } else { 13.0 })).py(px(6.0)).pane(t.glass_control).text_color(if error { t.danger } else { t.ink_dim });
+    // A failure mixes its hue into the pane (`.glass-chip[data-tone]`).
+    let fill = if error { act_ui::theme::Pane { fill: act_ui::color::mix(t.danger, 0.14, t.tone_glass_ground), sheen: t.glass_blur } } else { t.glass_control };
+    let mut pane = rimmed(div(), &t, 14.0).min_w_0().max_w_full().pl(px(10.0)).pr(px(if copy { 40.0 } else { 13.0 })).py(px(6.0)).pane(fill).text_color(if error { t.danger } else { t.ink_dim });
     pane = pane.child(
         div()
             .flex()

@@ -542,7 +542,7 @@ impl Root {
             return;
         }
         // Letting go settles where the knob was last dragged to, as the pointer-up carries no move of its own.
-        let fraction = library.drag.take().unwrap_or(fraction);
+        let Some(fraction) = library.drag.take() else { return };
         let state = self.state(cx);
         let Some(choice) = library_choice(self, &state) else { return };
         let (steps, value) = effort_steps(&state.catalog(), &choice);
@@ -783,7 +783,7 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
             div().into_any_element()
         }
     } else {
-        effort_slider(root, &steps, effort, &choice, tiny, window, cx).into_any_element()
+        effort_slider(root, &steps, effort, tiny, window, cx).into_any_element()
     };
     let effort_row = setting().items_start().child(axis("Effort", Some(model_name.clone())).line_height(px(22.0))).child(div().flex_1().min_w_0().when(!narrow, |body| body.ml(px(8.0))).child(effort_body));
     let policy = choice.policy;
@@ -887,8 +887,9 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
 }
 
 /// The efforts on a track the knob slides along while dragged, settling on the nearest effort when
-/// let go; a click on a name picks it. Each effort is named under its stop.
-fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, choice: &Choice, tiny: bool, window: &Window, cx: &mut Context<Root>) -> impl IntoElement {
+/// let go; a press anywhere on the slider, names included, starts the drag. Each effort is named
+/// under its stop.
+fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, tiny: bool, window: &Window, cx: &mut Context<Root>) -> impl IntoElement {
     let t = cx.theme().tokens.clone();
     let m = cx.theme().metrics.clone();
     let Some(library) = &root.library else { return div() };
@@ -910,7 +911,7 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, choice: 
         rail = rail.child(div().absolute().top(px(1.0)).left(place(at(step))).ml(px(KNOB / 2.0 - 1.0 - KNOB * at(step))).size(px(2.0)).rounded_full().bg(t.quiet));
     }
     rail = rail
-        .child(div().absolute().top_0().bottom_0().left_0().w(place(fraction)).mr(px(0.0)).min_w(px(KNOB / 2.0)).rounded_full().bg(if delegates { t.accent } else { t.ink_faint }))
+        .child(div().absolute().top_0().bottom_0().left_0().w(place(fraction)).mr(px(0.0)).min_w(px(KNOB / 2.0)).rounded_full().bg(if delegates { gpui::solid_background(t.accent) } else { act_ui::theme::Pane::sheened(t.ink_faint).background() }))
         .child({
             // The knob slides between stops (`transition: left 180ms`) unless dragged, and swells
             // about its centre (`transform: scale()`), each eased on its own.
@@ -922,17 +923,21 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, choice: 
                 .rounded_full()
                 .transition(glide.only(&[gpui::TransitionProperty::Transform]).and(gpui::Transition::ease(160).only(&[gpui::TransitionProperty::Background])))
                 .transform(gpui::ElementTransform::scale(swell))
-                .bg(if drag.is_some() { super::common::with_alpha(t.surface_inverse, 0.3) } else { t.surface_inverse })
+                .bg(if drag.is_some() {
+                    gpui::solid_background(super::common::with_alpha(t.surface_inverse, 0.3))
+                } else {
+                    gpui::linear_gradient(180.0, gpui::linear_color_stop(white(0.28), 0.0), gpui::linear_color_stop(white(0.0), 1.0)).over_color(t.surface_inverse)
+                })
                 .when(drag.is_some(), |knob| knob.backdrop_filter(gpui::BackdropFilter::blur(px(1.5)).saturate(1.9).brightness(1.12)))
-                .border_1()
-                .border_color(super::common::with_alpha(gpui::rgba(0xffffffff), 0.12))
                 .shadow(if ringed {
                     let mut shadows = vec![gpui::BoxShadow { color: t.focus_ring.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(2.0) }];
                     shadows.extend(t.shadow_thumb.box_shadows());
                     shadows
                 } else {
-                    t.shadow_thumb.box_shadows()
-                });
+                    knob_shadows(&t.shadow_thumb)
+                })
+                // The focus ring's shadow list replaces the knob's own, inset light included.
+                .when(!ringed, |knob| knob.child(knob_light()));
             let knob = div().id("effort-knob").absolute().top(px(-7.0)).size(px(KNOB));
             match travel {
                 Some(travel) => knob
@@ -949,7 +954,6 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, choice: 
         if tiny && step != shown {
             continue;
         }
-        let command = choice.set_effort(spec.id);
         let current = step == shown;
         let stop = div()
             .id(SharedString::from(format!("effort-{step}")))
@@ -958,14 +962,12 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, choice: 
             .text_size(px(m.text_meta))
             .line_height(px(16.0))
             .whitespace_nowrap()
-            .cursor_pointer()
             .transition(gpui::Transition::ease(140))
             .text_color(if current { if delegates { t.accent_bright } else { t.ink } } else { t.quiet })
             .when(current, |stop| stop.font_weight(FontWeight(560.0)))
             .hover(|style| style.text_color(t.ink_soft))
             .child(spec.label.clone())
-            .when_some(spec.description.clone(), |stop, description| stop.tip(description))
-            .on_click(move |_, _, cx| dispatch(command.clone(), cx));
+            .when_some(spec.description.clone(), |stop, description| stop.tip(description));
         let stop = if step == 0 {
             stop.left_0()
         } else if step + 1 == count {
@@ -1008,8 +1010,11 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, choice: 
                 }
             }),
         )
-        .child(rail);
-    let mut slider = div().child(track).child(stops);
+        // A click whose release lands before the drag's window listeners are drawn still settles.
+        .on_mouse_up(MouseButton::Left, root.composer_listener(cx, |root, event: &MouseUpEvent, _, cx| root.effort_drag(event.position.x, true, cx)))
+        .child(rail)
+        .child(stops);
+    let mut slider = div().child(track);
     if dragging {
         slider = slider.child(
             canvas(
@@ -1034,6 +1039,39 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, choice: 
         );
     }
     slider
+}
+
+fn white(alpha: f32) -> gpui::Rgba {
+    gpui::Rgba { r: 1.0, g: 1.0, b: 1.0, a: alpha }
+}
+
+/// The knob's outer shadows: a 0.5px hairline at a fixed weight, then `--shadow-thumb`'s layers
+/// with the far one deepened from 0.22 to 0.28.
+fn knob_shadows(thumb: &act_ui::theme::Elevation) -> Vec<gpui::BoxShadow> {
+    let mut shadows = thumb.box_shadows();
+    if let [near, far] = shadows.as_mut_slice() {
+        let scale = near.color.a / 0.4;
+        let hairline = gpui::BoxShadow { color: gpui::Hsla { a: 0.2, ..near.color }, offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(0.5) };
+        far.color.a = 0.28 * scale;
+        shadows.insert(0, hairline);
+    }
+    shadows
+}
+
+/// The knob's inner light: a 1px white line along its top over a faint white ring.
+fn knob_light() -> impl IntoElement {
+    let shadows = [
+        gpui::BoxShadow { color: white(0.12).into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(1.0) },
+        gpui::BoxShadow { color: white(0.5).into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(0.0), spread_radius: px(0.0) },
+    ];
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| window.paint_inset_shadows(bounds, gpui::Corners::all(bounds.size.width.min(bounds.size.height) / 2.0), &shadows),
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
 }
 
 /// How the model chip reads aloud: which settings it shows, then their values (ComposerSettings.tsx).

@@ -8,6 +8,7 @@ use std::rc::Rc;
 use act_core::domain::project::{folder_name, project_name, Project};
 use act_core::domain::thread_role::ThreadRole;
 use act_core::state::{WorkspaceState, THREAD_START_PROJECT_MENU};
+use act_core::util::locale_cmp;
 use act_core::AppCommand;
 use act_ui::components::button::{toggle_button, Button, ButtonVariant, IconButton, IconButtonSize, ToggleTone};
 use act_ui::components::chip::Chip;
@@ -107,7 +108,7 @@ fn project_entries(state: &WorkspaceState, query: &str) -> Vec<MenuEntry> {
             detail.push(host_name(host));
         }
         if !detail.is_empty() {
-            item = item.detail(detail.join(" · "));
+            item = item.detail(detail.join(" · ")).inline_detail(true);
         }
         item
     };
@@ -134,9 +135,9 @@ fn project_entries(state: &WorkspaceState, query: &str) -> Vec<MenuEntry> {
             None => groups.push((host, vec![project])),
         }
     }
-    groups.sort_by(|(a, _), (b, _)| a.is_some().cmp(&b.is_some()).then(a.cmp(b)));
+    groups.sort_by(|(a, _), (b, _)| a.is_some().cmp(&b.is_some()).then_with(|| locale_cmp(a.unwrap_or(""), b.unwrap_or(""))));
     for (host, mut group) in groups {
-        group.sort_by(|a, b| project_name(a).cmp(&project_name(b)).then(a.root.cmp(&b.root)));
+        group.sort_by(|a, b| locale_cmp(&project_name(a), &project_name(b)).then_with(|| locale_cmp(&a.root, &b.root)));
         let items: Vec<MenuItem> = group.into_iter().map(|project| option(project, host, false)).collect();
         if computers {
             entries.push(MenuEntry::Group { label: host_name(host).into(), items });
@@ -147,7 +148,7 @@ fn project_entries(state: &WorkspaceState, query: &str) -> Vec<MenuEntry> {
         }
     }
     entries.push(MenuEntry::Separator);
-    entries.push(MenuItem::new("Add project…").icon(IconName::Plus).on_select(|_, cx| dispatch(AppCommand::ProjectOpen { start: false }, cx)).into());
+    entries.push(MenuItem::new("Add project…").mark(IconName::Plus).edge(true).on_select(|_, cx| dispatch(AppCommand::ProjectOpen { start: false }, cx)).into());
     entries
 }
 
@@ -194,7 +195,7 @@ impl Root {
         let anchor = self.composer.start.project.get().unwrap_or_default();
         let probe = self.composer.start.project.clone();
         let menu = Menu::build(project_entries(&state, ""), upward(anchor, window), window, cx, move |menu| {
-            menu.checkable(true).min_width(px(220.0)).max_width(px(340.0)).exempt(&probe).searchable("Search projects", |query, cx| {
+            menu.checkable(true).min_width(px(220.0)).max_width(px(340.0)).max_height(px(280.0)).pinned_edge(true).group_icon("Recent", IconName::Clock).exempt(&probe).searchable("Search projects", |query, cx| {
                 let state = crate::workspace::workspace(cx).read(cx).state.clone();
                 project_entries(&state, query)
             })

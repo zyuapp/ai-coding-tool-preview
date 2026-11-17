@@ -93,6 +93,8 @@ pub struct MenuItem {
     pub submenu_name: Option<SharedString>,
     /// The name assistive technology reads for the row's own search field; its placeholder otherwise.
     pub submenu_search_label: Option<SharedString>,
+    /// `detail` follows the label on its line instead of standing against the right edge.
+    pub inline_detail: bool,
 }
 
 impl MenuItem {
@@ -182,6 +184,12 @@ impl MenuItem {
 
     pub fn on_open(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_open = Some(Rc::new(handler));
+        self
+    }
+
+    /// Sets `detail` right after the label, giving way to it up to 45% of the line.
+    pub fn inline_detail(mut self, inline: bool) -> Self {
+        self.inline_detail = inline;
         self
     }
 
@@ -326,6 +334,12 @@ pub struct Menu {
     return_focus: Option<FocusHandle>,
     /// A cap on the scrolled rows alone, below the menu's own.
     list_max_height: Option<Pixels>,
+    /// The menu's own cap, 420 unless set (`--menu-max-height`).
+    max_height: Option<Pixels>,
+    /// An edge action ending the list sits below the scrolled rows, ruled off from them (`MenuEdgeAction`).
+    pinned_edge: bool,
+    /// Icons drawn before the labels of the groups they name.
+    group_icons: Vec<(SharedString, IconName)>,
     /// The first row is marked as Enter's choice only once something is typed.
     default_needs_query: bool,
     searched_text_empty: bool,
@@ -380,6 +394,9 @@ impl Menu {
             pinned_notes: false,
             return_focus: None,
             list_max_height: None,
+            max_height: None,
+            pinned_edge: false,
+            group_icons: Vec::new(),
             default_needs_query: false,
             searched_text_empty: true,
             from_frame: false,
@@ -431,6 +448,24 @@ impl Menu {
     /// Caps the height of the scrolled rows, leaving the search and pinned notes outside the cap.
     pub fn list_max_height(mut self, height: Pixels) -> Self {
         self.list_max_height = Some(height);
+        self
+    }
+
+    /// Caps the whole menu's height (`--menu-max-height`).
+    pub fn max_height(mut self, height: Pixels) -> Self {
+        self.max_height = Some(height);
+        self
+    }
+
+    /// Draws an edge action that ends the list, and the rule before it, below the scrolled rows.
+    pub fn pinned_edge(mut self, pinned: bool) -> Self {
+        self.pinned_edge = pinned;
+        self
+    }
+
+    /// Draws `icon` before the label of the group named `label`.
+    pub fn group_icon(mut self, label: impl Into<SharedString>, icon: IconName) -> Self {
+        self.group_icons.push((label.into(), icon));
         self
     }
 
@@ -913,6 +948,16 @@ impl Menu {
             row = row.child(div().flex_none().flex().items_center().text_color(quiet(t.quiet_strong)).child(Icon::new(icon).size(px(item.icon_size.unwrap_or(14.0)))));
         }
         let label = div().overflow_hidden().text_ellipsis().whitespace_nowrap().when_some(item.font_family.clone(), |label, family| label.font_family(family)).child(item.label.clone());
+        let inline = item.detail.clone().filter(|detail| item.inline_detail && !detail.is_empty());
+        let label = match inline.clone() {
+            Some(detail) => div()
+                .flex()
+                .items_baseline()
+                .gap(px(8.0))
+                .child(label.min_w_0())
+                .child(div().flex_none().max_w(gpui::relative(0.45)).overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(if item.disabled { t.quiet } else { t.quiet_strong }).text_size(px(m.text_meta)).child(detail)),
+            None => label,
+        };
         let label = if item.away {
             div().flex().items_center().gap(px(6.0)).text_color(quiet(t.quiet)).child(div().flex_none().size(px(6.0)).rounded_full().bg(quiet(t.quiet))).child(label).into_any_element()
         } else {
@@ -932,7 +977,7 @@ impl Menu {
             );
         }
         row = row.child(copy);
-        if let Some(trailing) = item.shortcut.clone().or_else(|| item.detail.clone()).filter(|text| !text.is_empty()) {
+        if let Some(trailing) = item.shortcut.clone().or_else(|| item.detail.clone().filter(|_| inline.is_none())).filter(|text| !text.is_empty()) {
             let dot = item.detail_dot.filter(|_| item.shortcut.is_none());
             row = row.child(
                 div()
@@ -986,7 +1031,7 @@ impl Render for Menu {
         let m = &theme.metrics;
         let viewport = window.viewport_size();
         let room = self.placement.map(|placement| placement.room(viewport)).unwrap_or(viewport.height - px(16.0));
-        let max_height = px(MAX_HEIGHT).min(room).max(px(60.0));
+        let max_height = self.max_height.unwrap_or(px(MAX_HEIGHT)).min(room).max(px(60.0));
 
         let mut column: Vec<AnyElement> = Vec::new();
         self.row_children.clear();
@@ -994,8 +1039,23 @@ impl Render for Menu {
         let entries = self.entries.clone();
         let mut first_group = true;
         let trailing = if self.pinned_notes { entries.iter().rev().take_while(|entry| matches!(entry, MenuEntry::Note { .. })).count() } else { 0 };
+        let edge_at = match entries.as_slice() {
+            [.., MenuEntry::Separator, MenuEntry::Item(item)] if self.pinned_edge && item.edge => Some(entries.len() - 2),
+            _ => None,
+        };
         let mut pinned: Vec<AnyElement> = Vec::new();
+        let mut edge: Vec<AnyElement> = Vec::new();
         for (at, entry) in entries.iter().enumerate() {
+            if edge_at.is_some_and(|edge_at| at >= edge_at) {
+                match entry {
+                    MenuEntry::Item(item) => {
+                        edge.push(self.render_row(index, item, checkable, cx));
+                        index += 1;
+                    }
+                    _ => edge.push(separator(t).into_any_element()),
+                }
+                continue;
+            }
             if at >= entries.len() - trailing {
                 if let MenuEntry::Note { text, danger } = entry {
                     pinned.push(note(text.clone(), *danger, t, m).into_any_element());
@@ -1010,7 +1070,8 @@ impl Render for Menu {
                     first_group = false;
                 }
                 MenuEntry::Group { label, items } => {
-                    column.push(group_label(label.clone(), first_group, t, m).into_any_element());
+                    let icon = self.group_icons.iter().find(|(named, _)| named == label).map(|(_, icon)| *icon);
+                    column.push(group_label_with(icon, label.clone(), first_group, t, m).into_any_element());
                     for item in items {
                         self.row_children.push(column.len());
                         column.push(self.render_row(index, item, checkable, cx));
@@ -1074,7 +1135,7 @@ impl Render for Menu {
         }
         // A list under a search or over pinned rows scrolls inside the pane's padding (`.menu-scroll`);
         // otherwise the whole pane scrolls, padding and all, with its bar against the pane's edge.
-        let inner = searchable || !pinned.is_empty();
+        let inner = searchable || !pinned.is_empty() || !edge.is_empty();
         let gutter = crate::components::scrollbar::gutter(&self.scroll);
         surface = surface.child(
             div()
@@ -1094,7 +1155,7 @@ impl Render for Menu {
                         .flex_col()
                         .when(!inner, |rows| rows.pl(px(PAD)).pr(px(PAD) + gutter))
                         .when(inner, |rows| rows.pr(gutter))
-                        .pb(px(if pinned.is_empty() { PAD } else { 0.0 }))
+                        .pb(px(if pinned.is_empty() && edge.is_empty() { PAD } else { 0.0 }))
                         .pt(px(if searchable { 0.0 } else { PAD }))
                         .overflow_y_scroll()
                         .track_scroll(&self.scroll)
@@ -1104,6 +1165,9 @@ impl Render for Menu {
         );
         if !pinned.is_empty() {
             surface = surface.child(div().flex_none().px(px(PAD)).pb(px(PAD)).children(pinned));
+        }
+        if !edge.is_empty() {
+            surface = surface.child(div().flex_none().flex().flex_col().px(px(PAD)).pb(px(PAD)).children(edge));
         }
         let submenu = self.submenu.as_ref().map(|open| open.menu.clone());
         let surface = div()
@@ -1162,7 +1226,12 @@ impl Menu {
 }
 
 fn group_label(label: SharedString, first: bool, t: &crate::theme::Tokens, m: &crate::theme::Metrics) -> gpui::Div {
+    group_label_with(None, label, first, t, m)
+}
+
+fn group_label_with(icon: Option<IconName>, label: SharedString, first: bool, t: &crate::theme::Tokens, m: &crate::theme::Metrics) -> gpui::Div {
     div()
+        .when_some(icon, |row, icon| row.flex().items_center().gap(px(5.0)).child(Icon::new(icon).size(px(12.0))))
         .flex_none()
         .px(px(8.0))
         .pt(px(if first { 3.0 } else { 8.0 }))

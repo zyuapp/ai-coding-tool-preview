@@ -202,8 +202,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             row_with("session-branch", IconName::GitBranch, "Branch", false, cx)
                 .accessible(gpui::AccessInfo::new(gpui::AccessRole::PopupButton, "").expanded(branch_open))
                 .relative()
-                .child(div().flex_none().ml(px(-4.0)).text_color(if branch_open { t.quiet_strong } else { t.quiet }).group_hover(SESSION_ROW, |style| style.text_color(t.quiet_strong)).child(ink_icon(IconName::ChevronDown, 12.0)))
-                .child(div().flex_1().min_w_0().flex().justify_end().child(div().max_w(px(140.0)).whitespace_nowrap().overflow_hidden().text_ellipsis().text_color(t.muted).font_family(mono.clone()).text_size(px(12.0)).child(branch.clone().unwrap_or_else(|| "—".into()))))
+                .child(div().w(px(14.0)).flex_none().flex().child(div().flex_none().ml(px(-4.0)).text_color(if branch_open { t.quiet_strong } else { t.quiet }).group_hover(SESSION_ROW, |style| style.text_color(t.quiet_strong)).child(ink_icon(IconName::ChevronDown, 12.0))))
+                .child(div().flex_1().min_w_0().flex().justify_end().child(div().max_w_full().whitespace_nowrap().overflow_hidden().text_ellipsis().text_color(t.muted).font_family(mono.clone()).text_size(px(12.0)).child(branch.clone().unwrap_or_else(|| "—".into()))))
                 .child(bounds_probe(&probe))
                 .on_click(cx.listener(move |root, _, window, cx| {
                     let Some(workspace_id) = branch_workspace.clone() else { return };

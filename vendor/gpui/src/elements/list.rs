@@ -990,13 +990,14 @@ impl StateInner {
                     if let Some(autoscroll_bounds) = window.take_autoscroll()
                         && autoscroll
                     {
-                        window.list_anchors.pop();
                         if autoscroll_bounds.top() < bounds.top() {
+                            window.list_anchors.pop();
                             return Err(Retry::Autoscroll(ListOffset {
                                 item_ix: item.index,
                                 offset_in_item: autoscroll_bounds.top() - item_origin.y,
                             }));
                         } else if autoscroll_bounds.bottom() > bounds.bottom() {
+                            window.list_anchors.pop();
                             let mut cursor = self.items.cursor::<Count>(());
                             cursor.seek(&Count(item.index), Bias::Right);
                             let mut height = bounds.size.height - padding.top - padding.bottom;
@@ -1555,6 +1556,31 @@ mod test {
             .w_full()
             .h_full()
         }
+    }
+
+    #[gpui::test]
+    fn an_autoscroll_to_an_item_already_in_view_keeps_the_scroll_top(cx: &mut TestAppContext) {
+        use crate::{AppContext, Context, Element, IntoElement, ListOffset, ListState, ParentElement, Render, Styled, Window, canvas, div, list, point, px, size};
+        let cx = cx.add_empty_window();
+        let state = ListState::new(5, crate::ListAlignment::Top, px(10.));
+        struct TestView(ListState);
+        impl Render for TestView {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                list(self.0.clone(), |ix, _, _| {
+                    let item = div().h(px(10.)).w_full();
+                    if ix == 1 {
+                        item.child(canvas(|bounds, window, _| window.request_autoscroll(bounds), |_, _, _, _| {}).size_full()).into_any()
+                    } else {
+                        item.into_any()
+                    }
+                })
+                .w_full()
+                .h_full()
+            }
+        }
+        state.scroll_to(ListOffset { item_ix: 0, offset_in_item: px(0.) });
+        cx.draw(point(px(0.), px(0.)), size(px(100.), px(30.)), |_, cx| cx.new(|_| TestView(state.clone())));
+        assert_eq!(state.logical_scroll_top().item_ix, 0);
     }
 
     #[gpui::test]

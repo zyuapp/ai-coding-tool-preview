@@ -28,7 +28,7 @@ use act_ui::components::notice::{Notice, NoticeTone};
 use act_ui::components::spinner::Spinner;
 use act_ui::input::{Autosize, InputEvent, TextInput};
 use act_ui::overlay::{bounds_cell, bounds_probe, Align, BoundsCell, Placement};
-use act_ui::style::PaneFill;
+use act_ui::style::{PaneFill, Raised};
 use act_ui::theme::{ActiveTheme, Tokens, Tone};
 use act_ui::tooltip::{shortcut_tip, Tippable};
 use act_ui::IconName;
@@ -2127,6 +2127,7 @@ fn comment_editor(model: &DiffModel, cx: &mut App) -> AnyElement {
     let submit_root = model.root.clone();
     let escape_root = model.root.clone();
     let card = rimmed(div().pane(t.glass_control), t, 14.0)
+        .elevation_glint(&t.shadow_composer, t, act_ui::style::Corners::Radius(14.0))
         .mt(px(8.0))
         .mr(px(12.0))
         .mb(px(10.0))

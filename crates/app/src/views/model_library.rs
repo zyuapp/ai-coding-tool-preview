@@ -343,6 +343,8 @@ pub fn trigger(root: &mut Root, state: &WorkspaceState, engine: AgentEngine, mod
                     .items_center()
                     .justify_center()
                     .gap(px(4.0))
+                    .border_1()
+                    .border_color(gpui::transparent_black())
                     .map(|button| if compact { button.w(px(30.0)) } else { button.pl(px(8.0)).pr(px(10.0)) })
                     .rounded_full()
                     .text_size(px(m.text_meta))

@@ -191,6 +191,7 @@ fn linked_images(message_id: &str, text: &str) -> std::rc::Rc<Vec<act_markdown::
 
 /// Previews of the local images a settled message links, under it (MessageImagePreview).
 pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx: &mut App) -> Option<gpui::AnyElement> {
+    use act_ui::style::Raised;
     use gpui::{div, img, InteractiveElement, ObjectFit, ParentElement, StatefulInteractiveElement, Styled, StyledImage};
     let images = linked_images(&scope.message_id, text);
     if images.is_empty() {
@@ -242,6 +243,9 @@ pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx:
                 .border_color(t.line_strong)
                 .text_color(t.ink_dim)
                 .text_size(px(cx.theme().metrics.text_content * 0.85))
+                .line_height(gpui::relative(1.7))
+                .relative()
+                .rim(t.glass_rim, act_ui::style::Corners::Radius(8.0))
                 .cursor_pointer()
                 .hover(|style| style.bg(t.surface_hover).text_color(t.ink))
                 .child(act_ui::Icon::new(act_ui::IconName::FileText).size(px(14.0)))

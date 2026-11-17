@@ -216,7 +216,8 @@ fn entry(model: &Rc<RowModel>, index: usize, entry: &Entry, newest: bool, row_gr
             if let Some(answer) = final_message {
                 let view = markdown(model, answer, &answer.text, false, Variant::Answer, window, cx);
                 view.update(cx, |view, cx| view.set_emphasize_copy(newest, cx));
-                turn = turn.child(view).children(previews(model, answer, cx)).child(actions(answer, newest, "Copy the answer", row_group, window, cx).mt(px(9.0)));
+                // The previews sit in the answer's own block, under its last paragraph's margin.
+                turn = turn.child(div().child(view).children(previews(model, answer, cx))).child(actions(answer, newest, "Copy the answer", row_group, window, cx).mt(px(9.0)));
             }
             turn.into_any_element()
         }
@@ -235,18 +236,19 @@ fn entry(model: &Rc<RowModel>, index: usize, entry: &Entry, newest: bool, row_gr
     }
 }
 
-/// A message drawn as Markdown, lit where the find bar's matches and the drafted annotations fall.
-fn image_scope(model: &RowModel, message_id: &str) -> Option<super::markdown::ImageScope> {
-    model.folder.clone().map(|root| super::markdown::ImageScope { root, message_id: message_id.to_string() })
+/// A thread with no folder still resolves absolute image paths.
+fn image_scope(model: &RowModel, message_id: &str) -> super::markdown::ImageScope {
+    super::markdown::ImageScope { root: model.folder.clone().unwrap_or_default(), message_id: message_id.to_string() }
 }
 
 /// A settled message's previews of the local images it links.
 fn previews(model: &RowModel, message: &ConversationMessage, cx: &mut App) -> Option<AnyElement> {
-    super::markdown::image_previews(&message.text, &image_scope(model, &message.id)?, Some(&model.task_id), cx)
+    super::markdown::image_previews(&message.text, &image_scope(model, &message.id), Some(&model.task_id), cx)
 }
 
+/// A message drawn as Markdown, lit where the find bar's matches and the drafted annotations fall.
 fn markdown(model: &RowModel, message: &ConversationMessage, text: &str, streaming: bool, variant: Variant, window: &mut Window, cx: &mut App) -> Entity<MarkdownView> {
-    let view = message_view(SharedString::from(format!("md-{}", message.id)), text, streaming, variant, Some(model.task_id.clone()), image_scope(model, &message.id), window, cx);
+    let view = message_view(SharedString::from(format!("md-{}", message.id)), text, streaming, variant, Some(model.task_id.clone()), Some(image_scope(model, &message.id)), window, cx);
     let t = cx.theme().tokens.clone();
     let mut highlights = Vec::new();
     {
@@ -975,7 +977,7 @@ fn segments(model: &RowModel, index: usize, segments: &[Segment], live: bool, wi
     if let Some(streaming) = &streaming_id {
         if !segments.iter().any(|segment| matches!(segment, Segment::Note { message, .. } if &message.id == streaming)) {
             let text = model.tail.as_ref().map(|tail| tail.text.clone()).unwrap_or_default();
-            let view = message_view(SharedString::from(format!("md-{streaming}")), &text, true, Variant::WorkNote, Some(model.task_id.clone()), image_scope(model, streaming), window, cx);
+            let view = message_view(SharedString::from(format!("md-{streaming}")), &text, true, Variant::WorkNote, Some(model.task_id.clone()), Some(image_scope(model, streaming)), window, cx);
             model.join_selection(&view, streaming, cx);
             nodes.push(div().py(px(9.0)).child(view).into_any_element());
         }

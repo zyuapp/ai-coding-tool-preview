@@ -857,7 +857,6 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     }
 
     let short = short_window(window);
-    let clear_input = search_input.clone();
     let sidebar = div()
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::Complementary, ""))
         .w(px(260.0))
@@ -903,10 +902,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 .accessible(gpui::AccessInfo::new(gpui::AccessRole::Heading, "Settings"))
                 .child("Settings"),
         )
-        .child(div().flex_none().mb(px(10.0)).child(SearchField::new("settings-search", &search_input).on_clear(move |_, window, cx| clear_input.update(cx, |input, cx| {
-            input.reset("", cx);
-            input.focus(window);
-        }))))
+        .child(div().flex_none().mb(px(10.0)).child(SearchField::new("settings-search", &search_input)))
         .child(nav);
 
     root.settings.marks.title_line = title_line(m.text_content, window, cx);

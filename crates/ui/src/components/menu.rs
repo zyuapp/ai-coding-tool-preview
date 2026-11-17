@@ -1137,15 +1137,7 @@ impl Render for Menu {
                     .pt(px(if self.title.is_some() { 5.0 } else { 6.0 }))
                     .pb(px(4.0))
                     .bg(t.surface_glass)
-                    .child({
-                        let clear = search.input.clone();
-                        SearchField::new("menu-search", &search.input).variant(SearchVariant::Menu).on_clear(move |_, window, cx| {
-                            clear.update(cx, |input, cx| {
-                                input.set_text("", cx);
-                                input.focus(window);
-                            });
-                        })
-                    }),
+                    .child(SearchField::new("menu-search", &search.input).variant(SearchVariant::Menu)),
             );
         }
         // A list under a search or over pinned rows scrolls inside the pane's padding (`.menu-scroll`);

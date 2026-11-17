@@ -47,11 +47,13 @@ pub struct SearchField {
     variant: SearchVariant,
     on_clear: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     clear_tip: Option<SharedString>,
+    /// A plain text input, with no native cancel glyph while it holds text.
+    plain: bool,
 }
 
 impl SearchField {
     pub fn new(id: impl Into<ElementId>, input: &Entity<TextInput>) -> Self {
-        Self { id: id.into(), input: input.clone(), variant: SearchVariant::Field, on_clear: None, clear_tip: None }
+        Self { id: id.into(), input: input.clone(), variant: SearchVariant::Field, on_clear: None, clear_tip: None, plain: false }
     }
 
     pub fn variant(mut self, variant: SearchVariant) -> Self {
@@ -69,6 +71,54 @@ impl SearchField {
         self.clear_tip = Some(tip.into());
         self
     }
+
+    /// An input of `type="text"`: no native cancel glyph.
+    pub fn plain(mut self) -> Self {
+        self.plain = true;
+        self
+    }
+}
+
+/// The native search cancel glyph (`::-webkit-search-cancel-button`): a bold cross in white at
+/// 40% opacity, 75% under the pointer, that empties the field.
+fn native_cancel(input: Entity<TextInput>) -> impl IntoElement {
+    let target = input.clone();
+    div()
+        .id("cancel")
+        .flex_none()
+        .w(px(16.0))
+        .h(px(16.0))
+        .cursor(CursorStyle::PointingHand)
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(move |_, window, cx| {
+            target.update(cx, |input, cx| {
+                input.set_text("", cx);
+                input.focus(window);
+            });
+        })
+        .child(
+            gpui::canvas(
+                |bounds, window, _| window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal),
+                |bounds, hitbox, window, _| {
+                    let alpha = if hitbox.is_hovered(window) { 0.75 } else { 0.4 };
+                    // One outline for both strokes, so where they cross is no darker than either.
+                    let (arm, thick) = (4.0 * std::f32::consts::SQRT_2, 1.1);
+                    let plus = [(thick, thick), (thick, arm), (-thick, arm), (-thick, thick), (-arm, thick), (-arm, -thick), (-thick, -thick), (-thick, -arm), (thick, -arm), (thick, -thick), (arm, -thick), (arm, thick)];
+                    let centre = bounds.center();
+                    let corner = |(u, v): (f32, f32)| centre + gpui::point(px((u - v) / std::f32::consts::SQRT_2), px((u + v) / std::f32::consts::SQRT_2));
+                    let mut path = gpui::PathBuilder::fill();
+                    path.move_to(corner(plus[0]));
+                    for point in &plus[1..] {
+                        path.line_to(corner(*point));
+                    }
+                    path.close();
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, gpui::Rgba { r: 1.0, g: 1.0, b: 1.0, a: alpha });
+                    }
+                },
+            )
+            .size_full(),
+        )
 }
 
 impl RenderOnce for SearchField {
@@ -78,6 +128,7 @@ impl RenderOnce for SearchField {
         let m = &theme.metrics;
         let filled = !self.input.read(cx).is_empty();
         let headed = matches!(self.variant, SearchVariant::Palette | SearchVariant::Library);
+        let cancel = filled && !headed && !self.plain && self.on_clear.is_none();
         let focused = !headed && input_focused(&self.input, window, cx);
         let (gap, pad, font, icon) = match self.variant {
             SearchVariant::Field => (8.0, 10.0, m.text_control, 14.0),
@@ -108,13 +159,14 @@ impl RenderOnce for SearchField {
                     .text_color(t.ink)
                     .text_size(px(font))
                     .when(self.variant == SearchVariant::Field, |this| this.py(px(8.0)))
-                    .child(self.input.clone()),
+                    .when(cancel, |this| this.flex().items_center().child(div().flex_1().min_w_0().child(self.input.clone())).child(native_cancel(self.input.clone())))
+                    .when(!cancel, |this| this.child(self.input.clone())),
             );
         let mut field = div().id(self.id).flex().items_center().min_w_0().text_color(t.quiet);
         field = match self.variant {
             SearchVariant::Field => field.border_1().border_color(t.line_strong).rounded(px(8.0)).bg(t.control_soft),
             SearchVariant::Menu => field.h(px(28.0)).border_1().border_color(t.line_glass).rounded(px(7.0)).bg(t.frame_field),
-            SearchVariant::Palette => field.h(px(48.0)).border_b_1().border_color(t.line_soft),
+            SearchVariant::Palette => field.h(px(49.0)).border_b_1().border_color(t.line_soft),
             SearchVariant::Library => field.h(px(37.0)).border_b_1().border_color(t.line_soft),
         };
         if focused {

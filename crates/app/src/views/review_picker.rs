@@ -339,7 +339,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
                             }
                             _ => {}
                         }))
-                        .child(SearchField::new("review-search", &search).variant(SearchVariant::Menu)),
+                        .child(SearchField::new("review-search", &search).variant(SearchVariant::Menu).plain()),
                 )
                 .child(list)
                 .into_any_element()

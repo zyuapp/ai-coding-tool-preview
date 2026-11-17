@@ -306,6 +306,9 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         };
         root.open_thread_menu(&menu_id, position, priority, window, cx);
     });
+    // The buttons' fills overlap, so only the one on top shows its hover.
+    let dismiss_hover = _window.use_keyed_state(SharedString::from(format!("{}-dismiss-hover", thread.id)), cx, |_, _| false);
+    let over_dismiss = dismiss && *dismiss_hover.read(cx);
     let more = div()
         .id(SharedString::from(format!("{}-more", thread.id)))
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::PopupButton, format!("More options for {}", thread.title)))
@@ -319,7 +322,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .justify_center()
         .rounded(px(6.0))
         .text_color(t.muted_strong)
-        .hover(|style| style.bg(t.wash).text_color(t.ink))
+        .when(!over_dismiss, |more| more.hover(|style| style.bg(t.wash).text_color(t.ink)))
         .cursor_pointer()
         .child(ink_icon(IconName::Ellipsis, 16.0))
         .child(act_ui::overlay::bounds_probe(&more_box))
@@ -356,6 +359,14 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
                     .cursor_pointer()
                     .child(ink_icon(IconName::Check, 14.0))
                     .tip("Dismiss")
+                    .on_hover(move |hovered, _, cx| {
+                        dismiss_hover.update(cx, |over, cx| {
+                            if *over != *hovered {
+                                *over = *hovered;
+                                cx.notify();
+                            }
+                        })
+                    })
                     .on_click(move |_, _, cx| {
                         cx.stop_propagation();
                         dispatch(AppCommand::TaskDismiss { task_id: Some(dismiss_id.clone()) }, cx);

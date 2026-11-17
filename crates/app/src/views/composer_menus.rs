@@ -9,11 +9,12 @@ use act_core::workspace::location::thread_workspace_id;
 use act_core::AppCommand;
 use crate::effects::window_desktop::AvailableCommand;
 use act_ui::components::chip::Chip;
+use act_ui::components::scrollbar::{gutter, Scrollbar};
 use act_ui::style::{glass, Corners, GlassKind, PaneFill, Raised};
 use act_ui::theme::ActiveTheme;
 use act_ui::tooltip::Tippable;
 use act_ui::IconName;
-use gpui::{deferred, div, prelude::*, px, AnyElement, Context, FontWeight, MouseButton, SharedString};
+use gpui::{deferred, div, prelude::*, px, AnyElement, Context, FontWeight, MouseButton, ScrollHandle, SharedString};
 
 use super::common::icon;
 use super::root::Root;
@@ -43,12 +44,16 @@ pub struct MenuState {
     command_seen: (String, u64),
     selected_thread: usize,
     thread_seen: Option<String>,
+    command_scroll: ScrollHandle,
+    thread_scroll: ScrollHandle,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 enum AppAction {
     Compact,
     Review,
+    /// A dock launcher's command: the `/` menu is the dock registry, so a view added there is reachable here too.
+    Launch(serde_json::Value),
 }
 
 #[derive(Clone)]
@@ -58,6 +63,20 @@ struct Entry {
     argument_hint: String,
     aliases: Vec<String>,
     action: Option<AppAction>,
+}
+
+/// The `/` command that runs a dock launcher, as dock-registry.tsx names them.
+fn launcher_command(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "agents" => "subagents",
+        "diff" => "diff",
+        "automation" => "automation",
+        "browser" => "browser",
+        "simulator" => "simulator",
+        "terminal" => "terminal",
+        "side-chat" => "side",
+        _ => return None,
+    })
 }
 
 /// The `/word` the caret sits in, as its lowercased query and where its `/` starts. A `/` only
@@ -174,6 +193,12 @@ fn open_menu(root: &Root, state: &WorkspaceState) -> Option<Open> {
             if settled.is_some_and(|thread| act_core::reducer::runs::reviewable_session(state, thread)) {
                 actions.push(Entry { name: "review".into(), description: "Review changes in the current project.".into(), argument_hint: String::new(), aliases: Vec::new(), action: Some(AppAction::Review) });
             }
+            if composer.task.is_none() {
+                let launchers = super::dock::launchers(state).into_iter().filter(|launcher| launcher.missing.is_none());
+                actions.extend(launchers.filter_map(|launcher| {
+                    Some(Entry { name: launcher_command(launcher.id)?.into(), description: launcher.description, argument_hint: String::new(), aliases: Vec::new(), action: Some(AppAction::Launch(launcher.command)) })
+                }));
+            }
         }
         let taken: Vec<String> = actions.iter().map(|action| action.name.clone()).collect();
         let skills = composer.menus.commands.list.iter().filter(|command| !taken.contains(&command.name)).map(|command| Entry {
@@ -236,6 +261,7 @@ impl Root {
                 let current = self.composer.menus.command_index(&prompt, entries.len()) as i64;
                 self.composer.menus.selected_command = ((current + step).rem_euclid(len)) as usize;
                 self.composer.menus.command_seen = (prompt, self.composer.menus.commands.version);
+                self.composer.menus.command_scroll.scroll_to_item(self.composer.menus.selected_command);
                 cx.notify();
                 true
             }
@@ -243,8 +269,12 @@ impl Root {
                 let query = prompt[start + 1..start + 1 + query_len].to_lowercase();
                 let len = options.len() as i64;
                 let current = self.composer.menus.thread_index(&query, options.len()) as i64;
-                self.composer.menus.selected_thread = ((current + step).rem_euclid(len)) as usize;
+                let next = ((current + step).rem_euclid(len)) as usize;
+                self.composer.menus.selected_thread = next;
                 self.composer.menus.thread_seen = Some(query);
+                // The line before the first thread from elsewhere is a child of the list too.
+                let ruled = options.iter().position(|option| !option.in_scope).is_some_and(|first| first > 0 && next >= first);
+                self.composer.menus.thread_scroll.scroll_to_item(next + usize::from(ruled));
                 cx.notify();
                 true
             }
@@ -290,6 +320,7 @@ impl Root {
             match action {
                 AppAction::Compact => dispatch(AppCommand::RunCompact { task_id }, cx),
                 AppAction::Review => dispatch(AppCommand::ReviewOpen { task_id }, cx),
+                AppAction::Launch(command) => super::dock::launch(&command, cx),
             }
             return;
         }
@@ -348,6 +379,11 @@ fn option_row(id: SharedString, selected: bool, mark: IconName, mark_tone: Mark,
     row
 }
 
+/// A menu's list, shrinking to the room under the card's cap, with the scrollbar laid over it.
+fn scrolling(list: gpui::Stateful<gpui::Div>, bar: Scrollbar) -> gpui::Div {
+    div().relative().flex().flex_col().flex_shrink().min_h_0().child(list.flex_shrink().min_h_0()).child(bar)
+}
+
 enum Mark {
     App,
     Skill,
@@ -365,7 +401,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &gpui::Window, cx
     let t = &theme.tokens;
     let m = &theme.metrics;
     let mono = theme.typography.mono_family.clone();
-    let viewport_room = px(390.0);
+    let viewport_room = px(390.0f32.min(f32::from(window.viewport_size().height) - 250.0));
     let prompt = root.composer.text().to_string();
     let pane = root.composer.pane_probe.get().map(|bounds| f32::from(bounds.size.width)).unwrap_or(860.0);
     let room = |tag: Option<&str>| pane - 12.0 - 20.0 - 34.0 - 20.0 - tag.map(|tag| super::text_fit::line_width(tag, m.text_badge, window) + 22.0).unwrap_or(0.0);
@@ -373,7 +409,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &gpui::Window, cx
     let card = match open {
         Open::Commands { entries, .. } => {
             let selected = root.composer.menus.command_index(&prompt, entries.len());
-            let mut list = div().id("slash-command-list").flex().flex_col().p(px(6.0)).overflow_y_scroll();
+            let scroll = root.composer.menus.command_scroll.clone();
+            let mut list = div().id("slash-command-list").flex().flex_col().p(px(6.0)).pr(px(6.0) + gutter(&scroll)).overflow_y_scroll().track_scroll(&scroll);
             for (index, entry) in entries.iter().enumerate() {
                 let description = short_description(&entry.description);
                 let full = entry.description.trim().to_string();
@@ -416,7 +453,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &gpui::Window, cx
             if entries.is_empty() {
                 list = list.child(div().py(px(18.0)).px(px(12.0)).text_size(px(m.text_control)).text_color(t.quiet).flex().justify_center().child("No matching commands"));
             }
-            let mut card = card.accessible(gpui::AccessInfo::new(gpui::AccessRole::List, "Slash commands")).child(heading(IconName::Command, "Commands", cx)).child(list);
+            let mut card = card.accessible(gpui::AccessInfo::new(gpui::AccessRole::List, "Slash commands")).child(heading(IconName::Command, "Commands", cx)).child(scrolling(list, Scrollbar::vertical("slash-command-scrollbar", &scroll)));
             if root.composer.menus.commands.loading {
                 card = card.child(div().flex_none().pt(px(8.0)).px(px(13.0)).pb(px(10.0)).border_t_1().border_color(t.line).text_color(t.quiet).text_size(px(m.text_meta)).child("Loading installed skills…"));
             }
@@ -426,7 +463,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &gpui::Window, cx
             let query = prompt[start + 1..start + 1 + query_len].to_lowercase();
             let selected = root.composer.menus.thread_index(&query, options.len());
             let first_elsewhere = options.iter().position(|option| !option.in_scope);
-            let mut list = div().id("thread-mention-list").flex().flex_col().p(px(6.0)).overflow_y_scroll();
+            let scroll = root.composer.menus.thread_scroll.clone();
+            let mut list = div().id("thread-mention-list").flex().flex_col().p(px(6.0)).pr(px(6.0) + gutter(&scroll)).overflow_y_scroll().track_scroll(&scroll);
             for (index, option) in options.iter().enumerate() {
                 let tag_text = (!option.in_scope).then(|| option.project.clone().unwrap_or_else(|| "No project".into()));
                 let fitted = super::text_fit::fit_line(&option.title, room(tag_text.as_deref()), m.text_control, window);
@@ -464,7 +502,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &gpui::Window, cx
             if options.is_empty() {
                 list = list.child(div().py(px(18.0)).px(px(12.0)).text_size(px(m.text_control)).text_color(t.quiet).flex().justify_center().child(if any { "No thread matches" } else { "No other threads yet" }));
             }
-            card.accessible(gpui::AccessInfo::new(gpui::AccessRole::List, "Threads")).child(heading(IconName::MessagesSquare, "Threads", cx)).child(list)
+            card.accessible(gpui::AccessInfo::new(gpui::AccessRole::List, "Threads")).child(heading(IconName::MessagesSquare, "Threads", cx)).child(scrolling(list, Scrollbar::vertical("thread-mention-scrollbar", &scroll)))
         }
     };
     let card = card.on_mouse_down(MouseButton::Left, |_, window, cx| {

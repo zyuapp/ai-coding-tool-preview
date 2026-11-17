@@ -359,6 +359,9 @@ pub struct Menu {
     /// The pointer washes its own row and leaves the keyboard's where it is.
     caret_holds: bool,
     pointer_row: Option<usize>,
+    /// The row the pointer is over, and whether it has been over any row since the menu opened.
+    pointer_over: Option<usize>,
+    pointer_seen: bool,
     /// The pointer has rested on a row, which takes the keyboard from what opened the menu.
     pointer_entered: bool,
 }
@@ -426,6 +429,8 @@ impl Menu {
             top_level: false,
             caret_holds: false,
             pointer_row: None,
+            pointer_over: None,
+            pointer_seen: false,
             pointer_entered: false,
         }
     }
@@ -923,6 +928,12 @@ impl Menu {
     }
 
     fn hover_row(&mut self, index: usize, hovered: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if hovered {
+            self.pointer_over = Some(index);
+            self.pointer_seen = true;
+        } else if self.pointer_over == Some(index) {
+            self.pointer_over = None;
+        }
         if self.caret_holds {
             if hovered || self.pointer_row == Some(index) {
                 self.pointer_row = hovered.then_some(index);
@@ -1019,6 +1030,30 @@ impl Menu {
             .text_size(px(m.text_menu))
             .cursor(CursorStyle::Arrow)
             .child(bounds_probe(&self.rows[index]));
+        // Rows that scroll under a still pointer take its hover once painted, as `:hover` follows layout.
+        if self.pointer_seen {
+            let held = self.pointer_over == Some(index);
+            let menu = cx.weak_entity();
+            let settle = gpui::canvas(
+                |bounds, window, _| window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal),
+                move |_, hitbox, window, cx| {
+                    let hovered = hitbox.is_hovered(window);
+                    if hovered == held {
+                        return;
+                    }
+                    window.defer(cx, move |window, cx| {
+                        let _ = menu.update(cx, |menu, cx| {
+                            if (menu.pointer_over == Some(index)) != hovered {
+                                menu.hover_row(index, hovered, window, cx);
+                            }
+                        });
+                    });
+                },
+            )
+            .absolute()
+            .size_full();
+            row = row.child(settle);
+        }
         if washed {
             let pick = if item.danger { t.glass_pick_danger } else { t.glass_pick };
             row = row.pane(pick).rim(t.glass_rim, Corners::Radius(6.0));

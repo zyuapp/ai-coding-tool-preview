@@ -263,14 +263,23 @@ impl Root {
         cx.notify();
     }
 
-    /// The field a name is typed in, sized like the row or heading it replaces.
+    /// The field a name is typed in, sized like the row it replaces.
     pub fn rename_field(&mut self, _thread_id: &str, cx: &mut Context<Self>) -> AnyElement {
+        self.rename_box(false, cx)
+    }
+
+    /// The field the topbar's title is typed in, in the heading's own font.
+    pub fn heading_rename_field(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        self.rename_box(true, cx)
+    }
+
+    fn rename_box(&mut self, heading: bool, cx: &mut Context<Self>) -> AnyElement {
         let t = cx.theme().tokens.clone();
         let Some((input, _)) = &self.rename_input else { return div().into_any_element() };
         div()
             .flex_1()
             .min_w(px(120.0))
-            .h(px(26.0))
+            .h(px(if heading { 28.0 } else { 26.0 }))
             .flex()
             .items_center()
             .px(px(6.0))
@@ -280,7 +289,7 @@ impl Root {
             .when(self.rename_invalid, |field| field.shadow(vec![gpui::BoxShadow { color: t.danger.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(1.0) }]))
             .bg(t.surface_input)
             .text_color(t.ink)
-            .text_size(px(14.0))
+            .map(|field| if heading { act_ui::style::letter_spacing(field, 0.0) } else { field.text_size(px(14.0)) })
             .on_key_down(cx.listener(|root, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
                     root.rename_input = None;

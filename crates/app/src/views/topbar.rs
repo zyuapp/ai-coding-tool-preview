@@ -8,7 +8,7 @@ use act_core::AppCommand;
 use act_ui::components::button::{Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize};
 use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
 use act_ui::overlay::{bounds_cell, bounds_probe, Align, BoundsCell, Placement};
-use act_ui::style::{Corners, PaneFill, Raised};
+use act_ui::style::{Corners, Raised};
 use act_ui::style::Backdrop;
 use act_ui::theme::ActiveTheme;
 use act_ui::tooltip::Tippable;
@@ -22,6 +22,9 @@ use act_core::domain::platform::ComputerStatus;
 use super::root::Root;
 use super::sidebar_row::thread_menu_entries;
 use crate::workspace::dispatch;
+
+/// The heading's `letter-spacing`, in em.
+const HEADING_TRACKING: f32 = -0.018;
 
 pub struct TopbarState {
     pub menu_probe: BoundsCell,
@@ -59,10 +62,17 @@ fn control(id: &'static str, glyph: IconName, label: impl Into<SharedString>, ti
         .child(act_ui::Icon::new(glyph).size(px(18.0)))
         .tip(tip);
     if pressed {
-        base.border_1().border_color(t.glass_edge).pane(t.glass_clear).glass_backdrop(&t).shadow(vec![gpui::BoxShadow { color: act_ui::color::alpha(gpui::black().into(), 0.12).into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(2.0), spread_radius: px(0.0) }]).rim(t.glass_rim, Corners::Full)
+        lifted(base, &t)
     } else {
         base.hover(|style| style.bg(t.surface_hover).text_color(t.ink_dim))
     }
+}
+
+/// A pressed key: a clear pane lifted off the bar, edged in light inside a dark hairline.
+fn lifted(key: gpui::Stateful<gpui::Div>, t: &act_ui::theme::Tokens) -> gpui::Stateful<gpui::Div> {
+    let outline = gpui::BoxShadow { color: t.glass_float_outline.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(0.5) };
+    let drop = gpui::BoxShadow { color: act_ui::color::alpha(gpui::black().into(), 0.12).into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(2.0), spread_radius: px(0.0) };
+    key.border_1().border_color(t.glass_edge).bg(t.glass_clear.background().tiled_from_padding_box()).glass_backdrop(t).shadow(vec![outline, drop]).rim(t.glass_rim, Corners::Full)
 }
 
 pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: &mut Context<Root>) -> gpui::AnyElement {
@@ -105,7 +115,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         None if folder.is_empty() => "New chat".into(),
         None => "New thread".into(),
     };
-    let mut title_line = div().accessible(gpui::AccessInfo::new(gpui::AccessRole::Heading, heading_name)).min_w_0().flex().items_center().gap(px(6.0)).text_size(px(m.text_heading)).font_weight(FontWeight(590.0)).letter_spacing(-0.018).text_color(t.ink_soft).whitespace_nowrap();
+    let mut title_line = div().accessible(gpui::AccessInfo::new(gpui::AccessRole::Heading, heading_name)).min_w_0().max_w(px(720.0f32.min(0.58 * f32::from(window.viewport_size().width)))).flex().items_center().gap(px(6.0)).text_size(px(m.text_heading)).font_weight(FontWeight(590.0)).letter_spacing(HEADING_TRACKING).text_color(t.ink_soft).whitespace_nowrap();
     if let Some(host) = host {
         let offline = host.link.status != ComputerStatus::Connected;
         let reconnecting = host.link.status == ComputerStatus::Connecting;
@@ -143,16 +153,16 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             None => folder.clone(),
         };
         title_line = title_line
-            .child(div().id("heading-project").accessible(gpui::AccessInfo::new(gpui::AccessRole::Label, folder_label.clone())).flex_shrink().min_w(px(40.0)).ellipsis().text_color(t.muted).font_weight(FontWeight(500.0)).child(folder_label.clone()).tip(tip))
+            .child(div().id("heading-project").accessible(gpui::AccessInfo::new(gpui::AccessRole::Label, folder_label.clone())).flex_shrink().min_w(px(heading_width(&folder_label, 500.0, true, m.text_heading, window).min(heading_width("0", 500.0, false, m.text_heading, window) * 6.0))).ellipsis().text_color(t.muted).font_weight(FontWeight(500.0)).child(folder_label.clone()).tip(tip))
             .child(div().flex_none().mr(px(2.0)).text_color(t.quiet).font_weight(FontWeight(400.0)).child("/"));
     }
     match current {
         Some(thread) if root.renaming_heading.as_deref() == Some(thread.id.as_str()) => {
             // Sized to its text, as `field-sizing: content` does, from 12ch up to the line's width.
             let text = root.rename_input.as_ref().map(|(input, _)| input.read(cx).text().to_string()).unwrap_or_default();
-            let fits = super::text_fit::line_width(&text, 14.0, window) + 14.0;
-            let least = super::text_fit::line_width("0", 14.0, window) * 12.0 + 14.0;
-            title_line = title_line.child(no_drag_shrink(div().flex().w(px(fits.max(least) + 2.0)).max_w_full().child(root.rename_field(&thread.id.clone(), cx))));
+            let fits = heading_width(&text, 590.0, false, m.text_heading, window) + 14.0;
+            let least = heading_width("0", 590.0, false, m.text_heading, window) * 12.0;
+            title_line = title_line.child(no_drag_shrink(div().flex().w(px(fits.max(least))).max_w_full().child(root.heading_rename_field(cx))));
         }
         Some(thread) => {
             let id = thread.id.clone();
@@ -162,7 +172,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .accessible(gpui::AccessInfo::new(gpui::AccessRole::Button, thread.title.clone()))
                     .group("heading-thread")
                     .flex_shrink()
-                    .min_w(px(40.0))
+                    .min_w(px(heading_width("0", 590.0, false, m.text_heading, window) * 4.0))
                     .h(px(28.0))
                     .px(px(5.0))
                     .mx(px(-5.0))
@@ -174,7 +184,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .transition(gpui::Transition::ease(120).only(&[gpui::TransitionProperty::Background, gpui::TransitionProperty::Color]))
                     .hover(|style| style.bg(t.surface_hover))
                     .child(div().id("heading-thread-title").min_w_0().ellipsis().child(thread.title.clone()).tip_overflow(thread.title.clone()))
-                    .when(width > 480.0, |title| title.child(div().id("heading-thread-pencil").flex_none().transition(gpui::Transition::ease(120)).text_color(t.quiet_soft).group_hover("heading-thread", |style| style.text_color(t.muted_strong)).child(act_ui::Icon::new(IconName::Pencil).size(px(14.0)))))
+                    .when(width > 480.0, |title| title.child(div().id("heading-thread-pencil").flex_none().transition(gpui::Transition::ease(120)).text_color(t.quiet_soft).group_hover("heading-thread", |style| style.text_color(t.muted_strong)).child(act_ui::Icon::new(IconName::Pencil).size(px(14.0))).tip("Rename")))
                     .on_click(cx.listener(move |root, _, _, cx| {
                         root.renaming_heading = Some(id.clone());
                         root.start_rename(&id, cx);
@@ -206,7 +216,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 .when(open, |button| button.bg(t.surface_hover))
                 .text_color(if open { t.muted_strong } else { t.muted })
                 .hover(|style| style.bg(t.surface_hover).text_color(t.muted_strong))
-                .child(act_ui::Icon::new(IconName::Ellipsis).size(px(18.0)))
+                .focus_visible(|style| style.bg(t.surface_hover).text_color(t.muted_strong))
+                .child(div().relative().top(px(1.0)).child(act_ui::Icon::new(IconName::Ellipsis).size(px(18.0))))
                 .child(bounds_probe(&probe))
                 .tip("Thread actions")
                 .on_mouse_down(gpui::MouseButton::Right, cx.listener(move |root, _, window, cx| {
@@ -234,6 +245,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             .flex_shrink()
             .max_w(px(720.0))
             .h(px(28.0))
+            .border_1()
+            .border_color(gpui::transparent_black())
             .when(compact, |button| button.w(px(28.0)).flex_none())
             .flex()
             .items_center()
@@ -310,6 +323,21 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .into_any_element()
 }
 
+/// How wide `text` draws at `weight`, `tracked` by the heading's letter-spacing.
+fn heading_width(text: &str, weight: f32, tracked: bool, size: f32, window: &Window) -> f32 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    let style = window.text_style();
+    let mut font = style.font();
+    font.weight = FontWeight(weight);
+    if tracked {
+        font.features = gpui::FontFeatures::tracking(HEADING_TRACKING);
+    }
+    let run = gpui::TextRun { len: text.len(), font, color: style.color, background_color: None, underline: None, strikethrough: None };
+    f32::from(window.text_system().shape_line(SharedString::from(text.to_string()), px(size), &[run], None).width)
+}
+
 /// What zen mode leaves of the topbar: a strip to drag the window by, and the way back out.
 fn zen_titlebar(state: &WorkspaceState, cx: &mut Context<Root>) -> impl IntoElement {
     let m = cx.theme().metrics.clone();
@@ -372,7 +400,7 @@ fn open_in(root: &mut Root, state: &WorkspaceState, cx: &mut Context<Root>) -> i
         .cursor_pointer()
         .transition(act_ui::style::touch())
         .when(open, |button| {
-            button.border_1().border_color(t.glass_edge).pane(t.glass_clear).glass_backdrop(&t).shadow(vec![gpui::BoxShadow { color: act_ui::color::alpha(gpui::black().into(), 0.12).into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(2.0), spread_radius: px(0.0) }]).rim(t.glass_rim, Corners::Full)
+            lifted(button, &t)
         })
         .text_color(if open { t.ink } else { t.quiet_strong })
         .when(blocked, |button| button.opacity(t.disabled_opacity))
@@ -389,9 +417,9 @@ fn open_in(root: &mut Root, state: &WorkspaceState, cx: &mut Context<Root>) -> i
                 return;
             }
             dispatch(AppCommand::AppList, cx);
-            // `.open-in-popover` sits 42px under the 32px trigger's top, 10 below it.
+            // `.open-in-popover` sits 42px under the 34px trigger's top, 8 below it.
             let mut anchor = probe.get().unwrap_or_default();
-            anchor.size.height += px(10.0 - act_ui::overlay::ANCHOR_GAP);
+            anchor.size.height += px(8.0 - act_ui::overlay::ANCHOR_GAP);
             let entries = open_in_entries(apps.as_deref());
             let menu = Menu::build(entries, Placement::Anchor { anchor, align: Align::End }, window, cx, |menu| menu.min_width(px(208.0)).exempt(&probe).empty(if apps.is_some() { "No application found" } else { "Looking for applications…" }));
             root.menus.show("workspace:open-in", menu, cx);

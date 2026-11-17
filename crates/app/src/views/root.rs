@@ -518,7 +518,7 @@ impl Render for Root {
         }
         if sidebar_floats && !behind_settings {
             if state.sidebar_open && !state.zen {
-                shell = shell.child(sidebar::backdrop(cx));
+                shell = shell.child(sidebar::backdrop(self, &state, &shown, window, cx));
             }
             shell = shell.child(sidebar::slot(self, &state, window).child(sidebar_part));
         }

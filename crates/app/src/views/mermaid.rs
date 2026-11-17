@@ -515,12 +515,15 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
                 .child(
                     // Drawn clear rather than left out, so the keyboard still reaches it.
                     div().id(gpui::ElementId::NamedChild(Box::new(id.clone()), "expand-slot".into())).on_hover(on_hover(1)).absolute().top(px(6.0)).right(px(38.0)).when(!expand_focus.is_focused(window), |button| button.opacity(0.0).group_hover(group, |style| style.opacity(1.0))).child(
-                        act_ui::components::button::IconButton::new(gpui::ElementId::NamedChild(Box::new(id), "expand".into()), act_ui::IconName::Maximize2, "Open the diagram at full size")
-                            .track_focus(&expand_focus)
-                            .variant(act_ui::components::button::IconButtonVariant::Glass)
-                            .icon_size(14.0)
-                            .tip("Full size")
-                            .on_click(open),
+                        super::timeline_row::block_tile(
+                            act_ui::components::button::IconButton::new(gpui::ElementId::NamedChild(Box::new(id), "expand".into()), act_ui::IconName::Maximize2, "Open the diagram at full size")
+                                .track_focus(&expand_focus)
+                                .tip("Full size")
+                                .on_click(open),
+                            act_ui::IconName::Maximize2,
+                            t.sunken,
+                            cx,
+                        ),
                     ),
                 );
         }

@@ -479,6 +479,22 @@ fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) 
                 .detach();
         })
         .glyph(glyph);
+    // The edge at rest, once its row or block is under the pointer; under the pointer itself it is bright.
+    let edges = match (&show, copied) {
+        (_, true) => (t.success_line, t.success_line),
+        (CopyShow::Always, _) => (t.line_strong, t.line_strong),
+        (CopyShow::Row(..), _) => (clear, t.line_glass),
+        (CopyShow::Block(_), _) => (clear, t.line_strong),
+        (CopyShow::Hover, _) => (clear, t.line_bright),
+    };
+    let (group, edges) = if lifted { (None, (edges.1, edges.1)) } else { (group, edges) };
+    glass_tile(button, side, ground, group, edges, !copied, &t)
+}
+
+/// A tile of glass around `button` (`.icon-btn[data-variant=glass]`): with a `group`, hidden with
+/// its edge `rest` until the group is under the pointer, then edged `raised`; bright under the
+/// pointer itself when `lights`.
+fn glass_tile(button: IconButton, side: f32, ground: Option<gpui::Rgba>, group: Option<SharedString>, (rest_edge, raised_edge): (gpui::Rgba, gpui::Rgba), lights: bool, t: &act_ui::theme::Tokens) -> Div {
     let outline = act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow();
     let layer = || div().absolute().inset_0().rounded(px(8.0));
     let pane = layer()
@@ -487,26 +503,30 @@ fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) 
         // The sheen fills the padding box and repeats into the border, as CSS lays it out.
         .child(layer().border_1().border_color(gpui::transparent_black()).bg(t.glass_clear.background().tiled_from_padding_box()))
         // CSS draws the inset rim inside the 1px border.
-        .child(div().absolute().inset(px(1.0)).rounded(px(7.0)).float_rim(&t, Corners::Radius(7.0)));
+        .child(div().absolute().inset(px(1.0)).rounded(px(7.0)).float_rim(t, Corners::Radius(7.0)));
     let pane = match &group {
-        Some(group) if !lifted => pane.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)),
-        _ => pane,
+        Some(group) => pane.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)),
+        None => pane,
     };
-    // The edge at rest, once its row or block is under the pointer; under the pointer itself it is bright.
-    let (rest_edge, raised_edge) = match (&show, copied) {
-        (_, true) => (t.success_line, t.success_line),
-        (CopyShow::Always, _) => (t.line_strong, t.line_strong),
-        (CopyShow::Row(..), _) => (clear, t.line_glass),
-        (CopyShow::Block(_), _) => (clear, t.line_strong),
-        (CopyShow::Hover, _) => (clear, t.line_bright),
-    };
+    let bright = t.line_bright;
     let edge = layer()
         .border_1()
-        .border_color(if lifted { raised_edge } else { rest_edge })
+        .border_color(rest_edge)
         .when_some(group, |edge, group| edge.group_hover(group, move |style| style.border_color(raised_edge)))
-        .when(!copied, |edge| edge.hover(|style| style.border_color(t.line_bright)));
+        .when(lights, |edge| edge.hover(move |style| style.border_color(bright)));
     let inset = (side - 28.0) / 2.0;
     div().relative().flex_none().size(px(side)).group(COPY_TILE).child(pane).child(div().absolute().top(px(inset)).left(px(inset)).child(button)).child(edge)
+}
+
+/// A block's corner control beside its copy button, drawn as that button is over `ground`: its
+/// glyph dim, and soft with a bright edge under the pointer.
+pub fn block_tile(button: IconButton, icon: IconName, ground: gpui::Rgba, cx: &App) -> Div {
+    let t = cx.theme().tokens.clone();
+    let soft = t.ink_soft;
+    let clear = gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+    let glyph = div().text_color(t.ink_dim).child(div().group_hover(COPY_TILE, move |style| style.text_color(soft)).child(ink_icon(icon, 14.0)));
+    let button = button.icon_size(14.0).hover_look(clear, clear, soft).glyph(glyph);
+    glass_tile(button, 28.0, Some(ground), None, (t.line_strong, t.line_strong), true, &t)
 }
 
 /// A block's copy button: hidden until the block is under the pointer, or holding focus or a

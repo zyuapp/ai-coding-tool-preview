@@ -161,6 +161,8 @@ pub struct LayoutCache {
     key: Option<u64>,
     pieces: Vec<Piece>,
     breaks: Vec<(usize, bool)>,
+    /// Per box, whether it ends the line a break at its offset closes rather than starting the next.
+    glued: Vec<bool>,
     results: Vec<(WrapMode, Rc<Lines>)>,
     painted: Option<Painted>,
 }
@@ -244,6 +246,10 @@ impl LayoutCache {
             }
             breaks
         };
+        self.glued = text.boxes.iter().map(|item| item.glued_before()).collect();
+        if spec.wrap {
+            glyph_breaks(text, spec, &mut self.breaks, &mut self.glued);
+        }
     }
 
     fn piece_at(&self, index: usize) -> Option<usize> {
@@ -289,7 +295,7 @@ impl LayoutCache {
             .boxes
             .iter()
             .enumerate()
-            .filter(|(_, item)| Self::box_in(item.at, item.glued_before(), &range, text.text.len()))
+            .filter(|(index, item)| Self::box_in(item.at, self.glued.get(*index).copied().unwrap_or_else(|| item.glued_before()), &range, text.text.len()))
             .map(|(index, _)| spec.box_widths.get(index).copied().unwrap_or_default())
             .fold(px(0.), |sum, width| sum + width);
         self.text_width(range) + boxes
@@ -391,7 +397,7 @@ impl LayoutCache {
         let boxes: Vec<usize> = (0..text.boxes.len())
             .filter(|index| {
                 let item = &text.boxes[*index];
-                Self::box_in(item.at, item.glued_before(), &range, source.len())
+                Self::box_in(item.at, self.glued.get(*index).copied().unwrap_or_else(|| item.glued_before()), &range, source.len())
             })
             .collect();
         let mut items = Vec::new();
@@ -1410,6 +1416,26 @@ pub(crate) fn line_breaks(text: &str) -> Vec<(usize, bool)> {
     found
 }
 
+/// A link's glyph is an atomic inline, so a line may also wrap after it, keeping it with what
+/// comes before (`(📄` then `name)`), unless the text there already wraps before it or its next
+/// character may not start a line.
+fn glyph_breaks(text: &InlineText, spec: &TextSpec, breaks: &mut Vec<(usize, bool)>, glued: &mut [bool]) {
+    for (index, item) in text.boxes.iter().enumerate() {
+        let drawn = spec.box_widths.get(index).is_some_and(|width| *width > px(0.));
+        if !matches!(item.kind, BoxKind::Glyph(_)) || !drawn || item.at == 0 || item.at >= text.text.len() {
+            continue;
+        }
+        let Err(slot) = breaks.binary_search_by_key(&item.at, |(at, _)| *at) else { continue };
+        let next = text.text[item.at..].chars().next().unwrap_or(' ');
+        let before = text.text[..item.at].chars().next_back().unwrap_or(' ');
+        if breakable_space(before) || breakable_space(next) || matches!(next, ')' | ',' | '.' | ':' | ';' | '!' | '?' | ']' | '}') {
+            continue;
+        }
+        breaks.insert(slot, (item.at, false));
+        glued[index] = true;
+    }
+}
+
 fn breakable_space(ch: char) -> bool {
     matches!(ch, ' ' | '\n' | '\t')
 }
@@ -1439,7 +1465,9 @@ fn ascii_break(before: char, last: char, current: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::line_breaks;
+    use super::{glyph_breaks, line_breaks, TextSpec};
+    use crate::parse::{BoxKind, GlyphKind, InlineBox, InlineText};
+    use gpui::px;
 
     fn soft(text: &str) -> Vec<&str> {
         let mut start = 0;
@@ -1457,5 +1485,18 @@ mod tests {
         assert_eq!(soft(r"real weight.\n\nRollback: the"), ["real ", r"weight.\n\nRollback: ", "the"]);
         assert_eq!(soft("v0.18.0-beta.2 n=-1 ab-12"), ["v0.18.0-", "beta.2 ", "n=-1 ", "ab-", "12"]);
         assert_eq!(soft("call(x) what?yes"), ["call(x) ", "what?", "yes"]);
+    }
+
+    #[test]
+    fn wraps_after_a_link_glyph_that_follows_a_bracket() {
+        let source = "at runtime (catalog.mts) or (,x)";
+        let glyph = |at| InlineBox { at, kind: BoxKind::Glyph(GlyphKind::File), link: Some(0) };
+        let text = InlineText { text: source.into(), boxes: vec![glyph(3), glyph(12), glyph(29)], ..Default::default() };
+        let spec = TextSpec { fonts: Vec::new(), box_widths: vec![px(14.); 3], strut: gpui::font("x"), size: px(17.), line_height: px(29.), wrap: true, align: Default::default() };
+        let mut breaks = line_breaks(source);
+        let mut glued = vec![false; 3];
+        glyph_breaks(&text, &spec, &mut breaks, &mut glued);
+        assert_eq!(glued, [false, true, false]);
+        assert!(breaks.contains(&(12, false)));
     }
 }

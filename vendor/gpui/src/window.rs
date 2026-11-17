@@ -3927,6 +3927,14 @@ impl Window {
         self.next_frame.scene.replace_under_backdrops(self.transformed(bounds).scale(scale_factor));
     }
 
+    /// Makes backdrop filters painted after this and over `bounds` read the region
+    /// `hide_from_backdrops` hid through `color`, as through a veil drawn over it.
+    pub fn tint_hidden_backdrops(&mut self, bounds: Bounds<Pixels>, color: crate::Rgba) {
+        self.invalidator.debug_assert_paint();
+        let scale_factor = self.scale_factor();
+        self.next_frame.scene.tint_hidden_backdrops(self.transformed(bounds).scale(scale_factor), color);
+    }
+
     /// Keeps `bounds` visible to backdrop filters inside a region `hide_from_backdrops` hid, for
     /// something drawn over that region rather than in it.
     pub fn show_to_backdrops(&mut self, bounds: Bounds<Pixels>) {

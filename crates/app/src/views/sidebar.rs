@@ -860,6 +860,7 @@ const DOCK_VEIL_BLUR: f32 = 0.5;
 /// panel beside it only partly.
 pub fn backdrop(root: &Root, state: &WorkspaceState, shown: &WorkspaceState, window: &Window, cx: &mut Context<Root>) -> impl IntoElement {
     let t = cx.theme().tokens.clone();
+    let veil = t.veil;
     let gap = cx.theme().metrics.frame_gap;
     let viewport = f32::from(window.viewport_size().width);
     let dock = act_core::state::front_dock(shown).1;
@@ -887,6 +888,8 @@ pub fn backdrop(root: &Root, state: &WorkspaceState, shown: &WorkspaceState, win
                 .child(div().absolute().size_full().opacity(DOCK_VEIL_BLUR).veil_backdrop(&t))
                 .child(div().absolute().size_full().bg(t.veil))
         }))
+        // Glass over the veil frosts the transcript as the veil dims it.
+        .child(gpui::canvas(|_, _, _| {}, move |bounds, _, window, _| window.tint_hidden_backdrops(bounds, veil)).absolute().size_full())
         .on_click(|_, _, cx| dispatch(AppCommand::SetSidebarOpen { open: false }, cx))
 }
 

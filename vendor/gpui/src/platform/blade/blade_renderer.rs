@@ -98,6 +98,15 @@ impl BackdropScene {
         if let Some((hidden, color)) = scene.backdrop_hidden.filter(|(hidden, _)| !covers(&blur.bounds, hidden)) {
             this.hidden = rect(hidden);
             this.hidden_color = [color.r * color.a, color.g * color.a, color.b * color.a, color.a];
+            if let Some(tint) = scene.hidden_tint_for(blur.order, &blur.bounds) {
+                let under = this.hidden_color;
+                this.hidden_color = [
+                    tint.r * tint.a + under[0] * (1. - tint.a),
+                    tint.g * tint.a + under[1] * (1. - tint.a),
+                    tint.b * tint.a + under[2] * (1. - tint.a),
+                    tint.a + under[3] * (1. - tint.a),
+                ];
+            }
         }
         // A float shown to backdrops does not see through itself: its own frost still reads the
         // hidden region as hidden.

@@ -40,6 +40,9 @@ pub(crate) struct Scene {
     /// A region whose content a backdrop filter replaces with its filtered copy rather than
     /// drawing that copy over it.
     pub(crate) backdrop_replaced: Option<Bounds<ScaledPixels>>,
+    /// A translucent fill laid over the hidden region, which backdrop filters drawn after it and
+    /// over it read the region through.
+    pub(crate) backdrop_tint: Option<(DrawOrder, Bounds<ScaledPixels>, crate::Rgba)>,
 }
 
 impl Scene {
@@ -58,6 +61,7 @@ impl Scene {
         self.backdrop_hidden = None;
         self.backdrop_holes.clear();
         self.backdrop_replaced = None;
+        self.backdrop_tint = None;
     }
 
     pub fn len(&self) -> usize {
@@ -158,6 +162,18 @@ impl Scene {
         self.paint_operations.push(PaintOperation::ReplaceUnderBackdrops(bounds));
     }
 
+    pub(crate) fn tint_hidden_backdrops(&mut self, bounds: Bounds<ScaledPixels>, color: crate::Rgba) {
+        // Blurs inserted later over these bounds take a higher order than this one.
+        let order = self.primitive_bounds.insert(bounds);
+        self.backdrop_tint = Some((order, bounds, color));
+        self.paint_operations.push(PaintOperation::TintHiddenBackdrops(bounds, color));
+    }
+
+    /// The color a backdrop filter reads over the hidden region through, if it was drawn over the tint.
+    pub(crate) fn hidden_tint_for(&self, order: DrawOrder, bounds: &Bounds<ScaledPixels>) -> Option<crate::Rgba> {
+        self.backdrop_tint.filter(|(tint, tinted, _)| order > *tint && tinted.intersects(bounds)).map(|(_, _, color)| color)
+    }
+
     pub(crate) fn show_to_backdrops(&mut self, bounds: Bounds<ScaledPixels>) {
         self.backdrop_holes.push(bounds);
         self.paint_operations.push(PaintOperation::ShowToBackdrops(bounds));
@@ -172,6 +188,7 @@ impl Scene {
                 PaintOperation::HideFromBackdrops(bounds, color) => self.hide_from_backdrops(*bounds, *color),
                 PaintOperation::ShowToBackdrops(bounds) => self.show_to_backdrops(*bounds),
                 PaintOperation::ReplaceUnderBackdrops(bounds) => self.replace_under_backdrops(*bounds),
+                PaintOperation::TintHiddenBackdrops(bounds, color) => self.tint_hidden_backdrops(*bounds, *color),
             }
         }
     }
@@ -253,6 +270,7 @@ pub(crate) enum PaintOperation {
     HideFromBackdrops(Bounds<ScaledPixels>, crate::Rgba),
     ShowToBackdrops(Bounds<ScaledPixels>),
     ReplaceUnderBackdrops(Bounds<ScaledPixels>),
+    TintHiddenBackdrops(Bounds<ScaledPixels>, crate::Rgba),
 }
 
 #[derive(Clone)]
@@ -1088,5 +1106,19 @@ mod tests {
             fade: FadeMask::default(),
         });
         assert!(scene.quads[0].order > scene.shadows[0].order);
+    }
+
+    #[test]
+    fn only_blurs_drawn_over_the_tint_read_through_it() {
+        let mut scene = Scene::default();
+        let blur = |bounds| BackdropBlur { bounds, content_mask: ContentMask { bounds: rect(0., 0., 1000., 1000.) }, ..BackdropBlur::default() };
+        scene.insert_primitive(blur(rect(300., 500., 400., 100.)));
+        let veil = crate::Rgba { r: 0., g: 0., b: 0., a: 0.3 };
+        scene.tint_hidden_backdrops(rect(0., 0., 1000., 1000.), veil);
+        scene.insert_primitive(blur(rect(0., 0., 280., 1000.)));
+        let under = &scene.backdrop_blurs[0];
+        let over = &scene.backdrop_blurs[1];
+        assert!(scene.hidden_tint_for(under.order, &under.bounds).is_none());
+        assert!(scene.hidden_tint_for(over.order, &over.bounds).is_some());
     }
 }

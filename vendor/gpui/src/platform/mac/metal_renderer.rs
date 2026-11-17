@@ -628,6 +628,7 @@ impl MetalRenderer {
                                 command_buffer,
                                 // A veil over the whole region, such as a floating sidebar's, still frosts it.
                                 scene.backdrop_hidden.filter(|(hidden, _)| !(blur.bounds.contains(&hidden.origin) && blur.bounds.contains(&hidden.bottom_right()))),
+                                scene.hidden_tint_for(blur.order, &blur.bounds),
                                 &holes,
                             );
                         command_encoder = new_command_encoder(
@@ -1419,6 +1420,7 @@ impl MetalRenderer {
         source: &metal::TextureRef,
         command_buffer: &metal::CommandBufferRef,
         hidden: Option<(Bounds<ScaledPixels>, crate::Rgba)>,
+        tint: Option<crate::Rgba>,
         holes: &[Bounds<ScaledPixels>],
     ) -> BackdropBlurred {
         let target_width = (region.size[0] / region.scale).ceil();
@@ -1442,6 +1444,13 @@ impl MetalRenderer {
                         drawn[channel] += ground[channel] * (1. - a);
                     }
                     drawn[3] = 1.;
+                }
+                if let Some(tint) = tint {
+                    let tint = self.display_rgba(tint);
+                    for channel in 0..3 {
+                        drawn[channel] = [tint.r, tint.g, tint.b][channel] * tint.a + drawn[channel] * (1. - tint.a);
+                    }
+                    drawn[3] = tint.a + drawn[3] * (1. - tint.a);
                 }
                 (
                     [

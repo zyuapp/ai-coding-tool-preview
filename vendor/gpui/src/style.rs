@@ -657,6 +657,11 @@ pub struct TextStyle {
     pub text_indent: Pixels,
 }
 
+/// A length as Chromium lays it out: floored to its 1/64px layout unit.
+fn layout_unit(length: Pixels) -> Pixels {
+    Pixels((length.0 * 64.).floor() / 64.)
+}
+
 /// CSS `line-height: normal`, resolved from the font's metrics (`TextStyle::resolve_line_height`).
 pub fn line_height_normal() -> DefiniteLength {
     DefiniteLength::Fraction(f32::INFINITY)
@@ -738,7 +743,7 @@ impl TextStyle {
         if self.line_height == line_height_normal() {
             return self.font_size.to_pixels(rem_size).round();
         }
-        self.line_height.to_pixels(self.font_size, rem_size)
+        layout_unit(self.line_height.to_pixels(self.font_size, rem_size))
     }
 
     /// The line height in pixels at `font_size`. `line_height_normal()` takes the primary font's
@@ -752,7 +757,7 @@ impl TextStyle {
         text_system: &crate::TextSystem,
     ) -> Pixels {
         if self.line_height != line_height_normal() {
-            return self.line_height.to_pixels(font_size.into(), rem_size);
+            return layout_unit(self.line_height.to_pixels(font_size.into(), rem_size));
         }
         let scaled = font_size * scale_factor;
         let font_id = text_system.resolve_font(&self.font());

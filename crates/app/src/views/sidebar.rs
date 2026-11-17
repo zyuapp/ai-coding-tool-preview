@@ -1126,7 +1126,11 @@ fn project_filter(root: &mut Root, state: &WorkspaceState, sidebar: &SidebarMode
                 .cursor_pointer()
                 .child(ink_icon(IconName::X, 14.0))
                 .tip("All projects")
-                .on_click(|_, _, cx| dispatch(AppCommand::SetActivityProject { project_id: None }, cx)),
+                .on_click(move |_, window, cx| {
+                    dispatch(AppCommand::SetActivityProject { project_id: None }, cx);
+                    // The clear button goes away; the trigger takes the keyboard.
+                    window.focus(&focus);
+                }),
         );
     }
     let _ = state;

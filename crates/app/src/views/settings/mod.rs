@@ -28,6 +28,7 @@ use act_ui::components::button::Button;
 use act_ui::components::field::SearchField;
 use act_ui::input::{InputEvent, TextInput};
 use act_ui::overlay::{bounds_cell, bounds_probe, BoundsCell};
+use act_ui::style::PaneFill;
 use act_ui::theme::{ActiveTheme, Tokens};
 use act_ui::IconName;
 use gpui::{
@@ -646,13 +647,13 @@ impl Row {
             line = line.child(div().w(px(22.0)).flex_none().flex().justify_center().child(lead));
         }
         line = line.child(text);
-        if !self.actions.is_empty() {
-            line = line.child(div().flex_none().min_w(px(self.action_width)).flex().items_center().justify_end().gap(px(self.action_gap)).children(self.actions));
-        }
+        // The action column holds its width even when empty; a compact row's is only as wide as what it holds.
+        let action_width = if self.compact { 0.0 } else { self.action_width };
+        line = line.child(div().flex_none().min_w(px(action_width)).flex().items_center().justify_end().gap(px(self.action_gap)).children(self.actions));
         let border: gpui::Hsla = if self.under_capture { gpui::transparent_black() } else { t.line.into() };
         let mut row = div().flex().flex_col().border_t_1().border_color(border).py(px(if self.compact { 13.0 } else { 19.0 })).child(line);
         if self.capturing {
-            row = rimmed(row, t, 8.0).mx(px(-12.0)).px(px(12.0)).border_color(gpui::transparent_black()).bg(t.accent_surface);
+            row = rimmed(row, t, 8.0).mx(px(-12.0)).px(px(12.0)).border_color(gpui::transparent_black()).pane(act_ui::theme::Pane::sheened(t.accent_surface));
         }
         if let Some(footer) = self.footer {
             row = row.child(div().when(has_lead, |footer| footer.pl(px(35.0))).child(footer));

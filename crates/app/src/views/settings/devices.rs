@@ -460,7 +460,7 @@ fn computers_section(root: &mut Root, state: &WorkspaceState, marks: &Marks, win
                 .flex_wrap()
                 .items_end()
                 .gap(px(8.0))
-                .child(div().flex().flex_col().gap(px(7.0)).child(div().text_color(t.ink).text_size(px(17.0)).child("Or pair by address")).child(div().w(px(232.0)).child(TextField::new("computer-address", &address_input).mono(true).invalid(root.settings.devices.address_invalid))))
+                .child(div().flex().flex_col().gap(px(7.0)).child(div().text_color(t.ink).text_size(px(17.0)).child("Or pair by address")).child(div().w(px(236.0)).child(TextField::new("computer-address", &address_input).mono(true).invalid(root.settings.devices.address_invalid))))
                 .child(Button::new("computer-address-pair", "Pair").disabled(typed.is_empty() || busy).on_click(cx.listener(move |root, _, _, cx| {
                     let text = submit.read(cx).text().to_string();
                     submit_address(root, &text, cx);

@@ -56,9 +56,51 @@ pub struct LibraryState {
     /// The list scrolled under the pointer, so the row now under it is found once drawn.
     rehover: bool,
     rail: BoundsCell,
+    /// Where the fill's end stands on its way to the knob's middle.
+    fill: std::cell::Cell<Option<Glide>>,
     /// The effort slider, one stop the arrows move along.
     effort_focus: gpui::FocusHandle,
     _subscription: Subscription,
+}
+
+/// The knob's glide between stops (`180ms cubic-bezier(0.2, 0.8, 0.2, 1)`).
+const GLIDE: act_ui::theme::Motion = act_ui::theme::Motion { millis: 180, ease: [0.2, 0.8, 0.2, 1.0] };
+
+/// A fraction easing from `from` to `to` since `since`, as a CSS `width` transition does.
+#[derive(Clone, Copy)]
+struct Glide {
+    from: f32,
+    to: f32,
+    since: std::time::Instant,
+}
+
+impl Glide {
+    fn at(&self, now: std::time::Instant) -> (f32, bool) {
+        let progress = now.saturating_duration_since(self.since).as_secs_f32() / GLIDE.duration().as_secs_f32();
+        if progress >= 1.0 {
+            return (self.to, false);
+        }
+        (self.from + (self.to - self.from) * GLIDE.ease(progress), true)
+    }
+}
+
+/// Where the fill ends now, heading for `target`: it follows a drag at once and glides otherwise,
+/// setting out from where it stands.
+fn glided(cell: &std::cell::Cell<Option<Glide>>, target: f32, dragging: bool, window: &Window) -> f32 {
+    let now = std::time::Instant::now();
+    let Some(mut glide) = cell.get().filter(|_| !dragging) else {
+        cell.set(Some(Glide { from: target, to: target, since: now }));
+        return target;
+    };
+    if glide.to != target {
+        glide = Glide { from: glide.at(now).0, to: target, since: now };
+        cell.set(Some(glide));
+    }
+    let (shown, running) = glide.at(now);
+    if running {
+        window.request_animation_frame();
+    }
+    shown
 }
 
 struct Heading {
@@ -439,7 +481,7 @@ impl Root {
         });
         search.update(cx, |search, _| search.focus(window));
         let effort_focus = cx.focus_handle().tab_stop(true);
-        self.library = Some(LibraryState { target, search, filter, highlight: None, hovered: None, drag: None, slider_hover: false, rehover: false, rail: bounds_cell(), effort_focus, _subscription: subscription });
+        self.library = Some(LibraryState { target, search, filter, highlight: None, hovered: None, drag: None, slider_hover: false, rehover: false, rail: bounds_cell(), fill: Default::default(), effort_focus, _subscription: subscription });
         cx.notify();
     }
 
@@ -966,8 +1008,14 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, tiny: bo
     for step in 0..steps.len() {
         rail = rail.child(div().absolute().top(px(1.0)).left(place(at(step))).ml(px(KNOB / 2.0 - 1.0 - KNOB * at(step))).size(px(2.0)).rounded_full().bg(t.quiet));
     }
+    // The fill runs to the knob's middle.
+    let fill = glided(&library.fill, fraction, drag.is_some(), window);
+    let fill_width = match rail_probe.get() {
+        Some(rail) => px(f32::from(rail.size.width - px(KNOB)) * fill + KNOB / 2.0).into(),
+        None => place(fill),
+    };
     rail = rail
-        .child(div().absolute().top_0().bottom_0().left_0().w(place(fraction)).mr(px(0.0)).min_w(px(KNOB / 2.0)).rounded_full().bg(if delegates { gpui::solid_background(t.accent) } else { act_ui::theme::Pane::sheened(t.ink_faint).background() }))
+        .child(div().absolute().top_0().bottom_0().left_0().w(fill_width).min_w(px(KNOB / 2.0)).rounded_full().bg(if delegates { gpui::solid_background(t.accent) } else { act_ui::theme::Pane::sheened(t.ink_faint).background() }))
         .child({
             // The knob slides between stops (`transition: left 180ms`) unless dragged, and swells
             // about its centre (`transform: scale()`), each eased on its own.
@@ -1076,13 +1124,22 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, tiny: bo
             canvas(
                 |_, _, _| {},
                 move |_, _, window, _| {
-                    window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
+                    // These listeners outlive the release until the next frame: a trackpad lift sends
+                    // its pointer-up and a buttonless move together, and that move must not drag again.
+                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                        if phase != gpui::DispatchPhase::Bubble {
+                            return;
+                        }
+                        let released = event.pressed_button != Some(MouseButton::Left);
                         let root = window.root::<Root>().flatten();
                         if let Some(root) = root {
-                            root.update(cx, |root, cx| root.effort_drag(event.position.x, false, cx));
+                            root.update(cx, |root, cx| root.effort_drag(event.position.x, released, cx));
                         }
                     });
-                    window.on_mouse_event(move |event: &MouseUpEvent, _, window, cx| {
+                    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                        if phase != gpui::DispatchPhase::Bubble || event.button != MouseButton::Left {
+                            return;
+                        }
                         let root = window.root::<Root>().flatten();
                         if let Some(root) = root {
                             root.update(cx, |root, cx| root.effort_drag(event.position.x, true, cx));

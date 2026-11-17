@@ -177,7 +177,8 @@ fn step<T: Clone + PartialEq>(
         *track = Some(Track { from, to: target.clone(), since: now, timing: Some(*entering) });
     }
     let Some(timing) = track.as_ref().and_then(|track| track.timing).or(timing.copied()) else {
-        *track = None;
+        // Rests at the value shown, so a transition turned back on sets out from it.
+        *track = Some(Track { from: target.clone(), to: target.clone(), since: now, timing: None });
         return (target, false);
     };
     let current = track.get_or_insert_with(|| Track { from: target.clone(), to: target.clone(), since: now, timing: None });
@@ -330,6 +331,19 @@ mod tests {
         let (back, running) = step(&mut track, 0.0, Some(&timing), None, start + Duration::from_millis(100), lerp);
         assert!((back - 0.25).abs() < 0.01 && running);
         assert_eq!(step(&mut track, 0.0, Some(&timing), None, start + Duration::from_millis(200), lerp), (0.0, false));
+    }
+
+    #[test]
+    fn turned_back_on_it_sets_out_from_the_value_shown_without_it() {
+        let timing = Timing { duration: Duration::from_millis(100), delay: Duration::ZERO, curve: [0.0, 0.0, 1.0, 1.0] };
+        let lerp = |from: &f32, to: &f32, amount: f32| from + (to - from) * amount;
+        let start = Instant::now();
+        let mut track = None;
+        step(&mut track, 0.0, Some(&timing), None, start, lerp);
+        assert_eq!(step(&mut track, 0.8, None, None, start + Duration::from_millis(200), lerp), (0.8, false));
+        step(&mut track, 1.0, Some(&timing), None, start + Duration::from_millis(300), lerp);
+        let (halfway, running) = step(&mut track, 1.0, Some(&timing), None, start + Duration::from_millis(350), lerp);
+        assert!((halfway - 0.9).abs() < 0.01 && running);
     }
 
     #[test]

@@ -2846,7 +2846,7 @@ impl Interactivity {
                 }
             }
 
-            if animate && (self.transition.is_some() || self.enter.is_some()) {
+            if animate && (self.transition.is_some() || self.enter.is_some() || element_state.transition.is_some()) {
                 let inherited = window.text_style().color;
                 let first = element_state.transition.is_none();
                 let state = element_state.transition.get_or_insert_with(Default::default);

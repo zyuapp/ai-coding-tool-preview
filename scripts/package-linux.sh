@@ -13,9 +13,10 @@ arch=${1:-$host_arch}
 out=${2:-$root/target/package}
 cua_version=0.53.0
 ort_version=1.32.0
+ort_sha256=a9150bc2992cbbb6722070da9910e1ffa989a8bfc67bdd5bb8e745ca755641db
 case $arch in
-  x86_64) cua_arch=x86_64 cua_sha256=fdee86c42b3f1f43916887f05e38cc6b79883668cde55c29ca862abb09db1908 ort_arch=x64 ort_sha256=bb169b7e374731730d2ae406fb39de7be4b315f413a9132efe896261c31bb503 runtime_sha256=617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46 ;;
-  aarch64) cua_arch=arm64 cua_sha256=4dcb9e1cfb3cebc995b99d85ee218978682520eae7dfa552555016e2ea9afbc4 ort_arch=aarch64 ort_sha256=81a46251dd90da4122f4b9ceb4433f836fbc79ee1eddffca7c09033af81a1939 runtime_sha256=9a72a744d221576c9347ec074243acc5c3c7568896b12714e0e82e9f0bf47900 ;;
+  x86_64) cua_arch=x86_64 cua_sha256=fdee86c42b3f1f43916887f05e38cc6b79883668cde55c29ca862abb09db1908 ort_arch=x64 runtime_sha256=617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46 ;;
+  aarch64) cua_arch=arm64 cua_sha256=4dcb9e1cfb3cebc995b99d85ee218978682520eae7dfa552555016e2ea9afbc4 ort_arch=arm64 runtime_sha256=9a72a744d221576c9347ec074243acc5c3c7568896b12714e0e82e9f0bf47900 ;;
   *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
@@ -38,7 +39,7 @@ FROM rust:1-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     clang cmake pkg-config libasound2-dev libfontconfig-dev libfreetype-dev libssl-dev \
     libvulkan1 libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
-    libzstd-dev libdbus-1-dev curl file xz-utils libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+    libzstd-dev libdbus-1-dev curl file unzip xz-utils libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
  && rm -rf /var/lib/apt/lists/*
 DOCKERFILE
   mkdir -p "$out"
@@ -82,12 +83,11 @@ echo "Fetching ONNX Runtime $ort_version…"
 ort_dir=$target_dir/onnxruntime/$ort_version-$ort_arch
 if [[ ! -f $ort_dir/libonnxruntime.so.1 ]]; then
   mkdir -p "$ort_dir"
-  archive=$ort_dir/onnxruntime.tgz
-  curl -fsSL -o "$archive" "https://github.com/microsoft/onnxruntime/releases/download/v$ort_version/onnxruntime-linux-$ort_arch-$ort_version.tgz"
+  archive=$ort_dir/onnxruntime.nupkg
+  curl -fsSL -o "$archive" "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$ort_version/microsoft.ml.onnxruntime.$ort_version.nupkg"
   [[ $(sha256sum "$archive" | cut -d' ' -f1) == "$ort_sha256" ]] || { echo "ONNX Runtime archive checksum mismatch." >&2; rm -f "$archive"; exit 1; }
-  tar -xzf "$archive" -C "$ort_dir" --strip-components=1 "onnxruntime-linux-$ort_arch-$ort_version/lib/libonnxruntime.so.$ort_version" "onnxruntime-linux-$ort_arch-$ort_version/LICENSE" "onnxruntime-linux-$ort_arch-$ort_version/ThirdPartyNotices.txt"
-  mv "$ort_dir/lib/libonnxruntime.so.$ort_version" "$ort_dir/libonnxruntime.so.1"
-  rmdir "$ort_dir/lib"
+  unzip -q -j -o "$archive" "runtimes/linux-$ort_arch/native/libonnxruntime.so" LICENSE ThirdPartyNotices.txt -d "$ort_dir"
+  mv "$ort_dir/libonnxruntime.so" "$ort_dir/libonnxruntime.so.1"
   rm -f "$archive"
 fi
 

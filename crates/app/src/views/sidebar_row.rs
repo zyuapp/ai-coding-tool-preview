@@ -290,7 +290,9 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     let more_focus = _window.use_keyed_state(SharedString::from(format!("{}-more-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let dismiss_focus = _window.use_keyed_state(SharedString::from(format!("{}-dismiss-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let actions_focused = more_focus.is_focused(_window) || dismiss_focus.is_focused(_window);
-    let menu_open = root.menus.is_open(&format!("task:{}", thread.id)) || focus_ring || actions_focused;
+    // The row its menu acts on stays ringed while the menu is open.
+    let menu_target = root.menus.is_open(&format!("task:{}", thread.id));
+    let menu_open = menu_target || focus_ring || actions_focused;
     // Layout never sees hover styles, so the rail widens from the hovered row held in state.
     let revealed = menu_open || root.sidebar.hovered_row.as_deref() == Some(thread.id.as_str());
     let menu_id = id.clone();
@@ -458,6 +460,8 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
             if away {
                 dispatch(AppCommand::TaskSelect { task_id: context_id.clone() }, cx);
             } else {
+                // The menu keeps the keyboard; the entry under it must not take it back.
+                window.prevent_default();
                 root.open_thread_menu(&context_id, event.position, priority, window, cx);
             }
         }))
@@ -475,6 +479,32 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     });
     let key_id = id.clone();
     let hover_id = id.clone();
+    // Rows that move under a still pointer (scroll, a rename ending) settle their hover once painted,
+    // as `:hover` follows layout.
+    let held = root.sidebar.hovered_row.as_deref() == Some(thread.id.as_str());
+    let settle_id = id.clone();
+    let weak = cx.entity().downgrade();
+    let hover_probe = gpui::canvas(
+        |bounds, window, _| window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal),
+        move |_, hitbox, window, cx| {
+            let hovered = hitbox.is_hovered(window) && !cx.has_active_drag();
+            if hovered == held {
+                return;
+            }
+            window.defer(cx, move |_, cx| {
+                weak.update(cx, |root, cx| {
+                    let next = if hovered { Some(settle_id.clone()) } else { root.sidebar.hovered_row.clone().filter(|row| *row != settle_id) };
+                    if root.sidebar.hovered_row != next {
+                        root.sidebar.hovered_row = next;
+                        cx.notify();
+                    }
+                })
+                .ok();
+            });
+        },
+    )
+    .absolute()
+    .size_full();
     div()
         .id(SharedString::from(format!("entry-{}", thread.id)))
         .group(group)
@@ -512,9 +542,10 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
             }
             cx.stop_propagation();
         }))
+        .child(hover_probe)
         .child(body)
         .children(role_bar)
-        .when(focus_ring, |entry| entry.child(div().absolute().inset_0().rounded(px(10.0)).border_2().border_color(t.focus_ring)))
+        .when(focus_ring || menu_target, |entry| entry.child(div().absolute().inset_0().rounded(px(10.0)).border_2().border_color(t.focus_ring)))
         .when(active, |entry| entry.child(act_ui::overlay::bounds_probe(&root.sidebar.active_probe)))
         .when(focus.is_focused(_window), |entry| entry.child(act_ui::overlay::bounds_probe(&root.sidebar.focused_probe)))
 }
@@ -652,6 +683,10 @@ impl Root {
         if let Some(move_to) = move_entries(&state, thread).filter(|_| !remote) {
             let at = entries.iter().position(|entry| matches!(entry, MenuEntry::Separator)).unwrap_or(entries.len());
             entries.insert(at, move_to);
+        }
+        // The menu hands the keyboard back to the row, wherever it was opened from.
+        if let Some(row) = self.sidebar.row_focus.get(thread_id) {
+            window.focus(row);
         }
         let menu = Menu::build(entries, Placement::At { position }, window, cx, |menu| menu.from_frame());
         self.menus.show(&format!("task:{thread_id}"), menu, cx);

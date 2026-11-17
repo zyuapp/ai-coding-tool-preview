@@ -537,9 +537,13 @@ impl Element for TextInputElement {
             }
         });
         let layout = prepaint.layout.clone();
-        self.input.update(cx, |input, cx| {
+        let changed = self.input.update(cx, |input, cx| {
             input.set_layout(layout);
-            input.sync_focus(focused, window_active, cx);
+            input.sync_focus(focused, window_active, cx)
         });
+        if changed {
+            let input = self.input.clone();
+            window.on_next_frame(move |_, cx| input.update(cx, |_, cx| cx.notify()));
+        }
     }
 }

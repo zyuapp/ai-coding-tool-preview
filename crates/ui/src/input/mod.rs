@@ -494,25 +494,32 @@ impl TextInput {
 
     /// Called by the element each frame with the focus state, to start and stop the blink and
     /// tell the holder when focus arrives or leaves. The caret rests while the window is inactive.
-    pub(crate) fn sync_focus(&mut self, focused: bool, window_active: bool, cx: &mut Context<Self>) {
+    /// Returns whether it changed what the field shows, which then needs another frame.
+    pub(crate) fn sync_focus(&mut self, focused: bool, window_active: bool, cx: &mut Context<Self>) -> bool {
         let blinking = focused && window_active;
         if blinking != self.blinking {
             self.blinking = blinking;
             self.show_cursor(cx);
         }
         if focused == self.was_focused {
-            return;
+            return false;
         }
         self.was_focused = focused;
+        let mut changed = false;
         if focused {
             if !self.multiline && crate::focus::take_tabbed_to(&self.focus_handle, cx) {
+                // Selected whole and shown from its start, as a browser field Tab reaches.
                 self.select_all_text(cx);
+                self.scroll_to_cursor = false;
+                self.scroll.set_scrolled(Point::default());
+                changed = true;
             }
             cx.emit(InputEvent::Focus);
         } else {
             self.selecting = false;
             cx.emit(InputEvent::Blur);
         }
+        changed
     }
 
     pub(crate) fn set_layout(&mut self, layout: InputLayout) {

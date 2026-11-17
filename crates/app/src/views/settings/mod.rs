@@ -1005,7 +1005,13 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .child(sidebar)
         .child(
             div().flex_1().min_w_0().h_full().p(px(m.frame_gap)).child(
-                div().relative().size_full().child(main).child(act_ui::components::scrollbar::Scrollbar::vertical("settings-scrollbar", &root.settings.main_scroll)),
+                div()
+                    .relative()
+                    .size_full()
+                    .child(main)
+                    .child(act_ui::components::scrollbar::Scrollbar::vertical("settings-scrollbar", &root.settings.main_scroll))
+                    // Glass over the page frosts it and stands in for it, so its text leaves no sharp ghost.
+                    .when(t.glass_blur, |page| page.child(gpui::canvas(|_, _, _| {}, |bounds, _, window, _| window.replace_under_backdrops(bounds)).absolute().top_0().left_0().size_full())),
             ),
         )
         .children(devices::overlay(root, window, cx).map(|dialog| div().absolute().inset_0().child(dialog)))

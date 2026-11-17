@@ -260,6 +260,8 @@ pub struct Tokens {
     pub code_ink: Rgba,
     pub meter_fill: Rgba,
     pub meter_track: Rgba,
+    /// A groove meter's inset shadow (`inset 0 1px 2px`).
+    pub meter_inset: Rgba,
 
     // Lines
     pub line: Rgba,
@@ -687,6 +689,7 @@ impl Tokens {
             code_ink: c(p.ansi_white),
             meter_fill: fg[4],
             meter_track,
+            meter_inset: shade(0.3),
 
             line: l_line,
             line_soft,

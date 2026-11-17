@@ -60,20 +60,16 @@ impl RenderOnce for Meter {
         };
         let fill = round(div().h_full().w(relative(Meter::percent(self.value) / 100.0)));
         let fill = if self.size == MeterSize::Groove { fill.bg(Pane::sheened(fill_color).background()) } else { fill.bg(fill_color) };
-        let mut track = round(div().relative().w_full().h(px(height)).overflow_hidden().bg(t.meter_track)).child(fill);
+        let mut track = round(div().relative().w_full().h(px(height)).overflow_hidden().bg(t.meter_track));
         if self.size == MeterSize::Groove {
-            // The groove's inset shadow and hairline, drawn over the fill.
-            track = track.child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .rounded_full()
-                    .border_1()
-                    .border_color(t.line_glass),
-            );
+            // The groove's inset shadow and hairline lie under the fill, as a box's inset shadows do.
+            let shadow = t.meter_inset;
+            let faded = gpui::Rgba { a: 0.0, ..shadow };
+            let top = gpui::Rgba { a: shadow.a * 0.85, ..shadow };
+            track = track
+                .child(div().absolute().top_0().left_0().w_full().h(px(2.0)).bg(gpui::linear_gradient(180.0, gpui::linear_color_stop(top, 0.0), gpui::linear_color_stop(faded, 1.0))))
+                .child(div().absolute().top_0().left_0().size_full().rounded_full().border_1().border_color(t.line_glass));
         }
-        track
+        track.child(div().absolute().top_0().left_0().size_full().child(fill))
     }
 }

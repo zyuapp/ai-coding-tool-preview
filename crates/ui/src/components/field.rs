@@ -80,14 +80,15 @@ impl SearchField {
 }
 
 /// The native search cancel glyph (`::-webkit-search-cancel-button`): a bold cross in white at
-/// 40% opacity, 75% under the pointer, that empties the field.
-fn native_cancel(input: Entity<TextInput>) -> impl IntoElement {
+/// 40% opacity, 75% under the pointer, that empties the field. Chromium sizes it with the field's font.
+fn native_cancel(input: Entity<TextInput>, font: f32) -> impl IntoElement {
     let target = input.clone();
+    let scale = font / 14.0;
     div()
         .id("cancel")
         .flex_none()
-        .w(px(16.0))
-        .h(px(16.0))
+        .w(px(16.0 * scale))
+        .h(px(16.0 * scale))
         .cursor(CursorStyle::PointingHand)
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(move |_, window, cx| {
@@ -99,10 +100,10 @@ fn native_cancel(input: Entity<TextInput>) -> impl IntoElement {
         .child(
             gpui::canvas(
                 |bounds, window, _| window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal),
-                |bounds, hitbox, window, _| {
+                move |bounds, hitbox, window, _| {
                     let alpha = if hitbox.is_hovered(window) { 0.75 } else { 0.4 };
                     // One outline for both strokes, so where they cross is no darker than either.
-                    let (arm, thick) = (4.0 * std::f32::consts::SQRT_2, 1.1);
+                    let (arm, thick) = (4.0 * std::f32::consts::SQRT_2 * scale, 1.1 * scale);
                     let plus = [(thick, thick), (thick, arm), (-thick, arm), (-thick, thick), (-arm, thick), (-arm, -thick), (-thick, -thick), (-thick, -arm), (thick, -arm), (thick, -thick), (arm, -thick), (arm, thick)];
                     let centre = bounds.center();
                     let corner = |(u, v): (f32, f32)| centre + gpui::point(px((u - v) / std::f32::consts::SQRT_2), px((u + v) / std::f32::consts::SQRT_2));
@@ -159,7 +160,7 @@ impl RenderOnce for SearchField {
                     .text_color(t.ink)
                     .text_size(px(font))
                     .when(self.variant == SearchVariant::Field, |this| this.py(px(8.0)))
-                    .when(cancel, |this| this.flex().items_center().child(div().flex_1().min_w_0().child(self.input.clone())).child(native_cancel(self.input.clone())))
+                    .when(cancel, |this| this.flex().items_center().child(div().flex_1().min_w_0().child(self.input.clone())).child(native_cancel(self.input.clone(), font)))
                     .when(!cancel, |this| this.child(self.input.clone())),
             );
         let mut field = div().id(self.id).flex().items_center().min_w_0().text_color(t.quiet);

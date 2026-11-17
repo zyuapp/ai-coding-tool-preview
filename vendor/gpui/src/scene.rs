@@ -40,6 +40,8 @@ pub(crate) struct Scene {
     /// A region whose content a backdrop filter replaces with its filtered copy rather than
     /// drawing that copy over it.
     pub(crate) backdrop_replaced: Option<Bounds<ScaledPixels>>,
+    /// Regions inside the replaced one whose backdrop filters draw over what is there after all.
+    pub(crate) backdrop_drawn_over: Vec<Bounds<ScaledPixels>>,
     /// A translucent fill laid over the hidden region, which backdrop filters drawn after it and
     /// over it read the region through.
     pub(crate) backdrop_tint: Option<(DrawOrder, Bounds<ScaledPixels>, crate::Rgba)>,
@@ -61,6 +63,7 @@ impl Scene {
         self.backdrop_hidden = None;
         self.backdrop_holes.clear();
         self.backdrop_replaced = None;
+        self.backdrop_drawn_over.clear();
         self.backdrop_tint = None;
     }
 
@@ -162,6 +165,25 @@ impl Scene {
         self.paint_operations.push(PaintOperation::ReplaceUnderBackdrops(bounds));
     }
 
+    pub(crate) fn draw_over_backdrops(&mut self, bounds: Bounds<ScaledPixels>) {
+        self.backdrop_drawn_over.push(bounds);
+        self.paint_operations.push(PaintOperation::DrawOverBackdrops(bounds));
+    }
+
+    /// The replaced region a backdrop filter over `bounds` erases before drawing its copy, if any.
+    pub(crate) fn replaced_under(&self, bounds: &Bounds<ScaledPixels>) -> Option<Bounds<ScaledPixels>> {
+        let inside = |outer: &Bounds<ScaledPixels>| {
+            outer.origin.x <= bounds.origin.x
+                && outer.origin.y <= bounds.origin.y
+                && outer.bottom_right().x >= bounds.bottom_right().x
+                && outer.bottom_right().y >= bounds.bottom_right().y
+        };
+        if self.backdrop_drawn_over.iter().any(inside) {
+            return None;
+        }
+        self.backdrop_replaced.filter(|replaced| replaced.intersects(bounds))
+    }
+
     pub(crate) fn tint_hidden_backdrops(&mut self, bounds: Bounds<ScaledPixels>, color: crate::Rgba) {
         // Blurs inserted later over these bounds take a higher order than this one.
         let order = self.primitive_bounds.insert(bounds);
@@ -188,6 +210,7 @@ impl Scene {
                 PaintOperation::HideFromBackdrops(bounds, color) => self.hide_from_backdrops(*bounds, *color),
                 PaintOperation::ShowToBackdrops(bounds) => self.show_to_backdrops(*bounds),
                 PaintOperation::ReplaceUnderBackdrops(bounds) => self.replace_under_backdrops(*bounds),
+                PaintOperation::DrawOverBackdrops(bounds) => self.draw_over_backdrops(*bounds),
                 PaintOperation::TintHiddenBackdrops(bounds, color) => self.tint_hidden_backdrops(*bounds, *color),
             }
         }
@@ -270,6 +293,7 @@ pub(crate) enum PaintOperation {
     HideFromBackdrops(Bounds<ScaledPixels>, crate::Rgba),
     ShowToBackdrops(Bounds<ScaledPixels>),
     ReplaceUnderBackdrops(Bounds<ScaledPixels>),
+    DrawOverBackdrops(Bounds<ScaledPixels>),
     TintHiddenBackdrops(Bounds<ScaledPixels>, crate::Rgba),
 }
 
@@ -1106,6 +1130,15 @@ mod tests {
             fade: FadeMask::default(),
         });
         assert!(scene.quads[0].order > scene.shadows[0].order);
+    }
+
+    #[test]
+    fn a_blur_inside_a_drawn_over_region_keeps_what_is_under_it() {
+        let mut scene = Scene::default();
+        scene.replace_under_backdrops(rect(0., 0., 500., 800.));
+        scene.draw_over_backdrops(rect(0., 100., 500., 40.));
+        assert!(scene.replaced_under(&rect(0., 100., 500., 40.)).is_none());
+        assert!(scene.replaced_under(&rect(100., 90., 200., 300.)).is_some());
     }
 
     #[test]

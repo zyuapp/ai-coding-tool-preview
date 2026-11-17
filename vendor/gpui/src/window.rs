@@ -3927,6 +3927,14 @@ impl Window {
         self.next_frame.scene.replace_under_backdrops(self.transformed(bounds).scale(scale_factor));
     }
 
+    /// Makes backdrop filters within `bounds` draw their filtered copy over what was drawn there,
+    /// inside a region `replace_under_backdrops` replaces.
+    pub fn draw_over_backdrops(&mut self, bounds: Bounds<Pixels>) {
+        self.invalidator.debug_assert_paint();
+        let scale_factor = self.scale_factor();
+        self.next_frame.scene.draw_over_backdrops(self.transformed(bounds).scale(scale_factor));
+    }
+
     /// Makes backdrop filters painted after this and over `bounds` read the region
     /// `hide_from_backdrops` hid through `color`, as through a veil drawn over it.
     pub fn tint_hidden_backdrops(&mut self, bounds: Bounds<Pixels>, color: crate::Rgba) {

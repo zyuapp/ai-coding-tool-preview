@@ -114,7 +114,7 @@ impl BackdropScene {
         for (slot, hole) in this.holes.iter_mut().zip(holes) {
             *slot = rect(*hole);
         }
-        this.replaced = scene.backdrop_replaced.filter(|replaced| replaced.intersects(&blur.bounds)).map(rect);
+        this.replaced = scene.replaced_under(&blur.bounds).map(rect);
         this
     }
 }

@@ -951,7 +951,6 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
     // The pinned file row follows the list's top edge.
     let top = root.dock.diff.list.logical_scroll_top().item_ix;
     let pinned = rows.get(top).map(|row| row.path().to_string());
-    let over_own_row = matches!(rows.get(top), Some(PanelRow::File(_)));
     PINNED.with(|cell| *cell.borrow_mut() = pinned.clone());
 
     let model = Rc::new(DiffModel {
@@ -1084,14 +1083,10 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         .pr(px(gutter))
         .child(list(root.dock.diff.list.clone(), move |index, window, cx| render_row(&item_model, index, window, cx)).size_full());
     let pinned_row = pinned.as_ref().and_then(|path| model.files.get(path)).map(|file| {
-        let t = &model.tokens;
-        // On the glass sheet the echo frosts its own row under it but only dims code, as Chromium draws it.
-        let strip = if t.page.a == 0.0 && t.glass_blur && !over_own_row {
-            div().bg(t.glass_strip).shadow(vec![gpui::BoxShadow { color: t.line_glass.into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(0.0), spread_radius: px(0.0) }])
-        } else {
-            act_ui::style::glass(div(), t, act_ui::style::GlassKind::Strip, None, None)
-        };
-        div().absolute().top_0().left_0().right_0().occlude().child(strip.child(file_header(&model, file, true, window, cx)))
+        let strip = act_ui::style::glass(div(), &model.tokens, act_ui::style::GlassKind::Strip, None, None);
+        // Its frost is laid over the code rather than standing in for it, so the code ghosts through as in Chromium.
+        let ghost = gpui::canvas(|_, _, _| {}, |bounds, _, window, _| window.draw_over_backdrops(bounds)).absolute().top_0().left_0().size_full();
+        div().absolute().top_0().left_0().right_0().occlude().child(strip.child(file_header(&model, file, true, window, cx))).child(ghost)
     });
     let drag_weak = weak.clone();
     let up_weak = weak.clone();

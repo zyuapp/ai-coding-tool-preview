@@ -640,7 +640,7 @@ impl MetalRenderer {
                                 color_attachment.set_load_action(metal::MTLLoadAction::Load);
                             },
                         );
-                        if let Some(replaced) = scene.backdrop_replaced.filter(|replaced| replaced.intersects(&blur.bounds)) {
+                        if let Some(replaced) = scene.replaced_under(&blur.bounds) {
                             self.erase_backdrop(blur, replaced, viewport_size, command_encoder);
                         }
                         self.composite_backdrop(

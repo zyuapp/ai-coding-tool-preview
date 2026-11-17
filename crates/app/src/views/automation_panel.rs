@@ -45,6 +45,10 @@ pub struct AutomationForm {
 const PROMPT_ROWS: usize = 10;
 /// The least the prompt's text area may be dragged to: a multi-line field's 60px less its padding and border.
 const PROMPT_MIN_HEIGHT: f32 = 46.0;
+/// The multi-line field's padding above and below its text, which the text scrolls through.
+const PROMPT_PAD: f32 = 6.0;
+/// The square the resize grip keeps in the field's corner, which the scrollbar stops short of.
+const PROMPT_CORNER: f32 = 12.0;
 
 /// What a drag on the prompt's corner carries.
 struct PromptGrip;
@@ -72,11 +76,23 @@ fn prompt_field(input: &Entity<TextInput>, t: &act_ui::theme::Tokens, cx: &mut C
     )
     .size_full();
     let start = input.clone();
+    let scroll = input.read(cx).scroll_model();
+    let text_height = input.read(cx).autosize().max_height.map(f32::from).unwrap_or_default();
     div()
         .id("automation-prompt-field")
         .relative()
         .mt(px(9.0))
-        .child(TextField::new("automation-prompt", input).label("Prompt"))
+        .child(TextField::new("automation-prompt", input).label("Prompt").gutter(act_ui::components::scrollbar::model_gutter(&scroll)))
+        // Over the field's padding box, short of the grip's corner.
+        .child(
+            div()
+                .absolute()
+                .right(px(1.0))
+                .bottom(px(1.0 + PROMPT_CORNER))
+                .w(px(12.0))
+                .h(px(text_height + 2.0 * PROMPT_PAD - PROMPT_CORNER))
+                .child(act_ui::components::scrollbar::Scrollbar::vertical_model("automation-prompt-scrollbar", &scroll)),
+        )
         .child(
             div()
                 .id("automation-prompt-grip")
@@ -239,7 +255,11 @@ impl Root {
         let observe = |input: &Entity<TextInput>, cx: &mut Context<Root>| cx.subscribe(input, |root, _, event: &InputEvent, cx| if matches!(event, InputEvent::Changed) { root.automation_edited(cx) });
         let schedule = cx.new(|cx| TextInput::new(cx).with_text(&fields.schedule).placeholder("0 8 * * *"));
         let prompt_height = PROMPT_ROWS as f32 * prompt_line(cx);
-        let prompt = cx.new(|cx| TextInput::new(cx).with_text(&fields.prompt).multiline(Autosize { min_rows: PROMPT_ROWS, max_height: Some(px(prompt_height)) }).placeholder(if automation.is_some() { "" } else { "What each run should do" }));
+        let prompt = cx.new(|cx| {
+            let mut input = TextInput::new(cx).with_text(&fields.prompt).multiline(Autosize { min_rows: PROMPT_ROWS, max_height: Some(px(prompt_height)) }).placeholder(if automation.is_some() { "" } else { "What each run should do" });
+            input.set_bleed(px(PROMPT_PAD), px(PROMPT_PAD), cx);
+            input
+        });
         let surface_when = cx.new(|cx| TextInput::new(cx).with_text(&fields.surface_when).placeholder("Every run"));
         let ends_when = cx.new(|cx| TextInput::new(cx).with_text(&fields.ends_when).placeholder("Repeats until removed"));
         let subscriptions = [&schedule, &prompt, &surface_when, &ends_when].into_iter().map(|input| observe(input, cx)).collect();

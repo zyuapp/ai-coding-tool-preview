@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gpui::{
     div, prelude::*, px, AnyElement, App, ClickEvent, CursorStyle, ElementId, Entity, FocusHandle,
-    FontWeight, Hsla, SharedString, Window,
+    FontWeight, Hsla, Pixels, SharedString, Window,
 };
 
 use super::button::{IconButton, IconButtonSize};
@@ -209,11 +209,18 @@ pub struct TextField {
     mono: bool,
     size: FieldSize,
     invalid: bool,
+    gutter: Pixels,
 }
 
 impl TextField {
     pub fn new(id: impl Into<ElementId>, input: &Entity<TextInput>) -> Self {
-        Self { id: id.into(), input: input.clone(), label: None, hint: None, error: None, mono: false, size: FieldSize::Md, invalid: false }
+        Self { id: id.into(), input: input.clone(), label: None, hint: None, error: None, mono: false, size: FieldSize::Md, invalid: false, gutter: px(0.0) }
+    }
+
+    /// Room kept clear at the right of the text, as for a scrollbar laid over the field.
+    pub fn gutter(mut self, gutter: Pixels) -> Self {
+        self.gutter = gutter;
+        self
     }
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
@@ -274,7 +281,8 @@ impl RenderOnce for TextField {
             .border_1()
             .border_color(if invalid { t.danger_line } else { t.line_input })
             .rounded(px(radius))
-            .px(px(pad))
+            .pl(px(pad))
+            .pr(px(pad) + self.gutter)
             .bg(t.surface_input)
             .text_color(if muted { t.muted } else { t.ink })
             .text_size(px(font))

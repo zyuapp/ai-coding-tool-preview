@@ -287,7 +287,7 @@ fn subagent_section(state: &WorkspaceState, subagents: &[act_core::domain::run::
     use act_core::domain::run::{order_subagents, subagent_line};
     use act_ui::components::button::Button;
     use act_ui::components::list::{ListHeading, ListRow};
-    use super::agents_panel::{orb, status_glyph, status_ink};
+    use super::agents_panel::orb;
     const SHOWN: usize = 6;
     let theme = cx.theme().clone();
     let t = &theme.tokens;
@@ -307,7 +307,7 @@ fn subagent_section(state: &WorkspaceState, subagents: &[act_core::domain::run::
                     .inset(6.0, 22.0)
                     .leading(orb(subagent.status, 22.0, 12.0, t))
                     .detail(subagent_line(&subagent))
-                    .trailing(div().flex_none().child(super::agents_panel::status_icon(SharedString::from(format!("subagent-status-{}", subagent.id)), status_glyph(subagent.status), 16.0, status_ink(subagent.status, t), subagent.status == act_core::domain::run::SubagentStatus::Working, window, cx)))
+                    .trailing(div().flex_none().child(super::agents_panel::row_status_icon(SharedString::from(format!("subagent-status-{}", subagent.id)), subagent.status, window, cx)))
                     .on_click(cx.listener(move |root, _, _, cx| {
                         root.inspect_subagent(&id, cx);
                         dispatch(AppCommand::OpenDockPanel { panel: "agents".into(), task_id: None }, cx);

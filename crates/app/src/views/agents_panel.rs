@@ -113,6 +113,48 @@ pub(super) fn status_icon(id: impl Into<SharedString>, glyph: IconName, size: f3
     act_ui::components::spinner::pulse(id.into(), style, std::time::Duration::from_millis(1400), 14, 0.45, window, cx, move || icon(glyph, size, ink).into_any_element())
 }
 
+/// A list row's status glyph: in the row's ink, except a working one, which is info and pulses.
+pub(super) fn row_status_icon(id: impl Into<SharedString>, status: SubagentStatus, window: &mut Window, cx: &mut gpui::App) -> AnyElement {
+    if status == SubagentStatus::Working {
+        let ink = cx.theme().tokens.info;
+        return status_icon(id, status_glyph(status), 16.0, ink, true, window, cx);
+    }
+    ink_icon(status_glyph(status), 16.0).into_any_element()
+}
+
+/// A 14px `<summary>`'s marker as Chromium draws it: a filled triangle in the text colour, pointing
+/// down once open, in a box as wide as the marker and the space after it.
+fn disclosure_marker(open: bool) -> impl IntoElement {
+    gpui::canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let (side, height) = (7.74, 9.0);
+            let left = bounds.origin.x;
+            let middle = bounds.origin.y + bounds.size.height / 2.0;
+            let at = |x: f32, y: f32| gpui::point(left + px(x), middle + px(y));
+            let mut triangle = gpui::PathBuilder::fill();
+            if open {
+                triangle.move_to(at(0.0, -height / 2.0));
+                triangle.line_to(at(height, -height / 2.0));
+                triangle.line_to(at(height / 2.0, side - height / 2.0));
+            } else {
+                triangle.move_to(at(0.0, -height / 2.0));
+                triangle.line_to(at(side, 0.0));
+                triangle.line_to(at(0.0, height / 2.0));
+            }
+            triangle.close();
+            if let Ok(path) = triangle.build() {
+                let color = window.text_style().color;
+                window.paint_path(path, color);
+            }
+        },
+    )
+    .flex_none()
+    .mt(px(1.0))
+    .w(px(14.83))
+    .h(px(9.0))
+}
+
 /// The round mark a subagent is drawn with, tinted by where it stands.
 pub fn orb(status: SubagentStatus, size: f32, glyph_size: f32, t: &Tokens) -> impl IntoElement {
     let (fill, ink) = match status {
@@ -226,7 +268,7 @@ fn list(root: &mut Root, state: &WorkspaceState, subagents: &[Subagent], window:
             .into_any_element()
     } else {
         let grouped = status.is_none();
-        let mut column = div().flex().flex_col().p(px(14.0));
+        let mut column = div().flex().flex_col().gap(px(2.0)).p(px(14.0));
         let mut bucket: Option<SubagentStatus> = None;
         for subagent in &shown {
             if grouped && bucket != Some(subagent.status) {
@@ -243,14 +285,16 @@ fn list(root: &mut Root, state: &WorkspaceState, subagents: &[Subagent], window:
             column = column.child(
                 div().pb(px(5.0)).child(
                     ListRow::new(SharedString::from(format!("agent-{}", subagent.id)), subagent.description.clone())
+                        .inset(10.0, 24.0)
+                        .pad_y(11.0)
                         .leading(orb(subagent.status, 28.0, 12.0, t))
                         .detail(subagent_line(subagent))
-                        .trailing(div().flex_none().accessible(gpui::AccessInfo::new(gpui::AccessRole::Image, status_label(subagent.status))).child(status_icon(SharedString::from(format!("agent-status-{}", subagent.id)), status_glyph(subagent.status), 16.0, status_ink(subagent.status, t), subagent.status == SubagentStatus::Working, window, cx)))
+                        .trailing(div().flex_none().accessible(gpui::AccessInfo::new(gpui::AccessRole::Image, status_label(subagent.status))).child(row_status_icon(SharedString::from(format!("agent-status-{}", subagent.id)), subagent.status, window, cx)))
                         .on_click(cx.listener(move |root, _, _, cx| root.inspect_subagent(&id, cx))),
                 ),
             );
         }
-        div().id("agents-list").flex_1().min_h_0().overflow_y_scroll().child(column).into_any_element()
+        div().id("agents-list").flex_1().min_h_0().mt(px(8.0)).overflow_y_scroll().child(column).into_any_element()
     };
     let _ = m;
     div()
@@ -311,24 +355,23 @@ fn inspector(root: &mut Root, subagent: &Subagent, window: &mut Window, cx: &mut
         .border_color(t.line_soft)
         .text_size(px(m.text_control))
         .child(div().flex().flex_col().gap(px(8.0)).mb(px(16.0)).child(fact("Model", subagent.model.clone().unwrap_or_else(|| "Not reported".into()))).child(fact("Effort", effort.unwrap_or_else(|| "Not reported".into()))))
-        .child(
+        .child(div().flex().child(
             div()
                 .id("subagent-prompt-toggle")
                 .flex()
                 .items_center()
-                .gap(px(4.0))
                 .min_h(px(28.0))
                 .text_color(t.ink_dim)
                 .font_weight(FontWeight(560.0))
                 .cursor_pointer()
                 .hover(|style| style.text_color(t.ink))
-                .child(icon(if prompt_open { IconName::ChevronDown } else { IconName::ChevronRight }, 14.0, t.muted))
+                .child(disclosure_marker(prompt_open))
                 .child("Prompt")
                 .on_click(cx.listener(|root, _, _, cx| {
                     root.dock.agents.prompt_open = !root.dock.agents.prompt_open;
                     cx.notify();
                 })),
-        )
+        ))
         .when(prompt_open, |details| {
             details.child(match &subagent.prompt {
                 Some(prompt) => div().mt(px(12.0)).text_color(t.ink_soft).line_height(relative(1.6)).child(prompt.clone()),

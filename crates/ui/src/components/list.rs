@@ -26,6 +26,7 @@ pub struct ListRow {
     focus: Option<FocusHandle>,
     detail_color: Option<gpui::Rgba>,
     inset: Option<(f32, f32)>,
+    pad_y: Option<f32>,
     name: Option<SharedString>,
 }
 
@@ -50,6 +51,7 @@ impl ListRow {
             focus: None,
             detail_color: None,
             inset: None,
+            pad_y: None,
             name: None,
         }
     }
@@ -57,6 +59,12 @@ impl ListRow {
     /// Side padding and leading column width, for a list that sits tighter than the default 8px and 24px.
     pub fn inset(mut self, padding: f32, lead: f32) -> Self {
         self.inset = Some((padding, lead));
+        self
+    }
+
+    /// Top and bottom padding, for a list whose rows stand taller than the default 5px.
+    pub fn pad_y(mut self, padding: f32) -> Self {
+        self.pad_y = Some(padding);
         self
     }
 
@@ -125,7 +133,7 @@ impl RenderOnce for ListRow {
             .gap(px(8.0))
             .rounded(px(9.0))
             .px(px(self.inset.map_or(8.0, |inset| inset.0)))
-            .py(px(5.0))
+            .py(px(self.pad_y.unwrap_or(5.0)))
             .text_color(if self.selected { t.ink } else { t.ink_faint });
         if self.selected {
             row = row.bg(t.row_selected);

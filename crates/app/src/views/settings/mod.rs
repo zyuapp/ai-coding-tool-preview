@@ -836,8 +836,9 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .keep_focus_on_click()
                     .accessible(gpui::AccessInfo::new(gpui::AccessRole::ListItem, option.title.clone()).selected(picked))
                     .map(|button| if picked { rimmed(button, t, 9.0).bg(t.frame_row_selected).text_color(t.ink).font_weight(FontWeight(560.0)) } else { button.text_color(t.muted).hover(|style| style.bg(t.frame_row_hover).text_color(t.ink_dim)) })
-                    .child(icon(page_icon(option.section), 18.0, if picked { t.accent } else { t.muted }))
-                    .child(div().flex_1().min_w_0().flex().child(label))
+                    // A title too long for the row squeezes its icon as well.
+                    .child(icon(page_icon(option.section), 18.0, if picked { t.accent } else { t.muted }).shrinks())
+                    .child(div().flex_shrink().min_w_0().flex().child(label))
                     .when_some(option.page.clone(), |button, page| button.child(div().ml_auto().flex_none().max_w(relative(0.45)).clip().text_color(t.quiet_strong).text_size(px(12.0)).child(page)))
                     .on_mouse_move(cx.listener(move |root, _, _, cx| {
                         if root.settings.picked != index {

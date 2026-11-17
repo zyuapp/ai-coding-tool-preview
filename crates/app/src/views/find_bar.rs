@@ -11,6 +11,7 @@ use act_ui::components::field::TextField;
 use act_ui::input::{InputEvent, TextInput};
 use act_ui::style::{glass, GlassKind};
 use act_ui::theme::ActiveTheme;
+use act_ui::tooltip::shortcut_tip;
 use act_ui::IconName;
 use gpui::{div, prelude::*, px, AnyElement, Context, Entity, Subscription, Window};
 
@@ -117,8 +118,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, in_page: bool, window: &m
         .child(icon(IconName::Search, 14.0, t.quiet))
         .child(div().flex_1().min_w_0().child(TextField::new("find-field", &input)))
         .child(div().flex_none().text_size(px(12.0)).tabular_nums().text_color(if empty { t.danger_soft } else { t.quiet }).child(count))
-        .child(IconButton::new("find-previous", IconName::ChevronUp, "Previous match").tip("Previous match ⇧↩").disabled(!some).on_click(|_, _, cx| dispatch(AppCommand::FindStep { delta: -1 }, cx)))
-        .child(IconButton::new("find-next", IconName::ChevronDown, "Next match").tip("Next match ↩").disabled(!some).on_click(|_, _, cx| dispatch(AppCommand::FindStep { delta: 1 }, cx)))
-        .child(IconButton::new("find-close", IconName::X, "Close find").tip("Close ⎋").on_click(|_, _, cx| dispatch(AppCommand::FindClose, cx)));
+        .child(IconButton::new("find-previous", IconName::ChevronUp, "Previous match").tip(shortcut_tip("Previous match", "⇧↩")).disabled(!some).on_click(|_, _, cx| dispatch(AppCommand::FindStep { delta: -1 }, cx)))
+        .child(IconButton::new("find-next", IconName::ChevronDown, "Next match").tip(shortcut_tip("Next match", "↩")).disabled(!some).on_click(|_, _, cx| dispatch(AppCommand::FindStep { delta: 1 }, cx)))
+        .child(IconButton::new("find-close", IconName::X, "Close find").tip(shortcut_tip("Close", "Esc")).on_click(|_, _, cx| dispatch(AppCommand::FindClose, cx)));
     Some(div().absolute().top_0().left_0().right_0().h(px(0.0)).child(bar).into_any_element())
 }

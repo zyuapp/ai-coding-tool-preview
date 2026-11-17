@@ -530,7 +530,9 @@ impl Render for Root {
         } else {
             self.jump.closed(window, cx);
         }
-        shell = shell.child(toasts::render(&state));
+        if !behind_settings {
+            shell = shell.child(toasts::render(&state));
+        }
         shell = shell.children(super::viewer::render(self, &state, window, cx));
         shell = shell.children(super::annotator::render(self, window, cx));
         if let Some(library) = super::model_library::popover(self, &shown, window, cx) {

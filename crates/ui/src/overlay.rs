@@ -78,7 +78,7 @@ impl Placement {
                     x = (position.x - size.width).max(edge);
                 }
                 if y + size.height + edge > viewport.height {
-                    y = (position.y - size.height).max(edge);
+                    y = (viewport.height - size.height - edge).max(edge);
                 }
                 point(clamp_x(x), if size.height + edge * 2.0 > viewport.height { clamp_y(y) } else { y.max(edge) })
             }
@@ -311,6 +311,13 @@ mod tests {
         let origin = Placement::Tooltip { anchor: bounds(100.0, 270.0, 40.0, 20.0) }.origin(size(px(60.0), px(24.0)), viewport);
         assert_eq!(origin.y, px(270.0 - 24.0 - 8.0));
         assert_eq!(origin.x, px(90.0));
+    }
+
+    #[test]
+    fn a_context_menu_near_the_bottom_slides_up_to_the_edge() {
+        let viewport = size(px(1280.0), px(800.0));
+        let origin = Placement::At { position: point(px(100.0), px(664.0)) }.origin(size(px(200.0), px(269.0)), viewport);
+        assert_eq!(origin.y, px(800.0 - 269.0 - EDGE));
     }
 
     #[test]

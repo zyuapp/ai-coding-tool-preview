@@ -474,7 +474,7 @@ fn font_select(root: &mut Root, mono: bool, chosen: &str, focus: &gpui::FocusHan
         .hover(|style| style.border_color(t.line_bright).bg(t.control_hover))
         .child(current.label.clone())
         .child(icon(IconName::ChevronDown, 14.0, t.quiet_strong))
-        .child(bounds_probe(&probe))
+        .child(bounds_probe(&probe).border(px(1.0)))
         .on_click(cx.listener(move |root, _, window, cx| {
             if root.menus.is_open(menu_id) {
                 return;

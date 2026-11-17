@@ -956,7 +956,8 @@ impl Menu {
         } else if let Some(icon) = item.icon {
             row = row.child(div().flex_none().flex().items_center().text_color(quiet(t.quiet_strong)).child(Icon::new(icon).size(px(item.icon_size.unwrap_or(14.0)))));
         }
-        let label = div().overflow_hidden().text_ellipsis().whitespace_nowrap().when_some(item.font_family.clone(), |label, family| label.font_family(family)).child(item.label.clone());
+        // A row set in its own face keeps the menu's line, whatever that face's metrics.
+        let label = div().overflow_hidden().text_ellipsis().whitespace_nowrap().when_some(item.font_family.clone(), |label, family| label.font_family(family).line_height(px(20.0))).child(item.label.clone());
         let inline = item.detail.clone().filter(|detail| item.inline_detail && !detail.is_empty());
         let label = match inline.clone() {
             Some(detail) => div()
@@ -1066,8 +1067,10 @@ impl Render for Menu {
                 continue;
             }
             if at >= entries.len() - trailing {
+                // The font picker's notes, the one menu with pinned notes, sit in a settings row and
+                // take its paragraph style.
                 if let MenuEntry::Note { text, danger } = entry {
-                    pinned.push(note(text.clone(), *danger, t, m).into_any_element());
+                    pinned.push(note(text.clone(), *danger, t, m).mt(px(5.0)).when(!*danger, |note| note.text_color(t.quiet_strong)).into_any_element());
                 }
                 continue;
             }

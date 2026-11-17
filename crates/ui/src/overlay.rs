@@ -202,10 +202,19 @@ pub fn bounds_cell() -> BoundsCell {
 /// window bounds each frame.
 pub struct BoundsProbe {
     cell: BoundsCell,
+    outset: Pixels,
 }
 
 pub fn bounds_probe(cell: &BoundsCell) -> BoundsProbe {
-    BoundsProbe { cell: cell.clone() }
+    BoundsProbe { cell: cell.clone(), outset: px(0.0) }
+}
+
+impl BoundsProbe {
+    /// Records the parent's border box: the probe lies inside a border `width` wide.
+    pub fn border(mut self, width: Pixels) -> Self {
+        self.outset = width;
+        self
+    }
 }
 
 impl IntoElement for BoundsProbe {
@@ -252,7 +261,7 @@ impl Element for BoundsProbe {
         _window: &mut Window,
         _cx: &mut App,
     ) {
-        self.cell.set(Some(bounds));
+        self.cell.set(Some(bounds.dilate(self.outset)));
     }
 
     fn paint(

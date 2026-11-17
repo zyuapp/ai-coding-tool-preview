@@ -983,9 +983,10 @@ fn project_filter(root: &mut Root, state: &WorkspaceState, sidebar: &SidebarMode
         .rounded(px(7.0))
         .text_size(px(12.0))
         .cursor_pointer()
+        // A narrowed trigger keeps its fill while hovered or open.
         .map(|trigger| if narrowed { trigger.bg(t.accent_chip).text_color(t.ink_dim) } else { trigger.bg(t.frame_control).text_color(t.muted) })
-        .when(open, |trigger| trigger.bg(t.frame_control_hover).text_color(t.muted_strong))
-        .hover(|style| style.bg(t.frame_control_hover).text_color(t.muted_strong))
+        .when(open && !narrowed, |trigger| trigger.bg(t.frame_control_hover).text_color(t.muted_strong))
+        .when(!narrowed, |trigger| trigger.hover(|style| style.bg(t.frame_control_hover).text_color(t.muted_strong)))
         .child(icon(IconName::Folder, 12.0, t.quiet))
         .child(div().ellipsis().child(label))
         .child(icon(IconName::ChevronDown, 12.0, t.quiet))

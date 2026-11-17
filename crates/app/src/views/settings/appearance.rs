@@ -11,9 +11,9 @@ use act_ui::components::field::{SearchField, SearchVariant};
 use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
 use act_ui::fonts::installed_fonts;
 use act_ui::overlay::{bounds_cell, bounds_probe, placed, Align, BoundsCell, Placement};
-use act_ui::style::{glass, GlassKind};
+use act_ui::style::{glass, GlassKind, PaneFill};
 use act_ui::tooltip::Tippable;
-use act_ui::theme::{palette_for, theme_families, theme_for, ActiveTheme, ThemeMode as UiMode, Tokens};
+use act_ui::theme::{palette_for, theme_families, theme_for, ActiveTheme, Pane, ThemeMode as UiMode, Tokens};
 use act_ui::typography::{custom_font_family, custom_font_id, mono_font_or_default, ui_font_or_default, BundledFont, MONO_FONTS, UI_FONTS};
 use act_ui::IconName;
 use gpui::{deferred, div, prelude::*, px, relative, AnyElement, Context, FocusHandle, Focusable, FontWeight, KeyDownEvent, Rgba, SharedString, Window};
@@ -68,14 +68,14 @@ fn tile_tokens<'a>(cache: &'a mut HashMap<&'static str, Tokens>, id: &'static st
 fn swatch(t: &Tokens) -> gpui::Div {
     let bar = |color: Rgba| div().w(px(5.0)).h(px(12.0)).rounded(px(2.0)).bg(color);
     div()
+        .relative()
         .flex()
         .flex_none()
         .gap(px(2.0))
         .p(px(3.0))
         .rounded(px(5.0))
         .bg(t.canvas)
-        .border_1()
-        .border_color(t.line_mid)
+        .child(div().absolute().inset_0().rounded(px(5.0)).border_1().border_color(t.line_mid))
         .child(bar(t.accent))
         .child(bar(t.ansi[2]))
         .child(bar(t.ansi[4]))
@@ -189,7 +189,7 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
         .py(px(8.0))
         .border_1()
         .border_color(t.line_strong)
-        .bg(t.control_soft)
+        .pane(Pane::sheened(t.control_soft))
         .text_size(px(14.0))
         .text_color(t.ink)
         .cursor_pointer()
@@ -197,7 +197,6 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
         .child(swatch(&own))
         .child(div().flex_1().min_w_0().whitespace_nowrap().child(current_family))
         .child(div().flex_none().child(icon(IconName::ChevronDown, 14.0, t.quiet_strong)))
-        .child(bounds_probe(&probe))
         .on_key_down(cx.listener(|root, event: &KeyDownEvent, window, cx| {
             if matches!(event.keystroke.key.as_str(), "down" | "up") && root.settings.appearance.theme_menu.is_none() {
                 open_theme_menu(root, window, cx);
@@ -216,6 +215,8 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
                 open_theme_menu(root, window, cx);
             }
         }));
+    // The popover hangs from the trigger's outer edge.
+    let trigger = div().relative().child(trigger).child(bounds_probe(&probe));
     if !open {
         return trigger.into_any_element();
     }
@@ -323,7 +324,14 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
             let count = families.len();
             let term = !query.trim().is_empty();
             match event.keystroke.key.as_str() {
-                "escape" => close_theme_menu(root, window),
+                "escape" => {
+                    let input = menu.search.input.clone();
+                    if input.read(cx).is_focused(window) && !query.is_empty() {
+                        input.update(cx, |input, cx| input.reset("", cx));
+                    } else {
+                        close_theme_menu(root, window);
+                    }
+                }
                 "enter" => {
                     let chosen = match menu.active {
                         Some(index) => families.get(index).copied(),
@@ -383,11 +391,9 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
         close_theme_menu(root, window);
         cx.notify();
     }));
-    div()
-        .relative()
-        .child(trigger)
+    trigger
         .child(deferred(div().child(scrim)).with_priority(1))
-        .child(deferred(placed(Placement::Anchor { anchor, align: Align::End }, surface)).with_priority(2))
+        .child(deferred(placed(Placement::Below { anchor, align: Align::End, gap: px(7.0) }, surface)).with_priority(2))
         .into_any_element()
 }
 
@@ -460,7 +466,7 @@ fn font_select(root: &mut Root, mono: bool, chosen: &str, focus: &gpui::FocusHan
         .py(px(7.0))
         .border_1()
         .border_color(t.line_strong)
-        .bg(t.control)
+        .pane(Pane::sheened(t.control))
         .text_size(px(14.0))
         .text_color(t.ink_dim)
         .font_family(family)
@@ -572,7 +578,7 @@ fn size_field(root: &mut Root, terminal: bool, value: f64, window: &mut Window, 
         .items_center()
         .gap(px(4.0))
         .p(px(3.0))
-        .bg(t.control_soft)
+        .pane(Pane::sheened(t.control_soft))
         .child(stepper(down_id, IconName::Minus, down_label, value <= range.min, -1))
         .child(
             div()

@@ -567,9 +567,9 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 .flex()
                 .items_center()
                 .gap(px(10.0))
+                .h(px(32.0))
                 .rounded(px(9.0))
                 .px(px(11.0))
-                .py(px(7.0))
                 .text_size(px(m.text_control))
                 .cursor_pointer()
                 .map(|button| {
@@ -593,20 +593,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         let probe = root.sidebar.active_probe.clone();
         let scroll = root.sidebar.scroll.clone();
         probe.set(None);
-        window.on_next_frame(move |window, _| {
-            let (Some(row), view) = (probe.get(), scroll.bounds()) else { return };
-            let padding = px(16.0);
-            let mut offset = scroll.offset();
-            if row.top() < view.top() + padding {
-                offset.y += view.top() + padding - row.top();
-            } else if row.bottom() > view.bottom() - padding {
-                offset.y -= row.bottom() - (view.bottom() - padding);
-            } else {
-                return;
-            }
-            scroll.set_offset(offset);
-            window.refresh();
-        });
+        follow_row(probe, scroll, None, FOLLOW_PASSES, window);
     }
     let floating = floats(state, window);
     let mut aside = div()
@@ -638,6 +625,48 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         aside = aside.child(resizer(root, window, cx));
     }
     aside
+}
+
+/// How many frames following the open thread may take: rows laid out where spacers stood can move
+/// it after the first scroll.
+const FOLLOW_PASSES: usize = 3;
+
+/// Which edge of the scroll padding a followed row was brought to.
+#[derive(Clone, Copy, PartialEq)]
+enum FollowEdge {
+    Top,
+    Bottom,
+}
+
+/// Scrolls the list on the next frame so the measured row sits inside the scroll padding, then
+/// holds it at the edge it was brought to once the rows around it are laid out.
+fn follow_row(probe: BoundsCell, scroll: ScrollHandle, edge: Option<FollowEdge>, passes: usize, window: &mut Window) {
+    window.on_next_frame(move |window, _| {
+        let (Some(row), view) = (probe.get(), scroll.bounds()) else { return };
+        let padding = px(16.0);
+        let edge = edge.or(if row.top() < view.top() + padding {
+            Some(FollowEdge::Top)
+        } else if row.bottom() > view.bottom() - padding {
+            Some(FollowEdge::Bottom)
+        } else {
+            None
+        });
+        let delta = match edge {
+            Some(FollowEdge::Top) => view.top() + padding - row.top(),
+            Some(FollowEdge::Bottom) => view.bottom() - padding - row.bottom(),
+            None => return,
+        };
+        if delta.abs() < px(0.5) {
+            return;
+        }
+        let mut offset = scroll.offset();
+        offset.y += delta;
+        scroll.set_offset(offset);
+        window.refresh();
+        if passes > 1 {
+            follow_row(probe, scroll, edge, passes - 1, window);
+        }
+    });
 }
 
 /// How far past the visible part of a list rows are laid out; the rest are left out as

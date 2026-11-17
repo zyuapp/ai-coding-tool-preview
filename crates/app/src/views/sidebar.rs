@@ -619,7 +619,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             .occlude()
             .pane(t.glass_menu)
             .glass_backdrop(&t)
-            .shadow(vec![gpui::BoxShadow { color: act_ui::color::alpha(gpui::black().into(), 0.45).into(), offset: gpui::point(px(20.0), px(0.0)), blur_radius: px(60.0), spread_radius: px(0.0) }])
+            .shadow(t.shadow_sidebar.box_shadows())
             .rim(t.glass_rim, act_ui::style::Corners::Radius(0.0));
     }
     aside = aside.when(t.page.a == 0.0, |aside| aside.child(div().absolute().top_0().bottom_0().right(px(-4.5)).w(px(1.0)).bg(t.line_glass)));

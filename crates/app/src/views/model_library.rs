@@ -598,7 +598,8 @@ pub fn popover(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx:
 
 fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::Bounds<gpui::Pixels>>, window: &mut Window, cx: &mut Context<Root>) -> Option<AnyElement> {
     let library = root.library.as_ref()?;
-    let anchor = anchor.or_else(|| root.composer.settings_probe.get())?;
+    // The chip's probe sits inside its 1px border.
+    let anchor = anchor.or_else(|| root.composer.settings_probe.get().map(|bounds| bounds.dilate(px(1.0))))?;
     let theme = cx.theme().clone();
     let t = &theme.tokens;
     let m = &theme.metrics;
@@ -759,7 +760,7 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
     }
     if count == 0 {
         let empty = if searching { "No models found. Try another name or provider." } else if filter == "favorites" { "Pin models from All models to keep them here." } else { "No models available." };
-        results = results.child(div().my(px(12.0)).px(px(10.0)).text_size(px(m.text_menu)).text_color(t.quiet).child(empty));
+        results = results.child(div().flex_none().my(px(12.0)).px(px(8.0)).py(px(6.0)).text_size(px(m.text_meta)).line_height(relative(1.45)).text_color(t.quiet).child(empty));
     }
 
     let model_name = model_name(&catalog, &choice);

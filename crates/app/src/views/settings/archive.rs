@@ -50,7 +50,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, marks: &Marks, window: &m
     }
     let mut action = div().flex().items_center().gap(px(10.0)).when(!armed.get(), |action| action.child(div().text_color(t.quiet_strong).text_size(px(12.0)).whitespace_nowrap().child(format!("{} archived", archived.len()))));
     if !archived.is_empty() {
-        action = action.child(ConfirmAction::new("archive-clear", "Clear all", format!("Delete {count}"), |_, cx| dispatch(AppCommand::TaskClearArchive, cx)).variant(ButtonVariant::Danger).armed_into(&armed));
+        action = action.child(ConfirmAction::new("archive-clear", "Clear all", format!("Delete {count}"), |_, cx| dispatch(AppCommand::TaskClearArchive, cx)).variant(ButtonVariant::Danger).armed_into(&armed).gap(px(10.0)));
     }
     let mut section = Section::new("Archive").first().description(description("Restore a thread to put it back in the sidebar. Its automation stays off.")).action(action);
     if filtering {

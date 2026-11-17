@@ -53,7 +53,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, marks: &Marks, window: &m
     let mac = cfg!(target_os = "macos");
     let settings = shortcut_settings(&state.shortcuts);
     let changed = settings.iter().filter(|setting| setting.changed).count();
-    let reset = ConfirmAction::new("shortcuts-reset", "Restore defaults", "Restore all", |_, cx| dispatch(AppCommand::ResetShortcuts, cx)).disabled(changed == 0);
+    let reset = ConfirmAction::new("shortcuts-reset", "Restore defaults", "Restore all", |_, cx| dispatch(AppCommand::ResetShortcuts, cx)).disabled(changed == 0).gap(px(10.0));
     let mut groups: Vec<(&str, Vec<AnyElement>)> = Vec::new();
     let mut above_capturing = false;
     let mut last_group = "";

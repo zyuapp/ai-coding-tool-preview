@@ -230,6 +230,7 @@ pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx:
         let preview = if failed {
             let path = image.path.clone();
             let task = task_id.map(String::from);
+            let size = cx.theme().metrics.text_content * 0.85;
             div()
                 .id(id)
                 .flex()
@@ -242,13 +243,13 @@ pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx:
                 .border_1()
                 .border_color(t.line_strong)
                 .text_color(t.ink_dim)
-                .text_size(px(cx.theme().metrics.text_content * 0.85))
+                .text_size(px(size))
                 .line_height(gpui::relative(1.7))
                 .relative()
                 .rim(t.glass_rim, act_ui::style::Corners::Radius(8.0))
                 .cursor_pointer()
                 .hover(|style| style.bg(t.surface_hover).text_color(t.ink))
-                .child(act_ui::Icon::new(act_ui::IconName::FileText).size(px(14.0)))
+                .child(act_ui::Icon::new(act_ui::IconName::FileText).size(px(size * 0.85)))
                 .child(format!("{} · Preview unavailable", image.label))
                 .tip(image.path.clone())
                 .on_click(move |_, _, cx| dispatch(AppCommand::FileOpen { task_id: task.clone(), path: path.clone(), line: None }, cx))

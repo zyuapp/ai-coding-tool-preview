@@ -140,7 +140,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, marks: &Marks, window: &m
         let mut parts = vec![Inline::Words("Hold the microphone".into())];
         if let Some(binding) = binding {
             parts.push(Inline::Words(" or ".into()));
-            parts.push(Inline::Element(Kbd::new([binding]).size(KbdSize::Inline).into_any_element()));
+            // Flex aligns bottom edges; this lifts the chip's baseline onto the words'.
+            parts.push(Inline::Element(div().relative().top(px(-2.0)).child(Kbd::new([binding]).size(KbdSize::Inline)).into_any_element()));
         }
         parts.push(Inline::Words(format!(" and let go to add the words to your message, or tap it to talk hands-free. What you say stays on {}.", computer_name())));
         let words = flow(parts);

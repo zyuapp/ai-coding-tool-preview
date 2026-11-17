@@ -12,7 +12,6 @@ use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
 use act_ui::fonts::installed_fonts;
 use act_ui::overlay::{bounds_cell, bounds_probe, placed, Align, BoundsCell, Placement};
 use act_ui::style::{glass, GlassKind, PaneFill};
-use act_ui::tooltip::Tippable;
 use act_ui::theme::{palette_for, theme_families, theme_for, ActiveTheme, Pane, ThemeMode as UiMode, Tokens};
 use act_ui::typography::{custom_font_family, custom_font_id, mono_font_or_default, ui_font_or_default, BundledFont, MONO_FONTS, UI_FONTS};
 use act_ui::IconName;
@@ -578,7 +577,7 @@ fn size_field(root: &mut Root, terminal: bool, value: f64, window: &mut Window, 
                     .on_click(move |_, _, cx| choose(step_size(&range, value, delta), cx))
             })
             .child(act_ui::Icon::new(glyph).size(px(14.0)))
-            .tip(label)
+            .accessible(gpui::AccessInfo::new(gpui::AccessRole::Button, label).disabled(disabled))
     };
     let (down_id, up_id, down_label, up_label) = if terminal { ("terminal-size-down", "terminal-size-up", "Smaller terminal text size", "Larger terminal text size") } else { ("reading-size-down", "reading-size-up", "Smaller conversation text size", "Larger conversation text size") };
     let key_input = input.clone();

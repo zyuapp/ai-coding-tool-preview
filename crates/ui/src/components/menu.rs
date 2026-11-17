@@ -747,6 +747,9 @@ impl Menu {
                 // A 280px panel inside the pane's padding and border.
                 menu.inset_search = true;
                 menu.width = Some(px(280.0 + 2.0 * PAD + 2.0));
+            } else {
+                // A plain list of rows grows to the window's height before it scrolls.
+                menu.max_height = Some(px(f32::MAX));
             }
             if let Some(name) = &item.submenu_name {
                 menu.name = name.clone();

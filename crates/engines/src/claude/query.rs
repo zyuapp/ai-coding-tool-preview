@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 use crate::tools::{BoundTool, ToolResult};
 
 /// The Agent SDK version whose wire behaviour this client reproduces.
-pub const SDK_VERSION: &str = "0.3.325";
+pub const SDK_VERSION: &str = "0.3.326";
 /// How long a closed process has to leave on its own before it is signalled.
 const CLOSE_GRACE: Duration = Duration::from_millis(2_000);
 const KILL_GRACE: Duration = Duration::from_millis(5_000);

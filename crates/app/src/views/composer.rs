@@ -705,7 +705,7 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
         leading = leading.child(composer_dictation::strip(root, phase, hands_free, width, cx));
     } else {
         leading = leading
-            .child(IconButton::new("attach", IconName::Paperclip, "Attach files").size(IconButtonSize::Md).round(true).disabled(disabled).no_tip().on_click(root.composer_listener(cx, |root, _, window, cx| root.attach_files(window, cx))))
+            .child(IconButton::new("attach", IconName::Paperclip, "Attach files").size(IconButtonSize::Md).round(true).disabled(disabled).on_click(root.composer_listener(cx, |root, _, window, cx| root.attach_files(window, cx))))
             .child(model_library::trigger(root, state, engine, model.as_deref(), width, cx));
     }
     let bar = div().flex().items_center().justify_between().gap(px(if narrow { 6.0 } else { 8.0 })).pt(px(7.0)).pr(px(9.0)).pb(px(9.0)).pl(px(if narrow { 10.0 } else { 8.0 })).child(leading).child(actions);

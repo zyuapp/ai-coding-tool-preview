@@ -53,6 +53,8 @@ pub struct LibraryState {
     drag: Option<f32>,
     /// The pointer is over the effort slider, which swells its knob.
     slider_hover: bool,
+    /// The list scrolled under the pointer, so the row now under it is found once drawn.
+    rehover: bool,
     rail: BoundsCell,
     /// The effort slider, one stop the arrows move along.
     effort_focus: gpui::FocusHandle,
@@ -437,7 +439,7 @@ impl Root {
         });
         search.update(cx, |search, _| search.focus(window));
         let effort_focus = cx.focus_handle().tab_stop(true);
-        self.library = Some(LibraryState { target, search, filter, highlight: None, hovered: None, drag: None, slider_hover: false, rail: bounds_cell(), effort_focus, _subscription: subscription });
+        self.library = Some(LibraryState { target, search, filter, highlight: None, hovered: None, drag: None, slider_hover: false, rehover: false, rail: bounds_cell(), effort_focus, _subscription: subscription });
         cx.notify();
     }
 
@@ -666,7 +668,24 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
         rail = rail.child(rail_item(group.heading.key.clone(), group.heading.label.clone(), glyph, group.heading.models.len(), !searching && filter == group.heading.key, group.heading.key.clone(), cx));
     }
 
-    let mut results = div().id("model-results").flex_1().min_w_0().min_h_0().flex().flex_col().px(px(8.0)).py(px(if narrow { 10.0 } else { 6.0 })).overflow_y_scroll();
+    let mut results = div()
+        .id("model-results")
+        .flex_1()
+        .min_w_0()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .px(px(8.0))
+        .py(px(if narrow { 10.0 } else { 6.0 }))
+        .overflow_y_scroll()
+        .on_scroll_wheel(root.composer_listener(cx, |root, _: &gpui::ScrollWheelEvent, _, cx| {
+            if let Some(library) = root.library.as_mut() {
+                library.rehover = true;
+                cx.notify();
+            }
+        }));
+    let rehover = root.library.as_ref().is_some_and(|library| library.rehover);
+    let mut probes: Vec<(usize, BoundsCell)> = Vec::new();
     results = results.child(div().flex().justify_between().gap(px(10.0)).px(px(10.0)).pt(px(5.0)).pb(px(6.0)).text_size(px(m.text_meta)).text_color(t.quiet_strong).child(heading).child(div().text_color(t.quiet_soft).child(format!("{count} models"))));
     let several = shown.len() > 1;
     let mut pick_index = 0usize;
@@ -713,6 +732,11 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
             } else {
                 if lit {
                     row = row.pane(t.glass_pick).rim(t.glass_rim, Corners::Radius(8.0));
+                }
+                if rehover {
+                    let cell = bounds_cell();
+                    row = row.child(bounds_probe(&cell));
+                    probes.push((index, cell));
                 }
                 row = row.cursor_pointer().on_hover(cx.listener(move |root, hovered: &bool, _, cx| {
                     let Some(library) = &mut root.library else { return };
@@ -761,6 +785,31 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
             Some(Hint::Notice(notice)) => results = results.child(readiness_hint(notice, cx)),
             None => {}
         }
+    }
+    if rehover {
+        // Hover follows the pointer only as it moves, so a scroll finds the row now under it.
+        results = results.child(
+            canvas(
+                |_, _, _| {},
+                move |_, _, window, cx| {
+                    let at = window.mouse_position();
+                    let found = probes.iter().find(|(_, cell)| cell.get().is_some_and(|bounds| bounds.contains(&at))).map(|(index, _)| *index).filter(|_| window.content_mask().bounds.contains(&at));
+                    window.defer(cx, move |window, cx| {
+                        if let Some(root) = window.root::<Root>().flatten() {
+                            root.update(cx, |root, cx| {
+                                if let Some(library) = root.library.as_mut() {
+                                    library.rehover = false;
+                                    library.hovered = found;
+                                    cx.notify();
+                                }
+                            });
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .size_0(),
+        );
     }
     if count == 0 {
         let empty = if searching { "No models found. Try another name or provider." } else if filter == "favorites" { "Pin models from All models to keep them here." } else { "No models available." };

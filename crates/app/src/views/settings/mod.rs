@@ -102,7 +102,7 @@ impl Marks {
     pub fn wrap(&self, id: &str, element: gpui::Div, t: &Tokens) -> AnyElement {
         let element = element.relative().child(bounds_probe(&self.cell(id)));
         let element = if self.landed.as_deref() == Some(id) {
-            element.child(div().absolute().top(px(-4.0)).left(px(-4.0)).right(px(-4.0)).bottom(px(-4.0)).rounded(px(12.0)).border_2().border_color(t.accent))
+            element.child(div().absolute().top(px(-6.0)).left(px(-6.0)).right(px(-6.0)).bottom(px(-6.0)).rounded(px(14.0)).border_2().border_color(t.accent))
         } else {
             element
         };

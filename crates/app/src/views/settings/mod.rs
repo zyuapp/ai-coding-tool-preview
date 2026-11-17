@@ -999,6 +999,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 "escape" if !input.read(cx).text().is_empty() => input.update(cx, |input, cx| input.reset("", cx)),
                 _ => return,
             }
+            act_ui::focus::note_keystroke(&event.keystroke, window, cx);
             cx.stop_propagation();
             cx.notify();
         }))

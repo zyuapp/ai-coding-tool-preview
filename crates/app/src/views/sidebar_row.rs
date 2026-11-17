@@ -290,16 +290,23 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     // Layout never sees hover styles, so the rail widens from the hovered row held in state.
     let revealed = menu_open || root.sidebar.hovered_row.as_deref() == Some(thread.id.as_str());
     let menu_id = id.clone();
+    let more_box = _window.use_keyed_state(SharedString::from(format!("{}-more-box", thread.id)), cx, |_, _| act_ui::overlay::bounds_cell()).read(cx).clone();
+    let menu_box = more_box.clone();
+    // The menu opens under the button, from its left edge.
     let open_menu = cx.listener(move |root, event: &gpui::ClickEvent, window, cx| {
         cx.stop_propagation();
-        let position = event.position();
-        root.open_thread_menu(&menu_id, point(position.x, position.y + px(4.0)), priority, window, cx);
+        let position = match menu_box.get() {
+            Some(button) => point(button.left(), button.bottom() + px(4.0)),
+            None => point(event.position().x, event.position().y + px(4.0)),
+        };
+        root.open_thread_menu(&menu_id, position, priority, window, cx);
     });
     let more = div()
         .id(SharedString::from(format!("{}-more", thread.id)))
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::PopupButton, format!("More options for {}", thread.title)))
         .track_focus(&more_focus)
         .focus_ring(true)
+        .relative()
         .size(px(28.0))
         .m(px(-3.0))
         .flex()
@@ -310,6 +317,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .hover(|style| style.bg(t.wash).text_color(t.ink))
         .cursor_pointer()
         .child(ink_icon(IconName::Ellipsis, 16.0))
+        .child(act_ui::overlay::bounds_probe(&more_box))
         .tip("More")
         .on_click(open_menu);
     let dismiss_id = id.clone();
@@ -324,6 +332,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .flex()
         .items_center()
         .when(!menu_open, |actions| actions.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)))
+        .child(more)
         .when(dismiss, |actions| {
             actions.child(
                 div()
@@ -347,8 +356,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
                         dispatch(AppCommand::TaskDismiss { task_id: Some(dismiss_id.clone()) }, cx);
                     }),
             )
-        })
-        .child(more);
+        });
     let covered = if away { 0 } else if dismiss { 2 } else { 1 };
     let mark_group = group.clone();
     let thread_id = thread.id.clone();
@@ -411,7 +419,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
                 .ellipsis()
                 .text_size(px(m.text_meta))
                 .text_color(if active { t.muted_strong } else { t.frame_meta })
-                .when(!away, |meta| meta.group_hover(group.clone(), |style| style.text_color(if active { t.muted_strong } else { t.quiet_strong })))
+                .when(!away, |meta| meta.group_hover(group.clone(), |style| style.text_color(t.quiet_strong)))
                 .child(meta),
         );
 
@@ -450,7 +458,8 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
             }
         }))
         .when(!editing, |body| body.child(text).child(rail))
-        .when(editing, |body| body.child(root.rename_field(&rename_id, cx)));
+        // The rail's empty track keeps its gap beside the field.
+        .when(editing, |body| body.child(div().flex_1().min_w_0().mr(px(10.0)).flex().child(root.rename_field(&rename_id, cx))));
     let role_bar = thread.role.map(|role| {
         let color = match role {
             ThreadRole::Coordinator => t.role_coordinator,
@@ -468,7 +477,6 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         .relative()
         .rounded(px(10.0))
         .when(!context.inert, |entry| entry.track_focus(&focus))
-        .when(focus_ring, |entry| entry.border_2().border_color(t.focus_ring).m(px(-2.0)))
         .on_hover(cx.listener(move |root, hovered: &bool, _, cx| {
             let next = if *hovered { Some(hover_id.clone()) } else { root.sidebar.hovered_row.clone().filter(|row| *row != hover_id) };
             if root.sidebar.hovered_row != next {
@@ -500,6 +508,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
         }))
         .child(body)
         .children(role_bar)
+        .when(focus_ring, |entry| entry.child(div().absolute().inset_0().rounded(px(10.0)).border_2().border_color(t.focus_ring)))
         .when(active, |entry| entry.child(act_ui::overlay::bounds_probe(&root.sidebar.active_probe)))
         .when(focus.is_focused(_window), |entry| entry.child(act_ui::overlay::bounds_probe(&root.sidebar.focused_probe)))
 }

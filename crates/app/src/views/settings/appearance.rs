@@ -139,10 +139,11 @@ fn close_theme_menu(root: &mut Root, window: &mut Window) {
 }
 
 fn open_theme_menu(root: &mut Root, window: &mut Window, cx: &mut Context<Root>) {
+    let handle = window.window_handle();
     let held = Held::new(
         "",
         "Search themes",
-        |root, input, event, cx| match event {
+        move |root, input, event, cx| match event {
             act_ui::input::InputEvent::Changed => {
                 if let Some(menu) = &mut root.settings.appearance.theme_menu {
                     menu.active = None;
@@ -153,8 +154,7 @@ fn open_theme_menu(root: &mut Root, window: &mut Window, cx: &mut Context<Root>)
                 if let Some(family) = matching_families(&query).first().copied().filter(|_| !query.trim().is_empty()) {
                     let entity = cx.entity();
                     cx.defer(move |cx| {
-                        let Some(window) = cx.active_window() else { return };
-                        let _ = window.update(cx, |_, window, cx| entity.update(cx, |root, cx| choose_theme(root, family, window, cx)));
+                        let _ = handle.update(cx, |_, window, cx| entity.update(cx, |root, cx| choose_theme(root, family, window, cx)));
                     });
                 }
             }
@@ -163,7 +163,6 @@ fn open_theme_menu(root: &mut Root, window: &mut Window, cx: &mut Context<Root>)
         cx,
     );
     root.pending_focus = Some(held.input.clone());
-    let _ = window;
     root.settings.appearance.theme_menu = Some(ThemeMenu { search: held, grid: cx.focus_handle(), active: None, scroll: gpui::ScrollHandle::new() });
     cx.notify();
 }
@@ -329,7 +328,14 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
             let families = matching_families(&query);
             let count = families.len();
             let term = !query.trim().is_empty();
-            match event.keystroke.key.as_str() {
+            // Stopping propagation hides the key from the focus-ring observer. Escape and Enter are
+            // judged where they were pressed, an arrow by whether it moved focus.
+            let key = event.keystroke.key.as_str();
+            let activation = matches!(key, "escape" | "enter");
+            if activation {
+                act_ui::focus::note_keystroke(&event.keystroke, window, cx);
+            }
+            match key {
                 "escape" => {
                     let input = menu.search.input.clone();
                     if input.read(cx).is_focused(window) && !query.is_empty() {
@@ -373,6 +379,9 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
                     }
                 },
                 _ => return,
+            }
+            if !activation {
+                act_ui::focus::note_keystroke(&event.keystroke, window, cx);
             }
             cx.stop_propagation();
             cx.notify();

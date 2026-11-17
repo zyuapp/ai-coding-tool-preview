@@ -22,7 +22,9 @@ pub fn init(cx: &mut App) {
     cx.observe_keystrokes(|event, window, cx| note_keystroke(&event.keystroke, window, cx)).detach();
 }
 
-fn note_keystroke(keystroke: &Keystroke, window: &mut Window, cx: &mut App) {
+/// What the keystroke observer does with a keystroke. A key handler that stops propagation hides
+/// the keystroke from observers, so it calls this itself.
+pub fn note_keystroke(keystroke: &Keystroke, window: &mut Window, cx: &mut App) {
     let focus = window.focused(cx);
     let previous = std::mem::replace(&mut cx.global_mut::<FocusAppearance>().last_focus, focus.clone());
     let modifiers = &keystroke.modifiers;

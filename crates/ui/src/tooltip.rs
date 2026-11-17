@@ -431,11 +431,11 @@ pub fn tooltip_layer(window: &mut Window, cx: &mut App) -> impl IntoElement {
     Tooltips::ensure(cx);
     let handle = window.window_handle();
     let state = cx.global::<Tooltips>();
-    // A pointer that left the window, or the control the tip names, takes the tip with it, even
-    // when no move inside the window said so.
+    // A pointer that left the window, or the control the tip names, takes a hover tip with it, even
+    // when no move inside the window said so. A tip keyboard focus showed stays with the focus.
     let pointer = window.mouse_position();
     let left_window = pointer.x < px(-10_000.0);
-    let shown = state.shown.clone().filter(|tip| state.window == Some(handle) && !left_window && (tip.hoverable || tip.focus.is_some() || tip.anchor.contains(&pointer)));
+    let shown = state.shown.clone().filter(|tip| state.window == Some(handle) && (tip.focus.is_some() || (!left_window && (tip.hoverable || tip.anchor.contains(&pointer)))));
     let theme = cx.theme();
     let tokens = &theme.tokens;
     let metrics = &theme.metrics;

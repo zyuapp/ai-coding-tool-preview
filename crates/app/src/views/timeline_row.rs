@@ -721,6 +721,10 @@ fn notice(model: &RowModel, message: &ConversationMessage, window: &mut Window, 
         let tile = CopyTile { id: format!("copy-{}", message.id), text, label: "Copy the error".into(), side: 28.0, ground: None };
         pane = pane.child(div().absolute().top(px(2.0)).right(px(4.0)).child(copy_tile(tile, CopyShow::Hover, window, cx)));
     }
+    // Glass over the transcript frosts a toned pane, as Chromium's does.
+    if error {
+        pane = pane.child(super::common::seen_by_backdrops());
+    }
     div().flex().child(pane).into_any_element()
 }
 

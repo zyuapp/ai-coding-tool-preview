@@ -771,7 +771,7 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
                 cx.stop_propagation();
             }
         }))
-        .on_key_down(root.composer_listener(cx, |root, event: &KeyDownEvent, _, cx| {
+        .on_key_down(root.composer_listener(cx, |root, event: &KeyDownEvent, window, cx| {
             let keys = &event.keystroke;
             if keys.key == "enter" && (keys.modifiers.platform || keys.modifiers.control) {
                 let state = root.state(cx);
@@ -780,11 +780,14 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
                 }
                 cx.stop_propagation();
             } else if keys.key == "tab" && !keys.modifiers.shift && root.menu_choose(cx) {
+                act_ui::focus::note_keystroke(keys, window, cx);
                 cx.stop_propagation();
             } else if keys.key == "escape" && root.composer.paste_viewing.take().is_some() {
+                act_ui::focus::note_keystroke(keys, window, cx);
                 cx.notify();
                 cx.stop_propagation();
             } else if keys.key == "escape" && root.menu_dismiss(cx) {
+                act_ui::focus::note_keystroke(keys, window, cx);
                 cx.stop_propagation();
             }
         }))

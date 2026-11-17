@@ -923,6 +923,7 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, tiny: bo
                 .rounded_full()
                 .transition(glide.only(&[gpui::TransitionProperty::Transform]).and(gpui::Transition::ease(160).only(&[gpui::TransitionProperty::Background])))
                 .transform(gpui::ElementTransform::scale(swell))
+                act_ui::focus::note_keystroke(&event.keystroke, window, cx);
                 .bg(if drag.is_some() {
                     gpui::solid_background(super::common::with_alpha(t.surface_inverse, 0.3))
                 } else {
@@ -1039,6 +1040,38 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, tiny: bo
         );
     }
     slider
+}
+
+/// `align-items: baseline` for lines of different sizes: each line's top below the group's top so
+/// all share one baseline, and the group's height. A line is its text size and line height (None
+/// for `normal`), in the window's font.
+pub(super) fn baseline_group<const N: usize>(lines: [(f32, Option<f32>); N], window: &Window) -> ([f32; N], f32) {
+    let (lines, height) = baseline_lines(lines, window);
+    (lines.map(|(top, _)| top), height)
+}
+
+/// The same lines each centred in a row instead (`items_center`): how far down each must move to
+/// sit where the baseline group would put it.
+pub(super) fn baseline_shifts<const N: usize>(lines: [(f32, Option<f32>); N], window: &Window) -> [f32; N] {
+    let (lines, height) = baseline_lines(lines, window);
+    lines.map(|(top, line)| top + line / 2.0 - height / 2.0)
+}
+
+/// Each line's top in its baseline group and its line height, and the group's height.
+fn baseline_lines<const N: usize>(lines: [(f32, Option<f32>); N], window: &Window) -> ([(f32, f32); N], f32) {
+    let scale = window.scale_factor();
+    let style = window.text_style();
+    let font_id = window.text_system().resolve_font(&style.font());
+    let boxes = lines.map(|(size, line_height)| {
+        let mut line = style.clone();
+        line.line_height = line_height.map(|height| px(height).into()).unwrap_or_else(gpui::line_height_normal);
+        let height = line.resolve_line_height(px(size), window.rem_size(), scale, window.text_system());
+        let (ascent, descent) = (window.text_system().ascent(font_id, px(size)), window.text_system().descent(font_id, px(size)));
+        (f32::from(gpui::line_baseline(height, ascent, descent, scale)), f32::from(height))
+    });
+    let above = boxes.iter().map(|(baseline, _)| *baseline).fold(0.0, f32::max);
+    let below = boxes.iter().map(|(baseline, height)| height - baseline).fold(0.0, f32::max);
+    (boxes.map(|(baseline, height)| (above - baseline, height)), above + below)
 }
 
 fn white(alpha: f32) -> gpui::Rgba {

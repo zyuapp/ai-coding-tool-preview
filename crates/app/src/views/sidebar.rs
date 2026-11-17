@@ -850,8 +850,12 @@ fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
     curve(y1, y2, (low + high) / 2.0)
 }
 
-/// The veil behind a floating sidebar, which closes it. It blurs the workspace but only dims the
-/// right panel beside it, as Chromium's backdrop root leaves the panel out of the blur.
+/// How much of the blur shows over the right panel, which Chromium blurs from its translucent
+/// glass, so its own crisp copy shows through.
+const DOCK_VEIL_BLUR: f32 = 0.5;
+
+/// The veil behind a floating sidebar, which closes it. It blurs the workspace, but the right
+/// panel beside it only partly.
 pub fn backdrop(root: &Root, state: &WorkspaceState, shown: &WorkspaceState, window: &Window, cx: &mut Context<Root>) -> impl IntoElement {
     let t = cx.theme().tokens.clone();
     let gap = cx.theme().metrics.frame_gap;
@@ -871,7 +875,16 @@ pub fn backdrop(root: &Root, state: &WorkspaceState, shown: &WorkspaceState, win
             Some(left) => blurred.w(px(left)),
             None => blurred.right_0(),
         }).bg(t.veil).veil_backdrop(&t))
-        .children(dock_left.map(|left| div().absolute().top_0().bottom_0().right_0().left(px(left)).bg(t.veil)))
+        .children(dock_left.map(|left| {
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .left(px(left))
+                .child(div().absolute().size_full().opacity(DOCK_VEIL_BLUR).veil_backdrop(&t))
+                .child(div().absolute().size_full().bg(t.veil))
+        }))
         .on_click(|_, _, cx| dispatch(AppCommand::SetSidebarOpen { open: false }, cx))
 }
 

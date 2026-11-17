@@ -473,24 +473,48 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
                 let opened = opened.clone();
                 move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| super::viewer::open_diagram(opened.0.clone(), opened.1.clone(), cx)
             };
+            // The frame lights while the diagram or its expand button is under the pointer, or the
+            // button holds keyboard focus.
+            let hovered = window.use_keyed_state(SharedString::from(format!("mermaid-lit-{id}")), cx, |_, _| [false; 2]);
+            let expand_ring = expand_focus.is_focused(window) && act_ui::focus::keyboard_focus_visible(cx);
+            let lit = hovered.read(cx).iter().any(|hovered| *hovered) || expand_ring;
+            let on_hover = |slot: usize| {
+                let hovered = hovered.clone();
+                move |over: &bool, _: &mut Window, cx: &mut App| {
+                    hovered.update(cx, |hovered, cx| {
+                        if hovered[slot] != *over {
+                            hovered[slot] = *over;
+                            cx.notify();
+                        }
+                    })
+                }
+            };
             outer = outer
                 .child(
                     frame
-                        .hover(|style| style.border_color(t.line_bright))
-                        .cursor(gpui::CursorStyle::PointingHand)
+                        .when(lit, |frame| frame.border_color(t.line_bright))
                         .skip_tab_stop()
                         .accessible(gpui::AccessInfo::new(gpui::AccessRole::Group, ""))
-                        .on_click(open.clone())
                         .flex()
                         .flex_col()
                         .items_start()
-                        .child(div().flex_none().min_w_full().flex().child(div().mx_auto().flex_none().child(picture)))
+                        .child(
+                            div()
+                                .id(gpui::ElementId::NamedChild(Box::new(id.clone()), "open".into()))
+                                .flex_none()
+                                .min_w_full()
+                                .flex()
+                                .cursor(gpui::CursorStyle::PointingHand)
+                                .on_hover(on_hover(0))
+                                .on_click(open.clone())
+                                .child(div().mx_auto().flex_none().child(picture)),
+                        )
                         .child(act_markdown::OverflowGutter::new(px(diagram.width), px(12.0))),
                 )
                 .child(act_ui::components::scrollbar::Scrollbar::horizontal(gpui::ElementId::NamedChild(Box::new(id.clone()), "bar".into()), &scroll))
                 .child(
                     // Drawn clear rather than left out, so the keyboard still reaches it.
-                    div().absolute().top(px(6.0)).right(px(38.0)).when(!expand_focus.is_focused(window), |button| button.opacity(0.0).group_hover(group, |style| style.opacity(1.0))).child(
+                    div().id(gpui::ElementId::NamedChild(Box::new(id.clone()), "expand-slot".into())).on_hover(on_hover(1)).absolute().top(px(6.0)).right(px(38.0)).when(!expand_focus.is_focused(window), |button| button.opacity(0.0).group_hover(group, |style| style.opacity(1.0))).child(
                         act_ui::components::button::IconButton::new(gpui::ElementId::NamedChild(Box::new(id), "expand".into()), act_ui::IconName::Maximize2, "Open the diagram at full size")
                             .track_focus(&expand_focus)
                             .variant(act_ui::components::button::IconButtonVariant::Glass)

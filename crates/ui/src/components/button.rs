@@ -561,6 +561,8 @@ pub struct IconButton {
     clear: bool,
     /// Fill, border and colour under the pointer, in place of the variant's.
     hover_look: Option<(Rgba, Rgba, Rgba)>,
+    /// Its tip shows again once a press changes it.
+    tip_again: bool,
 }
 
 impl IconButton {
@@ -584,6 +586,7 @@ impl IconButton {
             child: None,
             clear: false,
             hover_look: None,
+            tip_again: false,
         }
     }
 
@@ -611,6 +614,13 @@ impl IconButton {
 
     pub fn no_tip(mut self) -> Self {
         self.tip = Some(None);
+        self
+    }
+
+    /// Shows the tip again when a press changes it while the pointer stays, as a label that
+    /// reports the result does.
+    pub fn tip_again(mut self) -> Self {
+        self.tip_again = true;
         self
     }
 
@@ -847,6 +857,7 @@ impl RenderOnce for IconButton {
         };
         match (self.reason.filter(|_| self.disabled), tip) {
             (Some(reason), _) => button.tip_reason(reason),
+            (None, Some(tip)) if self.tip_again => button.tip_again(tip),
             (None, Some(tip)) => button.tip(tip),
             (None, None) => button,
         }

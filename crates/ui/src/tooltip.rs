@@ -49,6 +49,8 @@ pub struct Tooltips {
     /// The window's size and whether it was active when the tip showed: a resize moves what it
     /// points at, and the window going to the background takes it away.
     shown_in: Option<(gpui::Size<Pixels>, bool)>,
+    /// The text the hovered control's tip last showed, or was asked to.
+    entered: Option<SharedString>,
 }
 
 impl Global for Tooltips {}
@@ -80,6 +82,7 @@ impl Tooltips {
         let handle = window.window_handle();
         let state = cx.global_mut::<Tooltips>();
         state.hovered = Some(tip.key);
+        state.entered = Some(tip.text.clone());
         state.linger = None;
         if state.shown.as_ref().is_some_and(|shown| shown.key == tip.key) {
             return;
@@ -154,6 +157,9 @@ struct TipZone {
     hoverable: bool,
     /// The tip repeats the control's own text, so it shows only while that text is cut short.
     overflow: bool,
+    /// A press that changes the tip's text under the pointer shows the tip again, as a control
+    /// whose content is replaced under the pointer does.
+    again: bool,
     /// The control's border, which the zone (laid out inside it) reaches out over: a tip is placed
     /// against the control's border box.
     border: Edges<Pixels>,
@@ -237,6 +243,16 @@ impl Element for TipZone {
                 shown.anchor = outer;
                 shown.text = self.text.clone();
                 shown.hitbox = hitbox.id;
+                state.entered = Some(self.text.clone());
+            }
+            let retell = self.again
+                && state.hovered == Some(key)
+                && state.shown.is_none()
+                && state.pending.is_none()
+                && state.entered.as_ref() != Some(&self.text);
+            if retell {
+                let tip = Tip { key, text: self.text.clone(), anchor: outer, hoverable: self.hoverable, hitbox: hitbox.id, focus: None };
+                Tooltips::enter(tip, window, cx);
             }
         }
         hitbox
@@ -305,19 +321,26 @@ pub trait Tippable: ParentElement + InteractiveElement + Styled + Sized {
     fn tip(mut self, text: impl Into<SharedString>) -> Self {
         let text = text.into();
         let border = border_of(&mut self);
-        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, border })
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: false, border })
+    }
+
+    /// Like `tip`, and shown again when a press changes `text` while the pointer stays.
+    fn tip_again(mut self, text: impl Into<SharedString>) -> Self {
+        let text = text.into();
+        let border = border_of(&mut self);
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: true, border })
     }
 
     /// Shows `text`, the control's own text, only while it is cut short.
     fn tip_overflow(mut self, text: impl Into<SharedString>) -> Self {
         let border = border_of(&mut self);
-        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, border })
+        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border })
     }
 
     /// The reason a disabled control cannot act: shown at once, and on a press, and readable.
     fn tip_reason(mut self, text: impl Into<SharedString>) -> Self {
         let border = border_of(&mut self);
-        self.child(TipZone { text: text.into(), hoverable: true, overflow: false, border })
+        self.child(TipZone { text: text.into(), hoverable: true, overflow: false, again: false, border })
     }
 }
 
@@ -408,11 +431,11 @@ pub fn tooltip_layer(window: &mut Window, cx: &mut App) -> impl IntoElement {
     Tooltips::ensure(cx);
     let handle = window.window_handle();
     let state = cx.global::<Tooltips>();
-    // A pointer that left the window, or the control the tip names, takes a hover tip with it, even
-    // when no move inside the window said so. A tip keyboard focus showed stays with the focus.
+    // A pointer that left the window, or the control the tip names, takes the tip with it, even
+    // when no move inside the window said so.
     let pointer = window.mouse_position();
     let left_window = pointer.x < px(-10_000.0);
-    let shown = state.shown.clone().filter(|tip| state.window == Some(handle) && (tip.focus.is_some() || (!left_window && (tip.hoverable || tip.anchor.contains(&pointer)))));
+    let shown = state.shown.clone().filter(|tip| state.window == Some(handle) && !left_window && (tip.hoverable || tip.focus.is_some() || tip.anchor.contains(&pointer)));
     let theme = cx.theme();
     let tokens = &theme.tokens;
     let metrics = &theme.metrics;

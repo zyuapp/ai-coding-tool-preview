@@ -443,6 +443,7 @@ fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) 
     let button = IconButton::new(SharedString::from(id), glyph_icon, if copied { SharedString::from("Copied") } else { label })
         .icon_size(14.0)
         .hover_look(clear, clear, t.ink_soft)
+        .tip_again()
         .track_focus(&focus)
         .on_click(move |_, window, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));

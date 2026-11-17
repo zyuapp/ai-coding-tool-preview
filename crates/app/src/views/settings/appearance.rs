@@ -499,7 +499,7 @@ fn font_select(root: &mut Root, mono: bool, chosen: &str, focus: &gpui::FocusHan
             let system = system.clone();
             // `.font-select-popover` hangs 6px under its trigger, right-aligned, and never flips.
             let menu = Menu::build(Vec::new(), Placement::Below { anchor, align: Align::End, gap: px(6.0) }, window, cx, |menu| {
-                menu.checkable(true).pinned_notes(true).default_needs_query(true).list_max_height(px(264.0)).width(px(300.0)).exempt(&probe).searchable("Search fonts", move |query, _| font_entries(mono, &current, query, &installed, system.clone())).search_label(format!("Search fonts for {}", label.to_lowercase()))
+                menu.checkable(true).pinned_notes(true).default_needs_query(true).list_max_height(px(264.0)).width(px(300.0)).exempt(&probe).in_page(&probe).searchable("Search fonts", move |query, _| font_entries(mono, &current, query, &installed, system.clone())).search_label(format!("Search fonts for {}", label.to_lowercase()))
             });
             root.menus.show(menu_id, menu, cx);
         }))

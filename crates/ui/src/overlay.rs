@@ -120,10 +120,19 @@ impl Placement {
 pub struct Placed {
     placement: Placement,
     child: AnyElement,
+    follow: Option<BoundsCell>,
 }
 
 pub fn placed(placement: Placement, child: impl IntoElement) -> Placed {
-    Placed { placement, child: child.into_any_element() }
+    Placed { placement, child: child.into_any_element(), follow: None }
+}
+
+impl Placed {
+    /// Anchors to where `cell`'s probe was drawn this frame, so the float keeps up with a scrolled page.
+    pub fn following(mut self, cell: Option<BoundsCell>) -> Self {
+        self.follow = cell;
+        self
+    }
 }
 
 impl IntoElement for Placed {
@@ -173,7 +182,12 @@ impl Element for Placed {
         if size.width > viewport.width {
             size = self.child.layout_as_root(gpui::size(AvailableSpace::Definite(viewport.width), height), window, cx);
         }
-        let origin = self.placement.origin(size, viewport);
+        let placement = match (self.follow.as_ref().and_then(|cell| cell.get()), self.placement) {
+            (Some(anchor), Placement::Below { align, gap, .. }) => Placement::Below { anchor, align, gap },
+            (Some(anchor), Placement::Anchor { align, .. }) => Placement::Anchor { anchor, align },
+            (_, placement) => placement,
+        };
+        let origin = placement.origin(size, viewport);
         self.child.prepaint_at(point(origin.x.round(), origin.y.round()), window, cx);
     }
 

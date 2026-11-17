@@ -341,6 +341,9 @@ pub struct Menu {
     list_max_height: Option<Pixels>,
     /// The menu's own cap, 420 unless set (`--menu-max-height`).
     max_height: Option<Pixels>,
+    /// Hung in the page under the trigger drawn here: it moves as the page scrolls, and runs past the
+    /// window's edge instead of shrinking.
+    in_page: Option<BoundsCell>,
     /// An edge action ending the list sits below the scrolled rows, ruled off from them (`MenuEdgeAction`).
     pinned_edge: bool,
     /// Icons drawn before the labels of the groups they name.
@@ -406,6 +409,7 @@ impl Menu {
             return_focus: None,
             list_max_height: None,
             max_height: None,
+            in_page: None,
             pinned_edge: false,
             group_icons: Vec::new(),
             default_needs_query: false,
@@ -482,6 +486,12 @@ impl Menu {
     /// Caps the whole menu's height (`--menu-max-height`).
     pub fn max_height(mut self, height: Pixels) -> Self {
         self.max_height = Some(height);
+        self
+    }
+
+    /// Lays the menu out as a popover in the page under the trigger `probe` records.
+    pub fn in_page(mut self, probe: &BoundsCell) -> Self {
+        self.in_page = Some(probe.clone());
         self
     }
 
@@ -1092,7 +1102,8 @@ impl Render for Menu {
         let m = &theme.metrics;
         let viewport = window.viewport_size();
         let room = self.placement.map(|placement| placement.room(viewport)).unwrap_or(viewport.height - px(16.0));
-        let max_height = self.max_height.unwrap_or(px(MAX_HEIGHT)).min(room).max(px(60.0));
+        let max_height = self.max_height.unwrap_or(px(MAX_HEIGHT));
+        let max_height = if self.in_page.is_some() { max_height } else { max_height.min(room).max(px(60.0)) };
 
         let mut column: Vec<AnyElement> = Vec::new();
         self.row_children.clear();
@@ -1280,7 +1291,7 @@ impl Render for Menu {
         if self.parent.is_some() {
             placed(placement, surface).into_any_element()
         } else {
-            deferred(placed(placement, surface)).with_priority(60).into_any_element()
+            deferred(placed(placement, surface).following(self.in_page.clone())).with_priority(60).into_any_element()
         }
     }
 }

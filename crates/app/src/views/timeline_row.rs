@@ -197,7 +197,10 @@ pub fn render(model: &Rc<RowModel>, index: usize, newest: bool, window: &mut Win
             (self::entry(model, index, entry, newest, &row_group, window, cx), bottom)
         }
     };
-    div().id(SharedString::from(format!("timeline-{}", group.id()))).group(row_group).w_full().pb(px(bottom)).child(column(model.inset, model.side, content)).into_any_element()
+    // The row is the reading column's width, so the pointer beside it is not on the row.
+    let focus = row_focus(&row_group, window, cx);
+    let row = div().id(SharedString::from(format!("timeline-{}", group.id()))).track_focus(&focus).group(row_group).pb(px(bottom)).child(content);
+    column(model.inset, model.side, row).into_any_element()
 }
 
 fn entry(model: &Rc<RowModel>, index: usize, entry: &Entry, newest: bool, row_group: &SharedString, window: &mut Window, cx: &mut App) -> AnyElement {
@@ -338,11 +341,23 @@ fn lit_ranges(model: &RowModel, message_id: &str, field: FindField, text: &str, 
         .collect()
 }
 
-/// When a message was sent, and a copy of it, shown on the newest row and under the pointer.
+/// The focus a row holds when anything in it does.
+fn row_focus(row_group: &SharedString, window: &mut Window, cx: &mut App) -> gpui::FocusHandle {
+    window.use_keyed_state(SharedString::from(format!("{row_group}-focus")), cx, |_, cx| cx.focus_handle()).read(cx).clone()
+}
+
+/// Whether a control in the row holds focus (`:focus-within`); text a press selects in does not count.
+fn focus_within(row_group: &SharedString, window: &mut Window, cx: &mut App) -> bool {
+    row_focus(row_group, window, cx).contains_focused(window, cx) && window.focused(cx).is_some_and(|focused| focused.tab_stop)
+}
+
+/// When a message was sent, and a copy of it, shown on the newest row, under the pointer, and
+/// while the row holds focus.
 fn actions(message: &ConversationMessage, newest: bool, label: &'static str, row_group: &SharedString, window: &mut Window, cx: &mut App) -> Stateful<Div> {
     let t = cx.theme().tokens.clone();
+    let within = focus_within(row_group, window, cx);
     // Drawn clear rather than left out, so the keyboard still reaches the copy button.
-    let shown = newest || copy_focus(&format!("copy-{}", message.id), window, cx).is_focused(window);
+    let shown = newest || within;
     div()
         .id(SharedString::from(format!("actions-{}", message.id)))
         .transition(gpui::Transition::ease_out(110))
@@ -363,7 +378,10 @@ fn actions(message: &ConversationMessage, newest: bool, label: &'static str, row
                 .child(div().accessible(gpui::AccessInfo::new(gpui::AccessRole::Label, clock_time(message.at))).child(clock_time(message.at)))
                 .tip(full_moment(message.at)),
         )
-        .when(!message.text.is_empty(), |row| row.child(copy_button(&format!("copy-{}", message.id), message.text.clone(), label, Some(row_group.clone()), window, cx)))
+        .when(!message.text.is_empty(), |row| {
+            let tile = CopyTile { id: format!("copy-{}", message.id), text: message.text.clone(), label: label.into(), side: 28.0, ground: None };
+            row.child(copy_tile(tile, CopyShow::Row(row_group.clone(), within), window, cx))
+        })
 }
 
 struct Copied(Option<std::time::Instant>);
@@ -388,8 +406,9 @@ fn is_copied(state: &Entity<Copied>, cx: &App) -> bool {
 /// When a copy button's tile of glass is up.
 enum CopyShow {
     Always,
-    /// A message's: a bare glyph until its row is under the pointer or holds focus.
-    Row(SharedString),
+    /// A message's: a bare glyph until its row is under the pointer or holds focus, which the
+    /// flag says it does.
+    Row(SharedString, bool),
     /// A block's on the newest answer: a bare glyph until the block is under the pointer.
     Block(SharedString),
     /// A bare glyph until it is itself under the pointer.
@@ -411,7 +430,7 @@ struct CopyTile {
 /// that group is under the pointer, and a pane of glass then.
 pub fn copy_button(id: &str, text: String, label: &'static str, group: Option<SharedString>, window: &mut Window, cx: &mut App) -> Div {
     let tile = CopyTile { id: id.to_string(), text, label: label.into(), side: 28.0, ground: None };
-    copy_tile(tile, group.map_or(CopyShow::Always, CopyShow::Row), window, cx)
+    copy_tile(tile, group.map_or(CopyShow::Always, |group| CopyShow::Row(group, false)), window, cx)
 }
 
 /// The glass variant's tile (`.icon-btn[data-variant="glass"]`).
@@ -420,19 +439,19 @@ fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) 
     let state = copy_state(&id, window, cx);
     let focus = copy_focus(&id, window, cx);
     let copied = is_copied(&state, cx);
-    let lifted = copied || focus.is_focused(window);
+    let lifted = copied || focus.is_focused(window) || matches!(show, CopyShow::Row(_, true));
     let t = cx.theme().tokens.clone();
     let clear = gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
     let group = match &show {
         CopyShow::Always => None,
         CopyShow::Hover => Some(SharedString::from(COPY_TILE)),
-        CopyShow::Row(group) | CopyShow::Block(group) => Some(group.clone()),
+        CopyShow::Row(group, _) | CopyShow::Block(group) => Some(group.clone()),
     };
     // The glyph at rest, and once its row or block is under the pointer.
     let (rest, raised) = match (&show, copied) {
         (_, true) => (t.success_soft, t.success_soft),
         (CopyShow::Always, _) => (t.ink_dim, t.ink_dim),
-        (CopyShow::Row(_) | CopyShow::Hover, _) => (t.muted, t.muted),
+        (CopyShow::Row(..) | CopyShow::Hover, _) => (t.muted, t.muted),
         (CopyShow::Block(_), _) => (t.quiet, t.ink_dim),
     };
     let glyph_icon = if copied { IconName::Check } else { IconName::Copy };
@@ -476,7 +495,7 @@ fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) 
     let (rest_edge, raised_edge) = match (&show, copied) {
         (_, true) => (t.success_line, t.success_line),
         (CopyShow::Always, _) => (t.line_strong, t.line_strong),
-        (CopyShow::Row(_), _) => (clear, t.line_glass),
+        (CopyShow::Row(..), _) => (clear, t.line_glass),
         (CopyShow::Block(_), _) => (clear, t.line_strong),
         (CopyShow::Hover, _) => (clear, t.line_bright),
     };

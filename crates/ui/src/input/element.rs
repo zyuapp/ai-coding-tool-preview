@@ -438,7 +438,9 @@ impl Element for TextInputElement {
         let mut layout = InputLayout::build(lines, line_starts, line_height, placeholder);
         let selection = input.selection();
         let cursor = input.cursor();
+        // Chromium lays a field's selection over it at 80%.
         let selection_color = cx.theme().tokens.text_selection;
+        let selection_color = gpui::Rgba { a: selection_color.a * 0.8, ..selection_color };
         let shows_caret = selection.is_empty() && !input.is_disabled() && input.focus_handle.is_focused(window) && window.is_window_active();
         let caret_view = input.caret();
 

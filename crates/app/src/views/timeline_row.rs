@@ -484,7 +484,8 @@ fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) 
     let pane = layer()
         .shadow(vec![outline])
         .when_some(ground, |pane, ground| pane.child(layer().bg(ground)))
-        .child(layer().bg(t.glass_clear.background()))
+        // The sheen fills the padding box and repeats into the border, as CSS lays it out.
+        .child(layer().border_1().border_color(gpui::transparent_black()).bg(t.glass_clear.background().tiled_from_padding_box()))
         // CSS draws the inset rim inside the 1px border.
         .child(div().absolute().inset(px(1.0)).rounded(px(7.0)).float_rim(&t, Corners::Radius(7.0)));
     let pane = match &group {

@@ -993,7 +993,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         let probe = root.conversation.scroll_button.clone();
         let weak = cx.entity().downgrade();
         area = area.child(
-            div().absolute().left_0().right(px(side)).bottom(px(composer_space + 34.0 + approval_space + if approval_space > 0.0 { 10.0 } else { 0.0 })).flex().justify_center().child(div().relative().child(bounds_probe(&probe)).child(
+            // Centred on the transcript's column; it takes the pointer from the rows under it.
+            div().absolute().left_0().right_0().pl(px(inset)).pr(px(inset + side + gutter)).bottom(px(composer_space + 34.0 + approval_space + if approval_space > 0.0 { 10.0 } else { 0.0 })).flex().justify_center().child(div().id("scroll-to-end-dock").relative().occlude().child(bounds_probe(&probe)).child(
                 IconButton::new("scroll-to-end", IconName::ChevronDown, "Scroll to the latest message")
                     .variant(IconButtonVariant::Glass)
                     // The transcript stays sharp under this button.

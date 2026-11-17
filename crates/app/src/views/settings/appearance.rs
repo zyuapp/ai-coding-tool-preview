@@ -241,7 +241,10 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
         let next = Some(family) == target;
         let keyed = active == Some(index);
         let tokens = tile_tokens(&mut root.settings.appearance.tile_tokens, option.id).clone();
-        let border = if picked { t.accent } else if next || keyed { t.line_bright } else { t.line_strong };
+        // A tile wears its own theme's colours. A keyboard ring is 2px laid over the border.
+        let halo = if picked { Some(tokens.accent) } else if next { Some(tokens.line_bright) } else { None };
+        let border = if keyed { tokens.focus_ring } else { halo.unwrap_or(tokens.line_strong) };
+        let hover_border = tokens.line_bright;
         let mark: Option<AnyElement> = if next {
             Some(icon(IconName::CornerDownLeft, 14.0, tokens.muted).into_any_element())
         } else if picked {
@@ -263,7 +266,7 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
             .border_color(border)
             .bg(tokens.canvas)
             .cursor_pointer()
-            .hover(|style| style.border_color(t.line_bright))
+            .when(halo.is_none() && !keyed, |tile| tile.hover(move |style| style.border_color(hover_border)))
             .child(preview(&tokens))
             .child(
                 div()
@@ -283,10 +286,13 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
                     .children(mark),
             )
             .on_click(cx.listener(move |root, _, window, cx| choose_theme(root, family, window, cx)));
-        if picked || next || keyed {
-            let ring = if picked { t.accent } else if keyed { t.focus_ring } else { t.line_bright };
-            tile = tile.child(div().absolute().inset_0().rounded(px(10.0)).border_1().border_color(ring));
+        if keyed {
+            tile = tile.child(div().absolute().inset_0().rounded(px(9.0)).border_1().border_color(tokens.focus_ring));
         }
+        // `box-shadow: 0 0 0 1px`, outside the tile's clip.
+        let tile = div().relative().child(tile).when_some(halo, |tile, halo| {
+            tile.child(div().absolute().top(px(-1.0)).left(px(-1.0)).right(px(-1.0)).bottom(px(-1.0)).rounded(px(11.0)).border_1().border_color(halo))
+        });
         tiles.push(tile.into_any_element());
     }
     let tile_width = {

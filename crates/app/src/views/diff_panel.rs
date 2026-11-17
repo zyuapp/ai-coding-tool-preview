@@ -1151,7 +1151,11 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
 
 fn sync_list(cache: &mut DiffCache, signatures: Vec<u64>, columns: i32, estimate: impl Fn(usize) -> f32) {
     let old = &cache.signatures;
-    if old.len() != signatures.len() || old != &signatures {
+    // Rows spliced into an empty list would push its top below them, so it opens at the top.
+    if old.is_empty() && !signatures.is_empty() {
+        cache.list.reset_estimated((0..signatures.len()).map(|at| px(estimate(at))));
+        cache.signatures = signatures;
+    } else if old.len() != signatures.len() || old != &signatures {
         let first = old.iter().zip(&signatures).position(|(a, b)| a != b).unwrap_or(old.len().min(signatures.len()));
         let last_old = old.len();
         let last_new = signatures.len();
@@ -2205,7 +2209,18 @@ fn comment_editor(model: &DiffModel, cx: &mut App) -> AnyElement {
 
 #[cfg(test)]
 mod tests {
-    use super::wrapped_lines;
+    use super::{sync_list, wrapped_lines, DiffCache};
+    use gpui::{px, ListOffset};
+
+    #[test]
+    fn rows_loaded_into_an_emptied_review_open_at_the_top() {
+        let mut cache = DiffCache::default();
+        sync_list(&mut cache, (0..50).collect(), 40, |_| 20.0);
+        cache.list.scroll_to(ListOffset { item_ix: 30, offset_in_item: px(4.0) });
+        sync_list(&mut cache, Vec::new(), 40, |_| 20.0);
+        sync_list(&mut cache, (100..140).collect(), 40, |_| 20.0);
+        assert_eq!(cache.list.logical_scroll_top().item_ix, 0);
+    }
 
     #[test]
     fn wrapped_lines_break_between_words_and_hang() {

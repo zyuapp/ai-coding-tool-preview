@@ -283,7 +283,7 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     let focus = root.sidebar.row_focus.entry(thread.id.clone()).or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
     if !editing && root.sidebar.refocus_row.as_deref() == Some(thread.id.as_str()) {
         root.sidebar.refocus_row = None;
-        _window.focus(&focus);
+        _window.focus(&focus, cx);
     }
     let focus_ring = focus.is_focused(_window) && act_ui::focus::keyboard_focus_visible(cx);
     // The row's own buttons show while the keyboard is on them too, as `:focus-within` shows them.
@@ -696,7 +696,7 @@ impl Root {
         }
         // The menu hands the keyboard back to the row, wherever it was opened from.
         if let Some(row) = self.sidebar.row_focus.get(thread_id) {
-            window.focus(row);
+            window.focus(row, cx);
         }
         let menu = Menu::build(entries, Placement::At { position }, window, cx, |menu| menu.from_frame());
         self.menus.show(&format!("task:{thread_id}"), menu, cx);

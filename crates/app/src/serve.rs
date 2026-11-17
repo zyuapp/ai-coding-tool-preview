@@ -6,7 +6,7 @@ use std::sync::Arc;
 use act_host::mobile::pairing_socket::{request_pairing, serve_pairing_socket};
 use act_host::serve_args::{pairing_line, parse_serve_arguments, ServeCommand};
 use act_store::profile::Profile;
-use gpui::{App, AppContext, Application};
+use gpui::{App, AppContext};
 use serde_json::json;
 
 use crate::effects::computers::BridgeOptions;
@@ -66,7 +66,7 @@ pub fn main(arguments: Vec<String>) -> i32 {
     let Some(services) = crate::startup::open_services(&profile) else { return 1 };
     let local = parsed.local;
     let port = parsed.port;
-    Application::headless().run(move |cx: &mut App| {
+    gpui_platform::headless().run(move |cx: &mut App| {
         let host = Host::new(profile.clone(), services, cx);
         host.set_headless();
         let workspace = cx.new(|cx| Workspace::new(host.clone(), launched_update.clone(), cx));

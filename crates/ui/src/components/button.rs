@@ -2,6 +2,7 @@
 //! toggle, and the segmented control.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     div, prelude::*, px, AnyElement, App, ClickEvent, CursorStyle, ElementId, FocusHandle, FontWeight, Rgba,
@@ -459,7 +460,7 @@ impl RenderOnce for Button {
         let mut content: Vec<AnyElement> = Vec::new();
         if let Some(icon) = self.icon {
             content.push(if self.spinning {
-                crate::components::spinner::Spinning::new(ElementId::NamedChild(Box::new(self.id.clone()), "icon".into()), icon).size(px(self.icon_size)).into_any_element()
+                crate::components::spinner::Spinning::new(ElementId::NamedChild(Arc::new(self.id.clone()), "icon".into()), icon).size(px(self.icon_size)).into_any_element()
             } else {
                 Icon::new(icon).size(px(self.icon_size)).into_any_element()
             });
@@ -470,7 +471,7 @@ impl RenderOnce for Button {
         content.extend(self.children);
 
         if self.busy {
-            let spinner_id = ElementId::NamedChild(Box::new(self.id.clone()), "spinner".into());
+            let spinner_id = ElementId::NamedChild(Arc::new(self.id.clone()), "spinner".into());
             button = button
                 .child(div().flex().items_center().gap(px(6.0)).invisible().children(content))
                 .child(
@@ -972,7 +973,7 @@ impl RenderOnce for Segmented {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         // The group is one stop, the arrows choose within it, as the page's segmented control is.
         let focus = self.focus.clone().unwrap_or_else(|| {
-            let key = ElementId::NamedChild(Box::new(self.id.clone()), "focus".into());
+            let key = ElementId::NamedChild(Arc::new(self.id.clone()), "focus".into());
             window.use_keyed_state(key, cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone()
         });
         let held = focus.is_focused(window);

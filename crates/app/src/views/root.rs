@@ -294,7 +294,7 @@ impl Root {
             .rounded(px(6.0))
             .border_1()
             .border_color(if self.rename_invalid { t.danger } else { t.line_input })
-            .when(self.rename_invalid, |field| field.shadow(vec![gpui::BoxShadow { color: t.danger.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(1.0) }]))
+            .when(self.rename_invalid, |field| field.shadow(vec![gpui::BoxShadow { color: t.danger.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(1.0), inset: false }]))
             .bg(t.surface_input)
             .text_color(t.ink)
             // The field holds focus while it is shown, so it wears the keyboard's ring whenever rings show.
@@ -334,9 +334,9 @@ impl Root {
         if event.keystroke.key == "tab" && !(modifiers.platform || modifiers.control || modifiers.alt) {
             // Left to propagate, so the keystroke observers see it and show the focus ring.
             if modifiers.shift {
-                window.focus_prev();
+                window.focus_prev(cx);
             } else {
-                window.focus_next();
+                window.focus_next(cx);
             }
             return;
         }
@@ -416,7 +416,7 @@ impl Render for Root {
         if let Some(input) = self.pending_focus.take() {
             input.update(cx, |input, cx| {
                 input.select_all_text(cx);
-                input.focus(window);
+                input.focus(window, cx);
             });
         }
         // Focus given to something not drawn yet, such as a menu opened by the click that woke the
@@ -428,7 +428,7 @@ impl Render for Root {
             let held = window.focused(cx);
             cx.on_next_frame(window, move |root, window, cx| {
                 if !root.focus.contains_focused(window, cx) && window.focused(cx) == held {
-                    window.focus(&root.focus);
+                    window.focus(&root.focus, cx);
                 }
             });
         });
@@ -532,10 +532,10 @@ impl Render for Root {
             .bg(t.frame_clear);
         // Over a material the settings sheet has no ground of its own, so the window behind it steps out of the way.
         let behind_settings = state.settings_shown() && cx.theme().environment.material != act_ui::theme::WindowMaterial::None;
-        if !behind_settings {
-            shell = shell.when(!sidebar_floats, |shell| shell.child(sidebar::slot(self, &state, window).child(sidebar_part.clone()))).child(column);
-        }
-        if sidebar_floats && !behind_settings {
+        if !behind_settings && !sidebar_floats {
+            shell = shell.child(sidebar::slot(self, &state, window).child(sidebar_part)).child(column);
+        } else if !behind_settings {
+            shell = shell.child(column);
             if state.sidebar_open && !state.zen {
                 shell = shell.child(sidebar::backdrop(self, &state, &shown, window, cx));
             }

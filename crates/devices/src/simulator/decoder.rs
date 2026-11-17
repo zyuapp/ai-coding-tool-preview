@@ -122,6 +122,13 @@ unsafe impl Send for Picture {}
 unsafe impl Sync for Picture {}
 
 impl Picture {
+    /// The buffer as the window paints it, holding its own reference.
+    pub fn surface(&self) -> objc2_core_foundation::CFRetained<objc2_core_video::CVPixelBuffer> {
+        let buffer = std::ptr::NonNull::new(self.0.as_concrete_TypeRef().cast::<objc2_core_video::CVPixelBuffer>()).expect("a picture holds a buffer");
+        // SAFETY: the pointer is a live CVPixelBuffer this picture holds a reference to.
+        unsafe { objc2_core_foundation::CFRetained::retain(buffer) }
+    }
+
     pub fn width(&self) -> usize {
         self.0.get_width()
     }

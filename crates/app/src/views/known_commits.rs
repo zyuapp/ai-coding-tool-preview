@@ -70,7 +70,7 @@ pub fn install(cx: &mut App) {
             for (root, hashes) in batches {
                 for chunk in hashes.chunks(MAX_COMMIT_CHECKS) {
                     // The computer holding the checkout answers, this one or a paired one.
-                    let Ok(read) = cx.update(|cx| crate::effects::window_desktop::commits(root.clone(), chunk.to_vec(), cx)) else { return };
+                    let read = cx.update(|cx| crate::effects::window_desktop::commits(root.clone(), chunk.to_vec(), cx));
                     let found = read.await;
                     let mut changed: Vec<WeakEntity<MarkdownView>> = Vec::new();
                     CACHE.with(|cache| {

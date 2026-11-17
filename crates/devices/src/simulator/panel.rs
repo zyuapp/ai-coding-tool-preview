@@ -22,7 +22,7 @@ use futures::StreamExt;
 use gpui::{
     canvas, div, point, prelude::*, px, size, Animation, AnimationExt, App, Bounds, BoxShadow, Context, Corners, DismissEvent, DispatchPhase, Entity, FocusHandle, Focusable,
     FontWeight, Hitbox, HitboxBehavior, KeyUpEvent, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    Rgba, ScrollWheelEvent, SharedString, Subscription, Task, WeakEntity, Window,
+    Rgba, ScrollEvent, SharedString, Subscription, Task, WeakEntity, Window,
 };
 
 use super::devices::simulator_groups;
@@ -276,7 +276,7 @@ impl SimulatorPanel {
 
     fn pointer_down(&mut self, at: (f64, f64), modifiers: Modifiers, window: &mut Window, cx: &mut Context<Self>) {
         self.lift_gestures_on(self.orientation(), cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         self.input.dragging = true;
         let landing = mirrored(at.0, at.1);
         self.input.two_fingers = if !modifiers.alt {
@@ -726,7 +726,7 @@ impl SimulatorPanel {
                             paint_screen_frame(screen, radius, driven, focused_ring, &t, window);
                             #[cfg(target_os = "macos")]
                             if let Some(picture) = picture {
-                                window.paint_surface_rounded(screen, Corners::all(radius), picture.0);
+                                window.paint_surface_rounded(screen, Corners::all(radius), picture.surface());
                             }
                             paint_screen_rings(screen, radius, driven, focused_ring, &t, window);
                             if let Some(fingers) = marks {
@@ -824,7 +824,7 @@ fn paint_screen_frame(screen: Bounds<Pixels>, radius: Pixels, driven: bool, focu
     window.paint_shadows(
         screen,
         Corners::all(radius),
-        &[BoxShadow { color: gpui::hsla(0.0, 0.0, 0.0, 0.45), offset: point(px(0.0), px(18.0)), blur_radius: px(40.0), spread_radius: px(-18.0) }],
+        &[BoxShadow { color: gpui::hsla(0.0, 0.0, 0.0, 0.45), offset: point(px(0.0), px(18.0)), blur_radius: px(40.0), spread_radius: px(-18.0), inset: false }],
     );
     window.paint_quad(gpui::fill(screen, gpui::black()).corner_radii(radius));
 }
@@ -847,7 +847,7 @@ fn paint_screen_rings(screen: Bounds<Pixels>, radius: Pixels, driven: bool, focu
 fn paint_finger(screen: Bounds<Pixels>, x: f64, y: f64, window: &mut Window) {
     let centre = point(screen.origin.x + screen.size.width * x as f32, screen.origin.y + screen.size.height * y as f32);
     let bounds = Bounds { origin: point(centre.x - px(FINGER / 2.0), centre.y - px(FINGER / 2.0)), size: size(px(FINGER), px(FINGER)) };
-    window.paint_shadows(bounds, Corners::all(px(FINGER / 2.0)), &[BoxShadow { color: gpui::hsla(0.0, 0.0, 0.0, 0.35), offset: point(px(0.0), px(2.0)), blur_radius: px(8.0), spread_radius: px(0.0) }]);
+    window.paint_shadows(bounds, Corners::all(px(FINGER / 2.0)), &[BoxShadow { color: gpui::hsla(0.0, 0.0, 0.0, 0.35), offset: point(px(0.0), px(2.0)), blur_radius: px(8.0), spread_radius: px(0.0), inset: false }]);
     window.paint_quad(gpui::quad(
         grow(bounds, 1.5),
         px(FINGER / 2.0 + 1.5),
@@ -891,7 +891,7 @@ fn register_pointer(entity: WeakEntity<SimulatorPanel>, screen: Bounds<Pixels>, 
         }
         let _ = up.update(cx, |this, cx| this.pointer_up(shown_at(screen, event.position), event.modifiers, window, cx));
     });
-    window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+    window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
         if phase != DispatchPhase::Bubble || !hitbox.should_handle_scroll(window) {
             return;
         }

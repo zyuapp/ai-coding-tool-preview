@@ -72,8 +72,8 @@ impl Source {
 
     fn max_offset(&self) -> Size<Pixels> {
         match self {
-            Source::Handle(handle) => handle.max_offset(),
-            Source::List(list) => list.max_offset_for_scrollbar(),
+            Source::Handle(handle) => handle.max_offset().into(),
+            Source::List(list) => list.max_offset_for_scrollbar().into(),
             Source::Model(model) => model.0.max.get(),
         }
     }
@@ -118,7 +118,7 @@ pub struct Scrollbar {
 /// The room a styled scrollbar takes at the right of a container that overflows: Chromium lays a
 /// `::-webkit-scrollbar` beside the content rather than over it. Read from the last layout.
 pub fn gutter(handle: &ScrollHandle) -> Pixels {
-    if handle.max_offset().height > px(0.0) { px(THICKNESS) } else { px(0.0) }
+    if handle.max_offset().y > px(0.0) { px(THICKNESS) } else { px(0.0) }
 }
 
 /// `gutter` for an element scrolling itself.
@@ -128,7 +128,7 @@ pub fn model_gutter(model: &ScrollModel) -> Pixels {
 
 /// `gutter` for a virtual list.
 pub fn list_gutter(list: &ListState) -> Pixels {
-    if list.max_offset_for_scrollbar().height > px(0.0) { px(THICKNESS) } else { px(0.0) }
+    if list.max_offset_for_scrollbar().y > px(0.0) { px(THICKNESS) } else { px(0.0) }
 }
 
 impl Scrollbar {
@@ -287,7 +287,7 @@ impl Element for Scrollbar {
         window.paint_quad(gpui::fill(visible, base).corner_radii(radius));
         window.paint_quad(gpui::fill(visible, sheen).corner_radii(radius));
         // A glint along the top and a half-pixel hairline all round: inset shadows, which do not snap to whole pixels as borders do.
-        let shadow = |color: gpui::Rgba, y: f32, blur: f32, spread: f32| gpui::BoxShadow { color: color.into(), offset: point(px(0.0), px(y)), blur_radius: px(blur), spread_radius: px(spread) };
+        let shadow = |color: gpui::Rgba, y: f32, blur: f32, spread: f32| gpui::BoxShadow { color: color.into(), offset: point(px(0.0), px(y)), blur_radius: px(blur), spread_radius: px(spread), inset: true };
         window.paint_inset_shadows(visible, QuadCorners::all(radius), &[shadow(alpha(WHITE, 0.28), 1.0, 0.5, -0.5), shadow(edge, 0.0, 0.0, 0.5)]);
 
         let handle = self.handle.clone();

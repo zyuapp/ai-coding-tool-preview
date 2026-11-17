@@ -46,14 +46,14 @@ pub const KEY_CONTEXT: &str = "Markdown";
 
 /// Binds `cmd-c` and `cmd-a` (`ctrl-` off macOS) for focused messages.
 pub fn bind_keys(cx: &mut App) {
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
+    let (copy, select_all) = if cfg!(target_os = "macos") {
+        ("cmd-c", "cmd-a")
     } else {
-        "ctrl"
+        ("ctrl-c", "ctrl-a")
     };
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-c"), Copy, Some(KEY_CONTEXT)),
-        KeyBinding::new(&format!("{modifier}-a"), SelectAll, Some(KEY_CONTEXT)),
+        KeyBinding::new(copy, Copy, Some(KEY_CONTEXT)),
+        KeyBinding::new(select_all, SelectAll, Some(KEY_CONTEXT)),
     ]);
 }
 
@@ -727,7 +727,7 @@ impl MarkdownView {
         if event.button != MouseButton::Left {
             return;
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         if let Some(span) = self.group.clone().filter(|_| event.modifiers.shift).and_then(|(group, order)| group.from_anchor(order, event.position, cx)) {
             drop(entries);
             self.put_span(span, cx);

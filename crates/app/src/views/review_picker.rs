@@ -154,7 +154,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
     let Some(picker) = picker else {
         if root.composer.review.open {
             root.composer.review = ReviewState::default();
-            root.composer.input.update(cx, |input, _| input.focus(window));
+            root.composer.input.update(cx, |input, cx| input.focus(window, cx));
         }
         return None;
     };
@@ -258,7 +258,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
             let (search, _) = root.composer.review.search.as_ref().unwrap();
             let search = search.clone();
             if focus_now {
-                search.update(cx, |search, _| search.focus(window));
+                search.update(cx, |search, cx| search.focus(window, cx));
             }
             let query = search.read(cx).text().to_string();
             let names = root.review_branch_names(&query);
@@ -353,7 +353,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
             if focus_now {
                 sha.update(cx, |sha, cx| {
                     sha.move_to_end(cx);
-                    sha.focus(window);
+                    sha.focus(window, cx);
                 });
             }
             let commit = sha.read(cx).text().trim().to_string();
@@ -386,7 +386,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
             if focus_now {
                 instructions.update(cx, |field, cx| {
                     field.move_to_end(cx);
-                    field.focus(window);
+                    field.focus(window, cx);
                 });
             }
             let ready = !instructions.read(cx).text().trim().is_empty();
@@ -402,7 +402,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
     };
     let focus = root.composer.review.focus.get_or_insert_with(|| cx.focus_handle()).clone();
     if focus_now && targets_step {
-        focus.focus(window);
+        focus.focus(window, cx);
     }
     let card = glass(div(), t, GlassKind::Popover, Some(15.0), None)
         .id("review-picker")

@@ -13,4 +13,5 @@ unicode-segmentation = "1.12"
 name = "gallery"
 
 [dev-dependencies]
-taffy = "=0.9.0"
+gpui_platform.workspace = true
+taffy = "=0.15.0"

@@ -3,6 +3,7 @@
 //! first button back. Moving the keyboard anywhere else takes the question back too.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{div, prelude::*, px, App, ElementId, FocusHandle, Pixels, SharedString, Window};
 
@@ -146,7 +147,7 @@ impl RenderOnce for ConfirmAction {
                 });
             }
         } else if restore {
-            window.focus(&first);
+            window.focus(&first, cx);
             state.update(cx, |state, _| state.restore = false);
         }
         let answer = {
@@ -182,7 +183,7 @@ impl RenderOnce for ConfirmAction {
                         state.restore = false;
                         cx.notify();
                     });
-                    window.focus(&cancel);
+                    window.focus(&cancel, cx);
                 });
             if let Some(icon) = self.icon {
                 button = button.icon(icon);
@@ -214,7 +215,7 @@ impl RenderOnce for ConfirmAction {
                 }
             })
             .child(
-                Button::new(ElementId::NamedChild(Box::new(self.id.clone()), "confirm".into()), self.confirm)
+                Button::new(ElementId::NamedChild(Arc::new(self.id.clone()), "confirm".into()), self.confirm)
                     .variant(ButtonVariant::Danger)
                     .armed(true)
                     .size(self.size)
@@ -226,7 +227,7 @@ impl RenderOnce for ConfirmAction {
                     }),
             )
             .child(
-                Button::new(ElementId::NamedChild(Box::new(self.id), "cancel".into()), "Cancel")
+                Button::new(ElementId::NamedChild(Arc::new(self.id), "cancel".into()), "Cancel")
                     .variant(cancel_variant)
                     .size(self.size)
                     .pill(self.pill)

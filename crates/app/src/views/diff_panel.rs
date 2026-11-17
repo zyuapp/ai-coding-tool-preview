@@ -585,7 +585,7 @@ impl Root {
                     }
                 }
                 let handle = self.dock.diff.stops.borrow_mut().entry(next.key.clone()).or_insert_with(|| cx.focus_handle()).clone();
-                window.focus(&handle);
+                window.focus(&handle, cx);
                 self.dock.diff.list.scroll_to_reveal_item(next.row);
                 cx.notify();
             }
@@ -595,7 +595,7 @@ impl Root {
                     Some((_, _, _, true)) if keys.key == "enter" => {
                         self.dock.diff.keep_gutter = false;
                         let note = self.note_input(cx);
-                        note.update(cx, |input, _| input.focus(window));
+                        note.update(cx, |input, cx| input.focus(window, cx));
                     }
                     Some((path, key, _, _)) => self.select_line(path, key, keys.modifiers.shift, false, cx),
                     // A file row is a button: its click answers the key.
@@ -944,7 +944,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
     let note_input = root.note_input(cx);
     if root.dock.diff.note_focus_pending && span.is_some() && !dragging {
         root.dock.diff.note_focus_pending = false;
-        note_input.update(cx, |input, _| input.focus(window));
+        note_input.update(cx, |input, cx| input.focus(window, cx));
     }
     let quote = span.as_ref().and_then(|(path, (from, to))| drawn.get(path).map(|drawing| comment_quote(path, &drawing.rows[*from..=*to], selection_side(&drawing.rows[*from..=*to]))));
 
@@ -1247,7 +1247,7 @@ fn trigger(id: &'static str, lead: &'static str, value: impl IntoElement, open: 
             }
         })
         .child(div().flex_none().text_color(t.muted).text_size(px(12.0)).font_weight(FontWeight(560.0)).child(lead))
-        .child(div().flex_shrink().min_w_0().overflow_hidden().child(value))
+        .child(div().flex_shrink(1.).min_w_0().overflow_hidden().child(value))
         .child(div().flex_none().child(icon(IconName::ChevronDown, 12.0, t.quiet_strong)))
 }
 
@@ -1328,7 +1328,7 @@ fn toolbar(root: &mut Root, diff: &DiffState, has_workspace: bool, current_branc
         let mut from = side_picker(root, COMPARE_MENU, "Compare", "From", head.clone(), ("Working tree", ""), current_branch.clone(), workspace_id.clone(), base.clone(), head.clone(), true, cx);
         let into = side_picker(root, BASE_MENU, "Target branch", "Into", base.clone(), ("HEAD", "HEAD"), None, workspace_id.clone(), base.clone(), head.clone(), false, cx);
         from.style().flex_shrink = Some(4.0);
-        div().flex().items_center().gap(px(5.0)).min_w_0().child(from.min_w_0()).child(div().flex_none().child(icon(IconName::ArrowRight, 14.0, t.muted))).child(into.flex_shrink().min_w_0())
+        div().flex().items_center().gap(px(5.0)).min_w_0().child(from.min_w_0()).child(div().flex_none().child(icon(IconName::ArrowRight, 14.0, t.muted))).child(into.flex_shrink(1.).min_w_0())
     });
     let _ = task_id;
     let header = div().flex().flex_none().flex_col().gap(px(5.0)).px(px(10.0)).pt(px(7.0)).pb(px(8.0));
@@ -1402,7 +1402,7 @@ fn side_picker(root: &mut Root, id: &'static str, label: &'static str, role: &'s
     };
     let description = if value.is_empty() { format!("Working tree{}", current_branch.as_ref().map(|branch| format!(" on {branch}")).unwrap_or_default()) } else { format!("{head_part}{tail_part}") };
     let disabled = workspace_id.is_none();
-    let shown = div().flex().min_w_0().overflow_hidden().child(div().flex_shrink().min_w_0().ellipsis().child(head_part)).when(!tail_part.is_empty(), |shown| shown.child(div().flex_none().whitespace_nowrap().child(tail_part)));
+    let shown = div().flex().min_w_0().overflow_hidden().child(div().flex_shrink(1.).min_w_0().ellipsis().child(head_part)).when(!tail_part.is_empty(), |shown| shown.child(div().flex_none().whitespace_nowrap().child(tail_part)));
     let button = trigger(id, role, shown, open, disabled, m.text_meta, &t)
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::PopupButton, format!("{label}: {description}")).expanded(open).disabled(disabled))
         .min_w_0().px(px(8.0)).py(px(4.0)).child(bounds_probe(&probe)).tip(if disabled { NO_PROJECT.to_string() } else { format!("{label}: {description}") });
@@ -1675,7 +1675,7 @@ fn file_header(model: &Rc<DiffModel>, file: &DiffFileSummary, echo: bool, window
                         .min_w_0()
                         .flex()
                         .font_family(model.mono.clone())
-                        .child(div().flex_shrink().min_w_0().ellipsis().text_color(t.quiet).child(highlighted(&model.needle, &folder, t)))
+                        .child(div().flex_shrink(1.).min_w_0().ellipsis().text_color(t.quiet).child(highlighted(&model.needle, &folder, t)))
                         .child(div().flex_none().whitespace_nowrap().child(highlighted(&model.needle, &name, t)))
                         .tip(file.path.clone()),
                 )
@@ -1863,7 +1863,7 @@ fn comment_markers(model: &DiffModel, path: &str, index: usize, side: Option<Dif
                 .items_center()
                 .justify_center()
                 .cursor_pointer()
-                .hover(|style| style.shadow(vec![gpui::BoxShadow { color: t.info_line.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(2.0) }]))
+                .hover(|style| style.shadow(vec![gpui::BoxShadow { color: t.info_line.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(2.0), inset: false }]))
                 .child(comment.number.to_string())
                 .tip(tip)
                 .on_click(move |_, _, cx| {

@@ -1,0 +1,8 @@
+Copyright 2022 - 2025 Zed Industries, Inc.
+Licensed under the Apache License, Version 2.0 (LICENSE-APACHE).
+
+This directory is a modified copy of the gpui_linux crate from Zed v1.28.1
+(https://github.com/zed-industries/zed, crates/gpui_linux, commit e8bc16ace).
+zyuapp changed it in 2026: the manifest stands alone; the accessibility
+tree's root follows the window's bounds and focus; on X11 a window keeps its
+focus while an embedded child window holds the keyboard.

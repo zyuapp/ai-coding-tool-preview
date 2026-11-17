@@ -30,7 +30,7 @@ use act_ui::theme::{ActiveTheme, Theme, ThemeMode, Tone, THEMES};
 use act_ui::tooltip::tooltip_layer;
 use act_ui::{Assets, Icon, IconName};
 use gpui::{
-    div, prelude::*, px, size, App, Application, Bounds, Context, DismissEvent, Entity, FontWeight, MouseButton,
+    div, prelude::*, px, size, App, Bounds, Context, DismissEvent, Entity, FontWeight, MouseButton,
     ScrollHandle, SharedString, Subscription, Window, WindowBounds, WindowOptions,
 };
 
@@ -526,7 +526,7 @@ fn main() {
     let open_menu = args.iter().any(|arg| arg == "--menu");
     let open_search = args.iter().any(|arg| arg == "--search");
     let glass = args.iter().any(|arg| arg == "--glass");
-    Application::new().with_assets(Assets).run(move |cx: &mut App| {
+    gpui_platform::application().with_assets(Assets).run(move |cx: &mut App| {
         act_ui::init(cx);
         if let Some(id) = &theme_id {
             Theme::change(cx, id, ThemeMode::Dark);

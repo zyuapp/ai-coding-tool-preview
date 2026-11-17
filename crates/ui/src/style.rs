@@ -45,7 +45,7 @@ fn inset_layer(mut shadows: Vec<gpui::BoxShadow>, corners: Corners) -> impl Into
 }
 
 fn inset(color: Rgba, y: f32, blur: f32, spread: f32) -> gpui::BoxShadow {
-    gpui::BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(y)), blur_radius: px(blur), spread_radius: px(spread) }
+    gpui::BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(y)), blur_radius: px(blur), spread_radius: px(spread), inset: true }
 }
 
 /// `--glass-rim`: a hairline of light all round, caught along the top and faintly along the bottom.
@@ -365,6 +365,7 @@ pub fn glass(element: Div, tokens: &Tokens, kind: GlassKind, radius: Option<f32>
             offset: gpui::point(px(0.0), px(1.0)),
             blur_radius: px(0.0),
             spread_radius: px(0.0),
+            inset: false,
         }]);
     }
     if floats {
@@ -429,7 +430,7 @@ pub fn tabular_nums<E: gpui::Styled>(element: E) -> E {
 
 /// Sets or clears one font feature, keeping the others this element sets.
 fn with_feature<E: gpui::Styled>(mut element: E, tag: &str, value: Option<u32>) -> E {
-    let style = element.text_style().get_or_insert_with(Default::default);
+    let style = element.text_style();
     let mut features: Vec<(String, u32)> = style.font_features.as_ref().map(|features| features.tag_value_list().to_vec()).unwrap_or_default();
     features.retain(|(existing, _)| existing != tag);
     if let Some(value) = value {

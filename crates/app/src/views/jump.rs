@@ -32,12 +32,12 @@ pub struct JumpState {
 }
 
 impl JumpState {
-    pub fn closed(&mut self, window: &mut Window, cx: &gpui::App) {
+    pub fn closed(&mut self, window: &mut Window, cx: &mut gpui::App) {
         self.followed = None;
         let Some((input, _)) = self.search.take() else { return };
         if let Some(previous) = self.returns_to.take() {
             if window.focused(cx).is_none() || input.read(cx).is_focused(window) {
-                window.focus(&previous);
+                window.focus(&previous, cx);
             }
         }
     }
@@ -79,7 +79,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             _ => {}
         });
         root.jump.returns_to = window.focused(cx);
-        input.update(cx, |input, _| input.focus(window));
+        input.update(cx, |input, cx| input.focus(window, cx));
         root.jump.search = Some((input, subscription));
     }
     let Some((input, _)) = root.jump.search.as_ref() else { return div().into_any_element() };
@@ -162,7 +162,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             let field = input.clone();
             empty = empty.child(Button::new("jump-clear", "Clear search").variant(ButtonVariant::Soft).on_click(move |_, window, cx| {
                 dispatch(AppCommand::JumpQuery { query: String::new() }, cx);
-                field.update(cx, |field, _| field.focus(window));
+                field.update(cx, |field, cx| field.focus(window, cx));
             }));
         }
         empty.into_any_element()

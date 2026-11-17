@@ -302,7 +302,7 @@ impl ComposerState {
                     let _ = window.update(cx, |_, window, cx| {
                         input.update(cx, |input, cx| {
                             input.move_to_end(cx);
-                            input.focus(window);
+                            input.focus(window, cx);
                         })
                     });
                 });
@@ -700,7 +700,7 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
         let input = root.composer.input.clone();
         cx.on_next_frame(window, move |_, window, cx| {
             if window.focus_stranded(cx) {
-                input.update(cx, |input, _| input.focus(window));
+                input.update(cx, |input, cx| input.focus(window, cx));
             }
         });
     }
@@ -742,7 +742,7 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
                 }
             }
         })
-        .on_scroll_wheel({
+        .on_scroll({
             let input = root.composer.input.clone();
             move |event, window, cx| input.update(cx, |input, cx| input.scroll_wheel(event, window, cx))
         })
@@ -808,7 +808,7 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
     // Shadows paint in order, each over the last: the ring over the composer's own shadows, and
     // `.glass-pane::before`'s dark hairline outside the edge over both.
     if let Some((color, spread)) = ring {
-        shadows.push(BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(spread) });
+        shadows.push(BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(spread), inset: false });
     }
     shadows.push(act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
 

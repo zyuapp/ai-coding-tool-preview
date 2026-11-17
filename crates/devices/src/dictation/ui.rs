@@ -288,7 +288,7 @@ impl Render for MicButton {
             .when_some(fill, |button, fill| button.bg(fill))
             .when(away, |button| button.border_1().border_color(t.danger_line))
             .when(hands_free && !listening, |button| {
-                button.shadow(vec![BoxShadow { color: alpha(t.accent, 0.25).into(), offset: point(px(0.0), px(0.0)), blur_radius: px(14.0), spread_radius: px(0.0) }])
+                button.shadow(vec![BoxShadow { color: alpha(t.accent, 0.25).into(), offset: point(px(0.0), px(0.0)), blur_radius: px(14.0), spread_radius: px(0.0), inset: false }])
             })
             .when(disabled, |button| button.opacity(t.disabled_opacity))
             .when(!disabled && fill.is_none(), |button| button.cursor_pointer().hover(|button| button.bg(t.wash).text_color(t.ink)))

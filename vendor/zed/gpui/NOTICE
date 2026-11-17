@@ -1,0 +1,31 @@
+GPUI
+Copyright 2022 - 2025 Zed Industries, Inc.
+Licensed under the Apache License, Version 2.0 (LICENSE-APACHE).
+
+This directory is a modified copy of the gpui crate from Zed v1.28.1
+(https://github.com/zed-industries/zed, crates/gpui, commit e8bc16ace).
+zyuapp changed it in 2026. The changes:
+
+- The manifest stands alone: Zed's workspace settings are written in.
+- Page zoom: layout pixels map to zoom-scaled window points; border widths
+  snap to whole pixels at the zoom.
+- Text: letter spacing; Chromium's line heights, baselines, line breaks and
+  text indent; truncation keeps shaped lines; text layouts keep the
+  inherited colour and decorations so hover, press and focus styles recolour
+  them at paint; dotted and dashed underlines with a set offset.
+- Layout: lengths and centred offsets in a 1/64px layout unit; boxes snap to
+  whole pixels from the root's position; unrounded layout origins; scroll
+  overflow measured before rounding.
+- Lists: estimated heights for unmeasured rows, item remeasurement, rows
+  stacked at whole pixels and browser-style scroll anchoring.
+- Live views that do not dirty their ancestors; cached views replay their
+  last frame; the view cache key includes fade mask, opacity and transform.
+- Style transitions and enter animations.
+- Paint-time transforms (scale, translate, rotate) applied to primitives,
+  masks, hitboxes and accessibility bounds.
+- Backdrop filters, edge fade masks, radial gradients, layered shadows and
+  hairline SVG strokes.
+- Accessibility: element roles and names added to the window's AccessKit
+  tree (src/accessibility.rs, src/accessibility/).
+- Browser-style keyboard focus: Tab stops, focus-visible rings, tab order
+  groups, inert subtrees, focus traps, Enter/Space activation.

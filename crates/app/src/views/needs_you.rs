@@ -157,7 +157,7 @@ fn card(id: &str, label: impl Into<SharedString>, head: Div, body: Option<AnyEle
         .text_color(t.ink)
         .child(head);
     if let Some(body) = body {
-        pane = pane.child(div().id(SharedString::from(format!("{id}-body"))).min_h_0().flex_shrink().overflow_y_scroll().child(body));
+        pane = pane.child(div().id(SharedString::from(format!("{id}-body"))).min_h_0().flex_shrink(1.).overflow_y_scroll().child(body));
     }
     pane.child(foot.flex_none().flex().items_center().gap(px(8.0)).px(px(14.0)).py(px(10.0)).border_t_1().border_color(t.line_soft)).into_any_element()
 }

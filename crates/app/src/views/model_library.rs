@@ -350,7 +350,7 @@ pub fn trigger(root: &mut Root, state: &WorkspaceState, engine: AgentEngine, mod
                 .track_focus(&chip_focus)
                 .focus_ring(true)
                 .relative()
-                .flex_shrink()
+                .flex_shrink(1.)
                 .min_w_0()
                 .min_h(px(30.0))
                 .flex()
@@ -479,7 +479,7 @@ impl Root {
                 _ => {}
             });
         });
-        search.update(cx, |search, _| search.focus(window));
+        search.update(cx, |search, cx| search.focus(window, cx));
         let effort_focus = cx.focus_handle().tab_stop(true);
         self.library = Some(LibraryState { target, search, filter, highlight: None, hovered: None, drag: None, slider_hover: false, rehover: false, rail: bounds_cell(), fill: Default::default(), effort_focus, _subscription: subscription });
         cx.notify();
@@ -498,8 +498,8 @@ impl Root {
         if let Some(library) = self.library.take() {
             if matches!(library.target, LibraryTarget::Composer(_)) {
                 match &self.composer.chip_focus {
-                    Some(chip) => window.focus(chip),
-                    None => self.composer.input.update(cx, |input, _| input.focus(window)),
+                    Some(chip) => window.focus(chip, cx),
+                    None => self.composer.input.update(cx, |input, cx| input.focus(window, cx)),
                 }
             }
         }
@@ -720,7 +720,7 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
         .px(px(8.0))
         .py(px(if narrow { 10.0 } else { 6.0 }))
         .overflow_y_scroll()
-        .on_scroll_wheel(root.composer_listener(cx, |root, _: &gpui::ScrollWheelEvent, _, cx| {
+        .on_scroll(root.composer_listener(cx, |root, _: &gpui::ScrollEvent, _, cx| {
             if let Some(library) = root.library.as_mut() {
                 library.rehover = true;
                 cx.notify();
@@ -1034,7 +1034,7 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, tiny: bo
                 })
                 .when(drag.is_some(), |knob| knob.backdrop_filter(gpui::BackdropFilter::blur(px(1.5)).saturate(1.9).brightness(1.12)))
                 .shadow(if ringed {
-                    let mut shadows = vec![gpui::BoxShadow { color: t.focus_ring.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(2.0) }];
+                    let mut shadows = vec![gpui::BoxShadow { color: t.focus_ring.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(2.0), inset: false }];
                     shadows.extend(t.shadow_thumb.box_shadows());
                     shadows
                 } else {
@@ -1196,7 +1196,7 @@ fn knob_shadows(thumb: &act_ui::theme::Elevation) -> Vec<gpui::BoxShadow> {
     let mut shadows = thumb.box_shadows();
     if let [near, far] = shadows.as_mut_slice() {
         let scale = near.color.a / 0.4;
-        let hairline = gpui::BoxShadow { color: gpui::Hsla { a: 0.2, ..near.color }, offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(0.5) };
+        let hairline = gpui::BoxShadow { color: gpui::Hsla { a: 0.2, ..near.color }, offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(0.5), inset: false };
         far.color.a = 0.28 * scale;
         shadows.insert(0, hairline);
     }
@@ -1206,8 +1206,8 @@ fn knob_shadows(thumb: &act_ui::theme::Elevation) -> Vec<gpui::BoxShadow> {
 /// The knob's inner light: a 1px white line along its top over a faint white ring.
 fn knob_light() -> impl IntoElement {
     let shadows = [
-        gpui::BoxShadow { color: white(0.12).into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(1.0) },
-        gpui::BoxShadow { color: white(0.5).into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(0.0), spread_radius: px(0.0) },
+        gpui::BoxShadow { color: white(0.12).into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(1.0), inset: true },
+        gpui::BoxShadow { color: white(0.5).into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(0.0), spread_radius: px(0.0), inset: true },
     ];
     canvas(
         |_, _, _| {},

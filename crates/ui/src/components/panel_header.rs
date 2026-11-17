@@ -2,6 +2,7 @@
 //! what closes it; and the toolbar strip under it.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{div, prelude::*, px, AnyElement, App, ClickEvent, ElementId, FontWeight, SharedString, Window};
 
@@ -149,7 +150,7 @@ impl RenderOnce for PanelHeader {
         }
         if let Some(handler) = self.on_close {
             let mut close = IconButton::new(
-                ElementId::NamedChild(Box::new(self.id), "close".into()),
+                ElementId::NamedChild(Arc::new(self.id), "close".into()),
                 IconName::X,
                 self.close_label,
             )

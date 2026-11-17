@@ -19,7 +19,7 @@ use act_ui::style::{Corners, Raised};
 use act_ui::theme::{ActiveTheme, Tokens};
 use act_ui::tooltip::Tippable;
 use act_ui::IconName;
-use gpui::{div, prelude::*, px, relative, AnyElement, App, Context, DragMoveEvent, Empty, FocusHandle, FontWeight, KeyDownEvent, MouseButton, ScrollHandle, ScrollWheelEvent, SharedString, Window};
+use gpui::{div, prelude::*, px, relative, AnyElement, App, Context, DragMoveEvent, Empty, FocusHandle, FontWeight, KeyDownEvent, MouseButton, ScrollHandle, ScrollEvent, SharedString, Window};
 use serde_json::json;
 
 use super::agents_panel::AgentsState;
@@ -123,7 +123,7 @@ impl DockState {
     pub fn restore_focus(&mut self, previous: &FocusHandle, window: &mut Window, cx: &mut Context<Root>) -> bool {
         let Some(tab) = self.bodies.iter().find(|(_, body)| body.contains(previous, window)).map(|(tab, _)| tab.clone()) else { return false };
         if !self.chats.focus(&tab, window, cx) {
-            window.focus(previous);
+            window.focus(previous, cx);
         }
         true
     }
@@ -397,7 +397,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     }
     if std::mem::take(&mut root.dock.refocus_tabs) {
         if let Some(handle) = roving.as_ref().and_then(|id| root.dock.tab_focus.get(id)) {
-            window.focus(handle);
+            window.focus(handle, cx);
         }
     }
     let strip_handle = root.dock.strip.clone();
@@ -414,13 +414,13 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .overflow_x_scroll()
         .track_scroll(&strip_handle)
         .on_key_down(cx.listener(|root, event: &KeyDownEvent, window, cx| strip_key(root, event, window, cx)))
-        .on_scroll_wheel(move |event: &ScrollWheelEvent, window, _| {
+        .on_scroll(move |event: &ScrollEvent, window, _| {
             let delta = event.delta.pixel_delta(window.line_height());
             if delta.x != px(0.0) || delta.y == px(0.0) {
                 return;
             }
             let mut offset = wheel_handle.offset();
-            let max = wheel_handle.max_offset().width;
+            let max = wheel_handle.max_offset().x;
             offset.x = (offset.x + delta.y).min(px(0.0)).max(-max);
             wheel_handle.set_offset(offset);
         });
@@ -439,7 +439,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             .accessible(gpui::AccessInfo::new(gpui::AccessRole::Tab, tab.title.clone()).selected(selected))
             .group(group.clone())
             .relative()
-            .flex_shrink()
+            .flex_shrink(1.)
             .min_w(px(96.0))
             .w(px(184.0))
             .h(px(40.0))
@@ -471,7 +471,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .child(ink_icon(tab.glyph, 16.0).shrinks())
                     .child(
                         div()
-                            .flex_shrink()
+                            .flex_shrink(1.)
                             .min_w_0()
                             .ellipsis()
                             .text_size(px(m.text_control))
@@ -508,9 +508,9 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         }
         strip = strip.child(button);
     }
-    let overflowing = root.dock.strip.max_offset().width > px(1.0);
+    let overflowing = root.dock.strip.max_offset().x > px(1.0);
     let scroll_x = -f32::from(root.dock.strip.offset().x);
-    let max_x = f32::from(root.dock.strip.max_offset().width);
+    let max_x = f32::from(root.dock.strip.max_offset().x);
     // `dock-tabs-fade`: each edge's fade grows to 28px over the first and last 4% of the scroll.
     let progress = if overflowing { (scroll_x / max_x).clamp(0.0, 1.0) } else { 0.0 };
     let fade_start = if overflowing { 28.0 * (progress / 0.04).min(1.0) } else { 0.0 };
@@ -662,7 +662,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .flex_1()
         .min_h_0()
         .track_focus(&body_focus)
-        .capture_any_mouse_down(move |_, window, _| window.focus(&focus_for_click))
+        .capture_any_mouse_down(move |_, window, cx| window.focus(&focus_for_click, cx))
         .child(content)
         .children(find);
     let dock = div()
@@ -712,7 +712,7 @@ fn strip_key(root: &mut Root, event: &KeyDownEvent, window: &mut Window, cx: &mu
     };
     if let Some(next) = next {
         if let Some(focus) = root.dock.tab_focus.get(&tabs[next].id) {
-            window.focus(focus);
+            window.focus(focus, cx);
         }
         root.dock.strip.scroll_to_item(next);
         cx.stop_propagation();
@@ -803,7 +803,7 @@ fn resizer(root: &mut Root, sheet: bool, window: &Window, cx: &mut Context<Root>
 fn focus_tab(root: &mut Root, state: &WorkspaceState, active: &str, body: &FocusHandle, window: &mut Window, cx: &mut Context<Root>) {
     let (_, dock) = front_dock(state);
     if let Some(view) = root.dock.terminals.view(active) {
-        view.update(cx, |view, _| view.focus(window));
+        view.update(cx, |view, cx| view.focus(window, cx));
         return;
     }
     if dock.browser_tabs.iter().any(|page| page.id == active) {
@@ -813,7 +813,7 @@ fn focus_tab(root: &mut Root, state: &WorkspaceState, active: &str, body: &Focus
     if root.dock.chats.focus(active, window, cx) {
         return;
     }
-    window.focus(body);
+    window.focus(body, cx);
 }
 
 /// Tells the reducer which tab holds the keyboard as the window's focus moves.
@@ -906,7 +906,7 @@ fn picker(root: &mut Root, state: &WorkspaceState, active: &str, window: &Window
             None => if down { 0 } else { count - 1 },
             Some(at) => (at + if down { 1 } else { count - 1 }) % count,
         };
-        window.focus(&walk[next]);
+        window.focus(&walk[next], cx);
         cx.stop_propagation();
     });
     let ring_visible = act_ui::focus::keyboard_focus_visible(cx);

@@ -73,7 +73,7 @@ fn control(id: &'static str, glyph: IconName, label: impl Into<SharedString>, ti
 
 /// A pressed key: a clear pane lifted off the bar, edged in light inside a dark hairline.
 fn lifted(key: gpui::Stateful<gpui::Div>, t: &act_ui::theme::Tokens) -> gpui::Stateful<gpui::Div> {
-    let outline = gpui::BoxShadow { color: t.glass_float_outline.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(0.5) };
+    let outline = gpui::BoxShadow { color: t.glass_float_outline.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(0.5), inset: false };
     let drop = t.shadow_key.box_shadow();
     // `--glass-edge` is a conic gradient, brightest at the top left and again at the bottom right:
     // a faint edge with arcs of light cut from a ring by boxes in those corners.
@@ -146,7 +146,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         let reconnecting = host.link.status == ComputerStatus::Connecting;
         title_line = title_line.child(
             div()
-                .flex_shrink()
+                .flex_shrink(1.)
                 .min_w(px(40.0))
                 .flex()
                 .items_center()
@@ -178,7 +178,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             None => folder.clone(),
         };
         title_line = title_line
-            .child(div().id("heading-project").accessible(gpui::AccessInfo::new(gpui::AccessRole::Label, folder_label.clone())).flex_shrink().min_w(px(heading_width(&folder_label, 500.0, true, m.text_heading, window).min(heading_width("0", 500.0, false, m.text_heading, window) * 6.0))).ellipsis().text_color(t.muted).font_weight(FontWeight(500.0)).child(folder_label.clone()).tip(tip))
+            .child(div().id("heading-project").accessible(gpui::AccessInfo::new(gpui::AccessRole::Label, folder_label.clone())).flex_shrink(1.).min_w(px(heading_width(&folder_label, 500.0, true, m.text_heading, window).min(heading_width("0", 500.0, false, m.text_heading, window) * 6.0))).ellipsis().text_color(t.muted).font_weight(FontWeight(500.0)).child(folder_label.clone()).tip(tip))
             .child(div().flex_none().mr(px(2.0)).text_color(t.quiet).font_weight(FontWeight(400.0)).child("/"));
     }
     match current {
@@ -193,7 +193,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             let id = thread.id.clone();
             let focus = root.topbar.title_focus.get_or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
             if std::mem::take(&mut root.topbar.refocus_title) {
-                window.focus(&focus);
+                window.focus(&focus, cx);
             }
             let pencil_lit = focus.is_focused(window) && act_ui::focus::keyboard_focus_visible(cx);
             let title_box = act_ui::overlay::bounds_cell();
@@ -204,7 +204,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .track_focus(&focus)
                     .focus_ring(true)
                     .group("heading-thread")
-                    .flex_shrink()
+                    .flex_shrink(1.)
                     .min_w(px(heading_width("0", 590.0, false, m.text_heading, window) * 4.0))
                     .h(px(28.0))
                     .px(px(5.0))
@@ -276,7 +276,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         let choose = rimmed(div(), t, 8.0)
             .id("choose-folder")
             .min_w_0()
-            .flex_shrink()
+            .flex_shrink(1.)
             .max_w(px(720.0))
             .h(px(28.0))
             .border_1()

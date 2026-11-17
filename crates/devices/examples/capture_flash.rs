@@ -11,7 +11,7 @@ use act_core::domain::conversation::{AccessibilitySnapshot, ScreenshotPlatform};
 use act_devices::capture_flash::{flash_window, WindowFrame, TEARDOWN_MS};
 use act_devices::screenshot_context::{capture_screenshot_context, ScreenshotTarget};
 use act_devices::window_screenshot::{capture_frontmost_window, WindowShot};
-use gpui::{App, Application};
+use gpui::{App};
 
 fn print_accessibility(accessibility: &AccessibilitySnapshot) {
     match accessibility {
@@ -60,7 +60,7 @@ fn main() {
             (parts.len() == 4).then(|| WindowFrame { x: parts[0], y: parts[1], width: parts[2], height: parts[3] })
         })
         .unwrap_or(WindowFrame { x: 200.0, y: 200.0, width: 600.0, height: 400.0 });
-    Application::new().run(move |cx: &mut App| {
+    gpui_platform::application().run(move |cx: &mut App| {
         cx.spawn(async move |cx| {
             // A beat first, so a screen recording started with this example sees the flash begin.
             cx.background_executor().timer(Duration::from_millis(1_000)).await;

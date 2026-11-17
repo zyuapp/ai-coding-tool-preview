@@ -430,7 +430,8 @@ pub fn picture(id: impl Into<SharedString>, diagram: &Rc<Diagram>, scale: f32, w
                         let pixels = image.size(0);
                         let origin = gpui::point(px((f32::from(bounds.origin.x) * scale).round() / scale), px((f32::from(bounds.origin.y) * scale).round() / scale));
                         let size = gpui::size(px(pixels.width.0 as f32 / scale), px(pixels.height.0 as f32 / scale));
-                        let _ = window.paint_image(gpui::Bounds { origin, size }, gpui::Corners::default(), image.clone(), 0, false);
+                        let bounds = gpui::Bounds { origin, size };
+                        let _ = window.paint_image(bounds, bounds, gpui::Corners::default(), image.clone(), 0, false);
                     },
                 )
                 .size_full(),
@@ -453,7 +454,7 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
     let scroll = window.use_keyed_state(scroll_key, cx, |_, _| gpui::ScrollHandle::new()).read(cx).clone();
     let expand_focus = window.use_keyed_state(SharedString::from(format!("mermaid-expand-{id}")), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let mut frame = div()
-        .id(gpui::ElementId::NamedChild(Box::new(id.clone()), "frame".into()))
+        .id(gpui::ElementId::NamedChild(Arc::new(id.clone()), "frame".into()))
         .min_h(px(76.0))
         .overflow_x_scroll()
         .track_scroll(&scroll)
@@ -468,7 +469,7 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
     match drawn {
         Some(Drawn::Diagram(diagram)) => {
             let opened = (diagram.clone(), source.to_string());
-            let picture = picture(gpui::ElementId::NamedChild(Box::new(id.clone()), "svg".into()).to_string(), &diagram, 1.0, window, cx);
+            let picture = picture(gpui::ElementId::NamedChild(Arc::new(id.clone()), "svg".into()).to_string(), &diagram, 1.0, window, cx);
             let open = {
                 let opened = opened.clone();
                 move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| super::viewer::open_diagram(opened.0.clone(), opened.1.clone(), cx)
@@ -500,7 +501,7 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
                         .items_start()
                         .child(
                             div()
-                                .id(gpui::ElementId::NamedChild(Box::new(id.clone()), "open".into()))
+                                .id(gpui::ElementId::NamedChild(Arc::new(id.clone()), "open".into()))
                                 .flex_none()
                                 .min_w_full()
                                 .flex()
@@ -511,12 +512,12 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
                         )
                         .child(act_markdown::OverflowGutter::new(px(diagram.width), px(12.0))),
                 )
-                .child(act_ui::components::scrollbar::Scrollbar::horizontal(gpui::ElementId::NamedChild(Box::new(id.clone()), "bar".into()), &scroll))
+                .child(act_ui::components::scrollbar::Scrollbar::horizontal(gpui::ElementId::NamedChild(Arc::new(id.clone()), "bar".into()), &scroll))
                 .child(
                     // Drawn clear rather than left out, so the keyboard still reaches it.
-                    div().id(gpui::ElementId::NamedChild(Box::new(id.clone()), "expand-slot".into())).on_hover(on_hover(1)).absolute().top(px(6.0)).right(px(38.0)).when(!expand_focus.is_focused(window), |button| button.opacity(0.0).group_hover(group, |style| style.opacity(1.0))).child(
+                    div().id(gpui::ElementId::NamedChild(Arc::new(id.clone()), "expand-slot".into())).on_hover(on_hover(1)).absolute().top(px(6.0)).right(px(38.0)).when(!expand_focus.is_focused(window), |button| button.opacity(0.0).group_hover(group, |style| style.opacity(1.0))).child(
                         super::timeline_row::block_tile(
-                            act_ui::components::button::IconButton::new(gpui::ElementId::NamedChild(Box::new(id), "expand".into()), act_ui::IconName::Maximize2, "Open the diagram at full size")
+                            act_ui::components::button::IconButton::new(gpui::ElementId::NamedChild(Arc::new(id), "expand".into()), act_ui::IconName::Maximize2, "Open the diagram at full size")
                                 .track_focus(&expand_focus)
                                 .tip("Full size")
                                 .on_click(open),
@@ -530,7 +531,7 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
         Some(Drawn::Error(error)) => {
             let retry_source = source.to_string();
             outer = outer.child(frame.child(block_error(
-                gpui::ElementId::NamedChild(Box::new(id), "error".into()),
+                gpui::ElementId::NamedChild(Arc::new(id), "error".into()),
                 "Diagram could not be rendered",
                 &error,
                 Some(source.to_string()),
@@ -542,7 +543,7 @@ pub fn block(id: gpui::ElementId, source: SharedString, pending: bool, window: &
             )));
         }
         None => {
-            outer = outer.child(frame.child(div().p(px(16.0)).flex().justify_center().text_size(px(cx.theme().metrics.text_meta)).child(super::sweep::sweep(gpui::ElementId::NamedChild(Box::new(id), "loading".into()), "Rendering diagram…", cx).into_any_element())));
+            outer = outer.child(frame.child(div().p(px(16.0)).flex().justify_center().text_size(px(cx.theme().metrics.text_meta)).child(super::sweep::sweep(gpui::ElementId::NamedChild(Arc::new(id), "loading".into()), "Rendering diagram…", cx).into_any_element())));
         }
     }
     outer.into_any_element()
@@ -553,7 +554,7 @@ pub fn block_error(id: gpui::ElementId, title: &'static str, error: &str, source
     let t = cx.theme().tokens.clone();
     let m = cx.theme().metrics.clone();
     let mono = cx.theme().typography.mono_family.clone();
-    let open_id = gpui::ElementId::NamedChild(Box::new(id.clone()), "open".into());
+    let open_id = gpui::ElementId::NamedChild(Arc::new(id.clone()), "open".into());
     let open = window_state_bool(&open_id, cx);
     let reason = error.lines().next().unwrap_or("").trim().to_string();
     let toggle_id = open_id.clone();
@@ -584,7 +585,7 @@ pub fn block_error(id: gpui::ElementId, title: &'static str, error: &str, source
         .gap(px(10.0))
         .text_size(px(m.text_meta))
         .child(details)
-        .child(act_ui::components::button::Button::new(gpui::ElementId::NamedChild(Box::new(id), "retry".into()), "Try again").pill(true).on_click(move |_, _, cx| retry(cx)))
+        .child(act_ui::components::button::Button::new(gpui::ElementId::NamedChild(Arc::new(id), "retry".into()), "Try again").pill(true).on_click(move |_, _, cx| retry(cx)))
         .into_any_element()
 }
 

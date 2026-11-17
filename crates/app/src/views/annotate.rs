@@ -100,7 +100,7 @@ fn open_note(root: &mut Root, annotation_id: Option<String>, quote: String, anch
     });
     input.update(cx, |input, cx| {
         input.select_all_text(cx);
-        input.focus(window);
+        input.focus(window, cx);
     });
     root.conversation.annotate.noting = Some(Noting { annotation_id, quote, anchor, at, opened: Instant::now(), input, _subscription: subscription });
     cx.notify();
@@ -182,6 +182,7 @@ pub fn layer(root: &mut Root, task_id: &str, annotations: &[Annotation], model: 
                         offset: gpui::point(px(0.0), px(0.0)),
                         blur_radius: px(0.0),
                         spread_radius: px(10.0 * eased),
+                        inset: false,
                     }])
                 })
                 .text_color(t.badge_ink)

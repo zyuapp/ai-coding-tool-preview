@@ -381,7 +381,7 @@ fn option_row(id: SharedString, selected: bool, mark: IconName, mark_tone: Mark,
 
 /// A menu's list, shrinking to the room under the card's cap, with the scrollbar laid over it.
 fn scrolling(list: gpui::Stateful<gpui::Div>, bar: Scrollbar) -> gpui::Div {
-    div().relative().flex().flex_col().flex_shrink().min_h_0().child(list.flex_shrink().min_h_0()).child(bar)
+    div().relative().flex().flex_col().flex_shrink(1.).min_h_0().child(list.flex_shrink(1.).min_h_0()).child(bar)
 }
 
 enum Mark {

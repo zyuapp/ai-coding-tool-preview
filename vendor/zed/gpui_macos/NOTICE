@@ -1,0 +1,10 @@
+Copyright 2022 - 2025 Zed Industries, Inc.
+Licensed under the Apache License, Version 2.0 (LICENSE-APACHE).
+
+This directory is a modified copy of the gpui_macos crate from Zed v1.28.1
+(https://github.com/zed-industries/zed, crates/gpui_macos, commit e8bc16ace).
+zyuapp changed it in 2026: the manifest stands alone; zoomed windows report
+maximized bounds; mouse moves reach windows as AppKit routes them; windows
+draw in the display's colour space; accessibility hit tests away from
+pressable elements answer the window; GPUI_DRAW_OCCLUDED keeps covered
+windows drawing.

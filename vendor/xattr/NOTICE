@@ -1,5 +1,0 @@
-This directory is a modified copy of the xattr 0.2.3 crate
-(https://github.com/Stebalien/xattr), licensed under the MIT License
-(LICENSE-MIT) or the Apache License, Version 2.0 (LICENSE-APACHE). zyuapp
-changed it in 2026: on Linux, ENOATTR is defined as ENODATA, and the macOS
-bindings take the position argument as u32.

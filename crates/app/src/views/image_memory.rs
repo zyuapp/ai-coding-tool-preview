@@ -5,8 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use futures::FutureExt;
-use gpui::{hash, App, AppContext, Asset, AssetLogger, Entity, ImageAssetLoader, ImageCache, ImageCacheError, ImageCacheItem, RenderImage, Resource, WeakEntity, Window};
+use gpui::{hash, App, AppContext, Entity, ImageCache, ImageCacheError, ImageCacheItem, RenderImage, Resource, WeakEntity, Window};
 
 /// How many decoded images, and how many bytes of them, are kept before unused ones are freed.
 const MAX_IMAGES: usize = 48;
@@ -30,7 +29,7 @@ impl ImageMemory {
     pub fn new(cx: &mut App) -> Entity<ImageMemory> {
         let memory = cx.new(|cx| ImageMemory { me: cx.entity().downgrade(), images: HashMap::new(), generation: 0, sweeping: false });
         cx.observe_release(&memory, |memory, cx| {
-            for (_, mut held) in memory.images.drain() {
+            for (_, held) in memory.images.drain() {
                 if let Some(Ok(image)) = held.item.get() {
                     cx.drop_image(image, None);
                 }
@@ -54,9 +53,9 @@ impl ImageMemory {
             window.on_next_frame(move |window, cx| {
                 let _ = memory.update(cx, |memory, cx| {
                     memory.sweeping = false;
-                    let stale: Vec<u64> = memory.images.iter().filter(|(_, held)| held.seen < generation && !matches!(held.item, ImageCacheItem::Loading(_))).map(|(key, _)| *key).collect();
+                    let stale: Vec<u64> = memory.images.iter().filter(|(_, held)| held.seen < generation && held.item.get().is_some()).map(|(key, _)| *key).collect();
                     for key in stale {
-                        if let Some(mut held) = memory.images.remove(&key) {
+                        if let Some(held) = memory.images.remove(&key) {
                             if let Some(Ok(image)) = held.item.get() {
                                 cx.drop_image(image, Some(window));
                             }
@@ -74,7 +73,7 @@ impl ImageCache for ImageMemory {
         let generation = self.generation;
         if let Some(held) = self.images.get_mut(&key) {
             held.seen = generation;
-            let loaded = held.item.get();
+            let loaded = held.item.use_image(window);
             if let Some(Ok(image)) = &loaded {
                 if held.bytes == 0 {
                     held.bytes = (0..image.frame_count()).map(|frame| image.as_bytes(frame).map_or(0, <[u8]>::len)).sum();
@@ -82,16 +81,9 @@ impl ImageCache for ImageMemory {
             }
             return loaded;
         }
-        let loading = AssetLogger::<ImageAssetLoader>::load(resource.clone(), cx);
-        let task = cx.background_executor().spawn(loading).shared();
-        self.images.insert(key, Held { item: ImageCacheItem::Loading(task.clone()), bytes: 0, seen: generation });
-        let view = window.current_view();
-        window
-            .spawn(cx, async move |cx| {
-                let _ = task.await;
-                cx.on_next_frame(move |_, cx| cx.notify(view));
-            })
-            .detach();
+        let item = ImageCacheItem::new(resource, cx);
+        let loaded = item.use_image(window);
+        self.images.insert(key, Held { item, bytes: 0, seen: generation });
         if !self.sweeping && self.over_budget() {
             self.sweeping = true;
             let memory = self.me.clone();
@@ -99,6 +91,6 @@ impl ImageCache for ImageMemory {
                 let _ = memory.update(cx, |memory, _| memory.sweep(window));
             });
         }
-        None
+        loaded
     }
 }

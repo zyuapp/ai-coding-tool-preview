@@ -16,7 +16,7 @@ use act_devices::dictation::{DictationHost, DictationHostOptions};
 use act_ui::theme::{ActiveTheme, Environment};
 use act_ui::{Assets, Theme};
 use base64::Engine;
-use gpui::{div, prelude::*, px, size, App, Application, Bounds, Context, Entity, Window, WindowBounds, WindowOptions};
+use gpui::{div, prelude::*, px, size, App, Bounds, Context, Entity, Window, WindowBounds, WindowOptions};
 
 fn argument(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|arg| arg == name).and_then(|at| args.get(at + 1)).cloned()
@@ -100,7 +100,7 @@ fn main() {
         let _guard = act_host::runtime().enter();
         DictationHost::new(DictationHostOptions::desktop())
     };
-    Application::new().with_assets(Assets).run(move |cx: &mut App| {
+    gpui_platform::application().with_assets(Assets).run(move |cx: &mut App| {
         act_ui::init(cx);
         Theme::set_environment(cx, Environment::macos_glass());
         let bounds = Bounds::centered(None, size(px(780.0), px(260.0)), cx);
@@ -125,9 +125,7 @@ fn main() {
                         tick += 1;
                         let t = tick as f64 * 0.05;
                         let level = (0.45 + 0.4 * (t * 7.0).sin().abs() * (t * 1.3).sin().abs()).min(1.0);
-                        if feeding.update(cx, |levels, cx| levels.push_level(level, cx)).is_err() {
-                            break;
-                        }
+                        feeding.update(cx, |levels, cx| levels.push_level(level, cx));
                     }
                 })
                 .detach();

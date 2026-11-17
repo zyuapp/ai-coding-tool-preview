@@ -17,7 +17,7 @@ use futures::StreamExt;
 use gpui::{
     actions, div, prelude::*, px, App, Bounds, ClipboardItem, Context, EntityInputHandler, EventEmitter, FocusHandle,
     Focusable, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    ScrollDelta, ScrollWheelEvent, Subscription, Task, UTF16Selection, Window,
+    ScrollDelta, ScrollEvent, Subscription, Task, UTF16Selection, Window,
 };
 
 use crate::contract::{TerminalOutputRead, TerminalReadKind};
@@ -277,8 +277,8 @@ impl TerminalView {
         self.input_enabled = enabled;
     }
 
-    pub fn focus(&self, window: &mut Window) {
-        window.focus(&self.focus_handle);
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        window.focus(&self.focus_handle, cx);
     }
 
     /// Steps to the next match, or the one before it, highlighting every match.
@@ -513,7 +513,7 @@ impl TerminalView {
     }
 
     pub(crate) fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus_handle);
+        window.focus(&self.focus_handle, cx);
         let Some(layout) = self.layout else { return };
         if let Some(scrollbar) = layout.scrollbar.filter(|bar| bar.track.contains(&event.position)) {
             if event.button == MouseButton::Left {
@@ -756,7 +756,7 @@ impl TerminalView {
     }
 
     /// xterm's `consumeWheelEvent`: whole lines for a program, kept fractional between events.
-    fn consume_wheel(&mut self, event: &ScrollWheelEvent, line_height: Pixels) -> f32 {
+    fn consume_wheel(&mut self, event: &ScrollEvent, line_height: Pixels) -> f32 {
         let fast = event.modifiers.alt || event.modifiers.control || event.modifiers.shift;
         let scale = if fast { 5. } else { 1. };
         match event.delta {
@@ -783,7 +783,7 @@ impl TerminalView {
         }
     }
 
-    pub(crate) fn scroll_wheel(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
+    pub(crate) fn scroll_wheel(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
         let Some(layout) = self.layout else { return };
         let mode = *self.screen.lock().mode();
         if mouse::tracking(mode) {
@@ -913,7 +913,7 @@ impl Render for TerminalView {
             .on_action(cx.listener(Self::select_all))
             .on_key_down(cx.listener(Self::key_down))
             // The viewport is wider than the rows it holds, so a click in the margin still means the shell.
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, _| this.focus(window)))
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.focus(window, cx)))
             .size_full()
             .min_h_0()
             .flex()

@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -157,7 +158,7 @@ pub(crate) fn link_tip(
 
 pub(crate) struct Ctx<'a> {
     pub style: &'a MarkdownStyle,
-    pub text_system: std::sync::Arc<gpui::WindowTextSystem>,
+    pub text_system: Rc<gpui::WindowTextSystem>,
     pub view: EntityId,
     pub selection: Option<(TextPos, TextPos)>,
     pub selection_color: Hsla,
@@ -442,7 +443,7 @@ impl<'a> Ctx<'a> {
         let slot = self.scrollbar_slot?;
         let key = SharedString::from(format!("md-scroll-{}-{id}", self.view));
         let handle = window.use_keyed_state(key, cx, |_, _| gpui::ScrollHandle::new()).read(cx).clone();
-        let bar = slot(ElementId::NamedChild(Box::new(id.clone()), "bar".into()), &handle, window, cx);
+        let bar = slot(ElementId::NamedChild(Arc::new(id.clone()), "bar".into()), &handle, window, cx);
         Some((handle, bar))
     }
 
@@ -1250,7 +1251,7 @@ impl<'a> Ctx<'a> {
         let content = measure(&code.code, &measured, None, false, &window.text_system().clone()).width + px(2. * CODE_PADDING_X);
         let text = self.text_block(&code.code, base, false, TextAlign::Left, Some(code));
         let mut pre = div()
-            .id(ElementId::NamedChild(Box::new(id.clone()), "scroll".into()))
+            .id(ElementId::NamedChild(Arc::new(id.clone()), "scroll".into()))
             .overflow_x_scroll()
             .px(px(CODE_PADDING_X))
             .pt(px(CODE_PADDING_Y))
@@ -1465,7 +1466,7 @@ impl<'a> Ctx<'a> {
         }
         self.separator = "\n\n";
         let mut frame = div()
-            .id(ElementId::NamedChild(Box::new(id.clone()), "scroll".into()))
+            .id(ElementId::NamedChild(Arc::new(id.clone()), "scroll".into()))
             .w_full()
             .border_1()
             .border_color(self.style.line)

@@ -1002,6 +1002,7 @@ impl RichText {
                             let _ = window.paint_svg(
                                 rect,
                                 path.clone(),
+                                None,
                                 gpui::TransformationMatrix::unit(),
                                 color,
                                 cx,

@@ -2,7 +2,7 @@
 //! one, such as a scroll of the transcript or the sidebar or a caret blink in the composer, reuses
 //! the others' last layout and paint.
 
-use gpui::{div, prelude::*, px, AnyView, Context, Entity, StyleRefinement, Subscription, WeakEntity, Window};
+use gpui::{div, prelude::*, px, AnyView, Context, Entity, StyleRefinement, Subscription, ViewElement, WeakEntity, Window};
 
 use super::root::Root;
 use super::{composer, conversation, find_bar, sidebar, topbar};
@@ -83,7 +83,7 @@ impl Parts {
         parts
     }
 
-    fn cached(part: &Entity<Part>) -> AnyView {
+    fn cached(part: &Entity<Part>) -> ViewElement<AnyView> {
         let mut style = StyleRefinement::default();
         style.size.width = Some(gpui::relative(1.).into());
         style.size.height = Some(gpui::relative(1.).into());
@@ -96,17 +96,17 @@ impl Parts {
     }
 
     /// The sidebar, filling the box `sidebar::slot` gives it.
-    pub fn sidebar(&self) -> AnyView {
+    pub fn sidebar(&self) -> ViewElement<AnyView> {
         Self::cached(&self.sidebar)
     }
 
     /// The topbar, filling a box as tall as the chrome's head.
-    pub fn topbar(&self) -> AnyView {
+    pub fn topbar(&self) -> ViewElement<AnyView> {
         Self::cached(&self.topbar)
     }
 
     /// The composer, over the whole page and resting at its foot.
-    pub fn composer(&self) -> AnyView {
+    pub fn composer(&self) -> ViewElement<AnyView> {
         Self::cached(&self.composer)
     }
 
@@ -122,13 +122,13 @@ impl Parts {
         }
     }
 
-    pub fn transcript(&self) -> AnyView {
+    pub fn transcript(&self) -> ViewElement<AnyView> {
         Self::cached(&self.transcript)
     }
 
     /// The find bar, hanging from the top of a box as wide as what it searches; empty while find
     /// is closed or open elsewhere. `dock` picks the dock's bar over the page's.
-    pub fn find(&self, dock: bool) -> AnyView {
+    pub fn find(&self, dock: bool) -> ViewElement<AnyView> {
         let mut slot = div().absolute().top_0().left_0().right_0().h(px(0.0));
         let style = slot.style().clone();
         AnyView::from(if dock { self.dock_find.clone() } else { self.find.clone() }).cached(style)

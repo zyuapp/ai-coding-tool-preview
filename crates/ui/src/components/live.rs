@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use gpui::{div, prelude::*, AnyElement, AnyView, App, Context, ElementId, Entity, StyleRefinement, Window};
+use gpui::{div, prelude::*, AnyElement, AnyView, App, Context, ElementId, Entity, StyleRefinement, ViewElement, Window};
 
 type Build = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
@@ -21,7 +21,7 @@ impl Render for Live {
 /// `build`'s element in a live view sized by `style`. A motion inside that notifies the view drawing
 /// it, as `stepped_progress` does, draws only this view again. `build` must not change size or take
 /// input: the view around it is not laid out again.
-pub fn live(id: impl Into<ElementId>, style: StyleRefinement, window: &mut Window, cx: &mut App, build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static) -> AnyView {
+pub fn live(id: impl Into<ElementId>, style: StyleRefinement, window: &mut Window, cx: &mut App, build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static) -> ViewElement<AnyView> {
     let slot = window.with_global_id(id.into(), |global_id, window| {
         window.with_element_state(global_id, |slot: Option<Entity<Live>>, _| {
             let slot = slot.unwrap_or_else(|| cx.new(|_| Live { build: None }));

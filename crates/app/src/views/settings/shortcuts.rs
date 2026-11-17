@@ -33,7 +33,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, marks: &Marks, window: &m
         match &state.capturing_shortcut {
             Some(id) => {
                 let cancel = held.cancels.entry(id.clone()).or_insert_with(|| cx.focus_handle()).clone();
-                window.focus(&cancel);
+                window.focus(&cancel, cx);
             }
             None => {
                 if let Some(id) = left {
@@ -43,7 +43,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, marks: &Marks, window: &m
                         Some(focused) => Some(&focused) == cancel.as_ref() || focused == root.focus,
                     };
                     if adrift {
-                        window.focus(&marks.stop(&shortcut_setting_id(&id), cx));
+                        window.focus(&marks.stop(&shortcut_setting_id(&id), cx), cx);
                     }
                 }
             }

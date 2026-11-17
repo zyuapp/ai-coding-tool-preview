@@ -4,6 +4,7 @@
 //! draws either as its last child, before the tooltip layer.
 
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
@@ -45,7 +46,7 @@ fn modal_state(id: ElementId, window: &mut Window, cx: &mut App) -> gpui::Entity
             cx.defer(move |cx| {
                 let _ = handle.update(cx, |_, window, cx| {
                     if window.focus_stranded(cx) {
-                        window.focus(&opener);
+                        window.focus(&opener, cx);
                     }
                 });
             });
@@ -156,11 +157,11 @@ impl RenderOnce for Dialog {
         let focus = state.read(cx).focus.clone();
         if !state.read(cx).focused_once {
             match &self.initial_focus {
-                Some(target) => window.focus(target),
+                Some(target) => window.focus(target, cx),
                 None => {
                     // The first control takes the keyboard once the dialog is drawn.
-                    window.focus(&focus);
-                    window.on_next_frame(|window, _| window.focus_next());
+                    window.focus(&focus, cx);
+                    window.on_next_frame(|window, cx| window.focus_next(cx));
                 }
             }
             state.update(cx, |state, _| state.focused_once = true);
@@ -203,7 +204,7 @@ impl RenderOnce for Dialog {
             panel = panel.child(div().mt(px(6.0)).flex().flex_wrap().justify_end().gap(px(8.0)).children(self.actions));
         }
         let panel = crate::style::under_veil(panel, t.veil, 16.0, t);
-        let panel_id = ElementId::NamedChild(Box::new(self.id.clone()), "panel".into());
+        let panel_id = ElementId::NamedChild(Arc::new(self.id.clone()), "panel".into());
         let panel = if reduced {
             panel.into_any_element()
         } else {
@@ -239,7 +240,7 @@ impl RenderOnce for Dialog {
             .on_action(move |_: &DialogCancel, window, cx| on_escape(window, cx))
             .on_mouse_down(MouseButton::Left, move |_, window, cx| on_close(window, cx))
             .child(panel);
-        let scrim_id = ElementId::NamedChild(Box::new(self.id), "scrim".into());
+        let scrim_id = ElementId::NamedChild(Arc::new(self.id), "scrim".into());
         let scrim = if reduced {
             scrim.into_any_element()
         } else {
@@ -286,8 +287,8 @@ impl RenderOnce for Viewer {
         let state = modal_state(self.id.clone(), window, cx);
         let focus = state.read(cx).focus.clone();
         if !state.read(cx).focused_once {
-            window.focus(&focus);
-            window.on_next_frame(|window, _| window.focus_next());
+            window.focus(&focus, cx);
+            window.on_next_frame(|window, cx| window.focus_next(cx));
             state.update(cx, |state, _| state.focused_once = true);
         }
         let t = &cx.theme().tokens;

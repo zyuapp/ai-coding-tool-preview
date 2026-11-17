@@ -15,7 +15,7 @@ use act_ui::style::{glass, GlassKind, PaneFill};
 use act_ui::theme::{palette_for, theme_families, theme_for, ActiveTheme, Pane, ThemeMode as UiMode, Tokens};
 use act_ui::typography::{custom_font_family, custom_font_id, mono_font_or_default, ui_font_or_default, BundledFont, MONO_FONTS, UI_FONTS};
 use act_ui::IconName;
-use gpui::{deferred, div, prelude::*, px, relative, AnyElement, Context, FocusHandle, Focusable, FontWeight, KeyDownEvent, Rgba, SharedString, Window};
+use gpui::{deferred, div, prelude::*, px, relative, AnyElement, Context, FocusHandle, Focusable, FontWeight, KeyDownEvent, Rgba, SharedString, Window, App};
 
 use super::{description, page, Held, Marks, Row, Section};
 use crate::views::common::{icon, rimmed};
@@ -124,16 +124,16 @@ fn matching_families(query: &str) -> Vec<&'static str> {
 }
 
 fn choose_theme(root: &mut Root, family: &str, window: &mut Window, cx: &mut Context<Root>) {
-    close_theme_menu(root, window);
+    close_theme_menu(root, window, cx);
     let dark = crate::theme_bridge::system_dark(cx);
     dispatch(AppCommand::SetThemeFamily { family: family.to_string(), system_dark: dark }, cx);
 }
 
-fn close_theme_menu(root: &mut Root, window: &mut Window) {
+fn close_theme_menu(root: &mut Root, window: &mut Window, cx: &mut App) {
     root.settings.appearance.theme_menu = None;
     root.settings.appearance.closed_at = Some(std::time::Instant::now());
     if let Some(focus) = &root.settings.appearance.trigger_focus {
-        window.focus(focus);
+        window.focus(focus, cx);
     }
 }
 
@@ -207,7 +207,7 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
                 return;
             }
             if root.settings.appearance.theme_menu.is_some() {
-                close_theme_menu(root, window);
+                close_theme_menu(root, window, cx);
                 cx.notify();
             } else {
                 open_theme_menu(root, window, cx);
@@ -340,7 +340,7 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
                     if input.read(cx).is_focused(window) && !query.is_empty() {
                         input.update(cx, |input, cx| input.reset("", cx));
                     } else {
-                        close_theme_menu(root, window);
+                        close_theme_menu(root, window, cx);
                     }
                 }
                 "enter" => {
@@ -358,7 +358,7 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
                     None if key == "down" => {
                         let chosen = if term { None } else { families.iter().position(|family| theme_for(family, variant).id == current_id) };
                         menu.active = Some(chosen.unwrap_or(0));
-                        window.focus(&menu.grid);
+                        window.focus(&menu.grid, cx);
                     }
                     None => return,
                     Some(at) => {
@@ -371,7 +371,7 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
                         let next = at as i64 + step;
                         if next < 0 {
                             menu.active = None;
-                            menu.search.input.read(cx).focus(window);
+                            menu.search.input.update(cx, |input, cx| input.focus(window, cx));
                         } else {
                             menu.active = Some((next as usize).min(count - 1));
                         }
@@ -402,7 +402,7 @@ fn theme_select(root: &mut Root, current_id: &'static str, current_family: &'sta
         .when(families.is_empty(), |surface: gpui::Stateful<gpui::Div>| surface.child(div().px(px(8.0)).py(px(6.0)).text_color(t.quiet_strong).text_size(px(12.0)).child("No theme here is called that.")));
     let anchor = probe.get().unwrap_or_default();
     let scrim = div().id("theme-select-scrim").absolute().top(px(-4000.0)).left(px(-4000.0)).w(px(12000.0)).h(px(12000.0)).occlude().on_mouse_down(gpui::MouseButton::Left, cx.listener(|root, _, window, cx| {
-        close_theme_menu(root, window);
+        close_theme_menu(root, window, cx);
         cx.notify();
     }));
     trigger
@@ -604,7 +604,7 @@ fn size_field(root: &mut Root, terminal: bool, value: f64, window: &mut Window, 
                 .justify_center()
                 .cursor_text()
                 .skip_tab_stop()
-                .on_click(move |_, window, cx| key_input.read(cx).focus(window))
+                .on_click(move |_, window, cx| key_input.update(cx, |input, cx| input.focus(window, cx)))
                 .capture_key_down(cx.listener(move |root, event: &KeyDownEvent, window, cx| {
                     let field = if terminal { &mut root.settings.appearance.terminal } else { &mut root.settings.appearance.reading };
                     let Some(field) = field.as_mut() else { return };
@@ -621,9 +621,9 @@ fn size_field(root: &mut Root, terminal: bool, value: f64, window: &mut Window, 
                         }
                         "escape" => {
                             field.abandoned = true;
-                            window.focus(&root.focus);
+                            window.focus(&root.focus, cx);
                         }
-                        "enter" => window.focus(&root.focus),
+                        "enter" => window.focus(&root.focus, cx),
                         _ => return,
                     }
                     cx.stop_propagation();

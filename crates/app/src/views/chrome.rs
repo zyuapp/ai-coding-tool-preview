@@ -52,7 +52,7 @@ pub fn no_drag(element: impl IntoElement) -> AnyElement {
 
 /// Like [`no_drag`], for a control that shrinks with the bar.
 pub fn no_drag_shrink(element: impl IntoElement) -> AnyElement {
-    div().occlude().flex().min_w_0().flex_shrink().items_center().child(element).into_any_element()
+    div().occlude().flex().min_w_0().flex_shrink(1.).items_center().child(element).into_any_element()
 }
 
 /// A tooltip naming a control and the keystroke for it, written the way this platform writes keys.

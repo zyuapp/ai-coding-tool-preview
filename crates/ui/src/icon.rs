@@ -137,6 +137,6 @@ impl Element for Icon {
                 .rotate(self.rotation)
                 .translate(gpui::point(-center.x, -center.y).scale(scale))
         };
-        let _ = window.paint_svg(bounds, self.path.clone(), transformation, color, cx);
+        let _ = window.paint_svg(bounds, self.path.clone(), None, transformation, color, cx);
     }
 }

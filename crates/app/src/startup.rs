@@ -5,7 +5,7 @@ use act_host::instance_lock::{claim_desktop_lock, serving_process, DesktopClaim,
 use act_host::services::HostServices;
 use act_host::user_data::AppProfile;
 use act_store::profile::Profile;
-use gpui::{point, px, size, App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
+use gpui::{point, px, size, App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
 
 use crate::effects::Host;
 use crate::views::root::Root;
@@ -126,7 +126,7 @@ pub fn run(launch: Launch) {
     let Launch { profile, services, lock, launched_update } = launch;
     let lock = std::sync::Mutex::new(lock);
     let opener: std::sync::Arc<std::sync::Mutex<Opener>> = Default::default();
-    let application = Application::new().with_assets(act_ui::Assets);
+    let application = gpui_platform::application().with_assets(act_ui::Assets);
     application.on_reopen(reopen);
     let url_opener = opener.clone();
     application.on_open_urls(move |urls| {
@@ -137,6 +137,8 @@ pub fn run(launch: Launch) {
         }
     });
     application.run(move |cx: &mut App| {
+        // Typing hides the pointer until it moves, as in Chromium; shortcuts leave it shown.
+        cx.set_cursor_hide_mode(gpui::CursorHideMode::OnTyping);
         act_ui::init(cx);
         act_browser::init(cx);
         act_markdown::bind_keys(cx);
@@ -174,7 +176,7 @@ pub fn run(launch: Launch) {
             return;
         }
         let quits_with_last_window = !cfg!(target_os = "macos");
-        cx.on_window_closed(move |cx| {
+        cx.on_window_closed(move |cx, _| {
             if quits_with_last_window && cx.windows().is_empty() {
                 cx.quit();
             }

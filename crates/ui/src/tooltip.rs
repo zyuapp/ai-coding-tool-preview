@@ -11,7 +11,7 @@ use std::time::Duration;
 use gpui::{
     deferred, div, prelude::FluentBuilder as _, px, AnyElement, AnyWindowHandle, App, Bounds, DispatchPhase, Edges, Element,
     ElementId, FontWeight, Global, GlobalElementId, Hitbox, HitboxBehavior, HitboxId, InspectorElementId, InteractiveElement,
-    IntoElement, KeyDownEvent, LayoutId, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, ScrollWheelEvent,
+    IntoElement, KeyDownEvent, LayoutId, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, ScrollEvent,
     SharedString, Stateful, StatefulInteractiveElement, Style, Styled, Task, WeakFocusHandle, Window,
 };
 
@@ -641,7 +641,7 @@ impl Element for TooltipWatch {
                 Tooltips::hide(cx);
             }
         });
-        window.on_mouse_event(|_: &ScrollWheelEvent, phase, _window, cx| {
+        window.on_mouse_event(|_: &ScrollEvent, phase, _window, cx| {
             if phase == DispatchPhase::Capture && cx.try_global::<Tooltips>().is_some_and(|state| state.shown.is_some()) {
                 Tooltips::hide(cx);
             }

@@ -140,7 +140,7 @@ fn sync(key: &str, window: &mut Window, cx: &mut App) -> FocusHandle {
                 viewer.previous = window.focused(cx).filter(|previous| previous != &focus);
             }
             viewer.focused_for = Some(key.to_string());
-            window.focus(&focus);
+            window.focus(&focus, cx);
         }
         focus
     })
@@ -225,7 +225,7 @@ fn zoom_key(event: &KeyDownEvent, fit: f32, cx: &mut App) -> bool {
 }
 
 /// A pinch, which arrives as a wheel with Control held, scales around nothing but the view itself.
-fn pinch(event: &gpui::ScrollWheelEvent, fit: f32, window: &Window, cx: &mut App) -> bool {
+fn pinch(event: &gpui::ScrollEvent, fit: f32, window: &Window, cx: &mut App) -> bool {
     if !event.modifiers.control {
         return false;
     }
@@ -243,7 +243,7 @@ fn stage(scroll: &ScrollHandle, fit: f32, size: (f32, f32), room: (f32, f32), co
         .flex()
         .overflow_scroll()
         .track_scroll(scroll)
-        .on_scroll_wheel(move |event, window, cx| {
+        .on_scroll(move |event, window, cx| {
             if pinch(event, fit, window, cx) {
                 cx.stop_propagation();
             }

@@ -11,7 +11,7 @@ use act_browser::linux::offscreen::Offscreen;
 use act_browser::{PageInput, PointerKind};
 use gpui::{
     point, px, App, AppContext as _, Bounds, DispatchPhase, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformInput, RenderImage,
-    ScrollDelta, ScrollWheelEvent, TouchPhase, Window,
+    ScrollDelta, ScrollEvent, ScrollSource, TouchPhase, Window,
 };
 use gtk::prelude::*;
 
@@ -88,8 +88,8 @@ fn wheels(cx: &mut App) -> futures::channel::mpsc::UnboundedSender<Wheel> {
         use futures::StreamExt;
         while let Some((handle, x, y, dx, dy)) = receiver.next().await {
             let _ = cx.update_window(handle, |_, window, cx| {
-                let event = ScrollWheelEvent { position: point(px(x), px(y)), delta: ScrollDelta::Lines(point(dx, dy)), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved };
-                window.dispatch_event(PlatformInput::ScrollWheel(event), cx);
+                let event = ScrollEvent { position: point(px(x), px(y)), delta: ScrollDelta::Lines(point(dx, dy)), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved, source: ScrollSource::Pointer };
+                window.dispatch_event(PlatformInput::Scroll(event), cx);
             });
         }
     })
@@ -227,7 +227,7 @@ impl ClipView {
                 if inside {
                     // After the rows under it have handled the press, which may take focus themselves.
                     let focus = focus.clone();
-                    window.defer(cx, move |window, _| window.focus(&focus));
+                    window.defer(cx, move |window, _| window.focus(&focus, cx));
                     painted.pressed.set(true);
                     painted.offscreen.input(&pointer(PointerKind::Down, event.position, button_of(event.button), event.modifiers));
                 }
@@ -250,7 +250,7 @@ impl ClipView {
             });
         }
         let (painted, scrolls) = (painted.clone(), self.scrolls.clone());
-        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, _, cx| {
+        window.on_mouse_event(move |event: &ScrollEvent, phase, _, cx| {
             if phase == DispatchPhase::Bubble && scrolls.get() && visible.contains(&event.position) {
                 let (x, y) = at(event.position);
                 painted.offscreen.input(&PageInput::Scroll { x, y, delta: event.delta, modifiers: event.modifiers });
@@ -272,7 +272,7 @@ impl ClipView {
                 let parent = parent.clone();
                 view.connect_button_press_event(move |view, _| {
                     if let Some(window) = view.window().and_then(|window| act_browser::linux::embed::xid(&window)) {
-                        parent.focus(window);
+                        parent.focus(window, cx);
                     }
                     view.grab_focus();
                     gtk::glib::Propagation::Proceed

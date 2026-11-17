@@ -72,7 +72,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, in_page: bool, window: &m
     if root.find.focused != view.find.focus {
         root.find.focused = view.find.focus;
         input.update(cx, |input, cx| {
-            input.focus(window);
+            input.focus(window, cx);
             input.select_all_text(cx);
         });
     }

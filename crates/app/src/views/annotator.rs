@@ -152,7 +152,7 @@ impl Annotator {
         self.editing = Some(index);
         self.hovered = None;
         let focus = self.label.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
     }
 
     fn remove(&mut self, index: usize) {
@@ -332,7 +332,7 @@ impl Root {
             match event {
                 InputEvent::Submit => {
                     annotator.commit_note(cx);
-                    window.focus(&annotator.focus);
+                    window.focus(&annotator.focus, cx);
                 }
                 InputEvent::Changed => {}
                 _ => return,
@@ -342,7 +342,7 @@ impl Root {
         let shapes = self.composer.marks.get(&image_id).map(|marks| marks.annotations.clone()).unwrap_or_default();
         let natural = crate::effects::window_desktop::image_size(std::path::Path::new(&path));
         let focus = cx.focus_handle();
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.composer.annotator = Some(Annotator {
             image_id,
             path: PathBuf::from(path),
@@ -371,7 +371,7 @@ impl Root {
     fn close_annotator(&mut self, window: &mut Window, cx: &mut Context<Root>) {
         self.composer.annotator = None;
         let focus = self.composer.input.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         cx.notify();
     }
 
@@ -422,7 +422,7 @@ impl Root {
                 annotator.discarding = false;
             } else if annotator.composing() {
                 annotator.cancel_note(cx);
-                window.focus(&annotator.focus);
+                window.focus(&annotator.focus, cx);
             } else {
                 self.request_close_annotator(window, cx);
             }
@@ -499,7 +499,7 @@ pub fn render(root: &mut Root, window: &mut Window, cx: &mut Context<Root>) -> O
     });
     if !annotator.focused {
         annotator.focused = true;
-        window.focus(&annotator.focus);
+        window.focus(&annotator.focus, cx);
     }
     let composing = annotator.composing();
     let tool = annotator.tool;
@@ -561,7 +561,7 @@ pub fn render(root: &mut Root, window: &mut Window, cx: &mut Context<Root>) -> O
                 if annotator.composing() {
                     return;
                 }
-                window.focus(&annotator.focus);
+                window.focus(&annotator.focus, cx);
                 annotator.walked = false;
                 annotator.hovered = None;
                 let Some(at) = annotator.point_at(event.position) else { return };
@@ -735,7 +735,7 @@ pub fn render(root: &mut Root, window: &mut Window, cx: &mut Context<Root>) -> O
                         annotator.pending = Some(rect);
                         annotator.label.update(cx, |label, cx| label.reset("", cx));
                         let focus = annotator.label.read(cx).focus_handle(cx);
-                        window.focus(&focus);
+                        window.focus(&focus, cx);
                     }
                 }
                 cx.notify();

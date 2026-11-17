@@ -249,7 +249,7 @@ pub fn plan_warning(state: &WorkspaceState, engine: AgentEngine, model: &str, wi
     let summary = div()
         .id("plan-usage-warning")
         .flex()
-        .flex_shrink()
+        .flex_shrink(1.)
         .items_center()
         .gap(px(10.0))
         .min_w_0()

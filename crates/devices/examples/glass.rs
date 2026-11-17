@@ -6,7 +6,7 @@
 use act_devices::glass::{self, GlassRegion, WindowMaterial};
 use act_ui::theme::ActiveTheme;
 use act_ui::Assets;
-use gpui::{div, point, prelude::*, px, size, App, Application, Bounds, Context, Window, WindowBounds, WindowOptions};
+use gpui::{div, point, prelude::*, px, size, App, Bounds, Context, Window, WindowBounds, WindowOptions};
 
 struct Glassy {
     material: WindowMaterial,
@@ -42,7 +42,7 @@ impl Render for Glassy {
 }
 
 fn main() {
-    Application::new().with_assets(Assets).run(|cx: &mut App| {
+    gpui_platform::application().with_assets(Assets).run(|cx: &mut App| {
         act_ui::init(cx);
         let material = WindowMaterial::current();
         let bounds = Bounds::centered(None, size(px(640.0), px(320.0)), cx);

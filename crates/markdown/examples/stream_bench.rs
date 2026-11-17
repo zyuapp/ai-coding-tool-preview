@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use act_markdown::{bind_keys, LinkCapabilities, MarkdownStyle, MarkdownView};
 use gpui::{
-    canvas, div, list, prelude::*, px, rgb, size, App, Application, Bounds, Context, Entity,
+    canvas, div, list, prelude::*, px, rgb, size, App, Bounds, Context, Entity,
     ListAlignment, ListOffset, ListState, Window, WindowBounds, WindowOptions,
 };
 
@@ -114,7 +114,7 @@ fn main() {
     let delta = env("BENCH_DELTA", 24).max(1);
     let finish = std::env::var("BENCH_FINISH").is_ok();
     let text = sample(total);
-    Application::new().run(move |cx: &mut App| {
+    gpui_platform::application().run(move |cx: &mut App| {
         bind_keys(cx);
         let mono = act_markdown::style::load_system_monospace(cx);
         let bounds = Bounds::centered(None, size(px(1000.), px(1000.)), cx);
@@ -186,7 +186,7 @@ fn main() {
                         stats.keys.clear();
                         format!("{frames} | {keys}")
                     };
-                    let length = cx.update(|cx| message.read(cx).text().len()).unwrap_or(0);
+                    let length = cx.update(|cx| message.read(cx).text().len());
                     eprintln!("[{length} chars] {line}");
                 })
                 .detach();

@@ -1129,7 +1129,7 @@ fn project_filter(root: &mut Root, state: &WorkspaceState, sidebar: &SidebarMode
                 .on_click(move |_, window, cx| {
                     dispatch(AppCommand::SetActivityProject { project_id: None }, cx);
                     // The clear button goes away; the trigger takes the keyboard.
-                    window.focus(&focus);
+                    window.focus(&focus, cx);
                 }),
         );
     }
@@ -1231,7 +1231,7 @@ fn computer_switch(root: &mut Root, state: &WorkspaceState, window: &mut Window,
                 .items_center()
                 .justify_center()
                 .gap(px(5.0))
-                .when(narrowed, |button| button.flex_shrink().max_w(px(120.0)).pl(px(6.0)).pr(px(8.0)))
+                .when(narrowed, |button| button.flex_shrink(1.).max_w(px(120.0)).pl(px(6.0)).pr(px(8.0)))
                 .rounded(px(8.0))
                 .when(narrowed, |button| rimmed(button, &t, 8.0).bg(t.accent_chip))
                 .when(open && !narrowed, |button| rimmed(button, &t, 8.0).pane(t.glass_control_hover))

@@ -80,7 +80,7 @@ impl RenderOnce for Popover {
                     state.restore.take()
                 });
                 if let Some(restore) = restore {
-                    window.focus(&restore);
+                    window.focus(&restore, cx);
                 }
             }
         };
@@ -99,7 +99,7 @@ impl RenderOnce for Popover {
                     state.restore = restore;
                     cx.notify();
                 });
-                window.focus(&focus);
+                window.focus(&focus, cx);
             }
         };
         let trigger = div()

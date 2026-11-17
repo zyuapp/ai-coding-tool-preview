@@ -58,7 +58,7 @@ fn field(slot: &mut Option<Field>, key: String, text: &str, placeholder: &str, f
         let reopened = slot.is_some();
         input.update(cx, |input, cx| {
             if reopened {
-                input.focus(window);
+                input.focus(window, cx);
             }
             input.select_all_text(cx);
         });

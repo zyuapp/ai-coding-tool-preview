@@ -128,7 +128,7 @@ impl Terminals {
             let read = window_desktop::remote_terminal(computer.to_string(), terminal_id.to_string(), cx);
             view.update(cx, |view, cx| view.follow_remote(read, cx));
         }
-        view.update(cx, |view, _| view.focus(window));
+        view.update(cx, |view, cx| view.focus(window, cx));
         self.views.insert(terminal_id.to_string(), Held { view: view.clone(), computer: computer.map(String::from), _events: subscription });
         Some(view)
     }
@@ -154,7 +154,7 @@ impl Terminals {
 /// A note in the status line (`.terminal-status em`): how the shell ended, or why it is not live.
 fn status_badge(glyph: IconName, label: String, (border, fill, ink): (gpui::Rgba, gpui::Rgba, gpui::Rgba), theme: &Theme) -> impl IntoElement {
     div()
-        .flex_shrink()
+        .flex_shrink(1.)
         .min_w_0()
         .flex()
         .items_center()
@@ -227,7 +227,7 @@ pub fn render(root: &mut Root, state: &act_core::WorkspaceState, terminal: &Term
     match view {
         Some(view) => {
             let focus = view.clone();
-            viewport = viewport.on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| focus.update(cx, |view, _| view.focus(window))).child(view)
+            viewport = viewport.on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| focus.update(cx, |view, cx| view.focus(window, cx))).child(view)
         }
         None if !exited && computer.is_none() => viewport = viewport.child(div().text_color(t.quiet).text_size(px(12.0)).child("Starting the shell…")),
         None => {}

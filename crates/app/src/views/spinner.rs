@@ -20,7 +20,7 @@ pub fn bead(id: impl Into<SharedString>, size: f32, t: &Tokens, held: bool) -> i
         base.bg(with_alpha(t.warning, 0.2)).child(circle(0.62, 0.74, 0.9654, (t.warning, 0.0), (with_alpha(t.warning, 0.35), 0.72)))
     } else {
         base.bg(with_alpha(t.accent_text, 0.16))
-            .shadow(vec![gpui::BoxShadow { color: with_alpha(t.accent_text, 0.28).into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(7.0), spread_radius: px(0.0) }])
+            .shadow(vec![gpui::BoxShadow { color: with_alpha(t.accent_text, 0.28).into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(7.0), spread_radius: px(0.0), inset: false }])
             .child(div().absolute().inset_0().flex().items_center().justify_center().child(Spinning::new(gpui::ElementId::Name(id.into()), IconName::ConicSweep).pace(std::time::Duration::from_millis(1500), 30).size(px(size)).color(t.accent_text)))
     };
     // A highlight that stays put, over a shade toward the rim.

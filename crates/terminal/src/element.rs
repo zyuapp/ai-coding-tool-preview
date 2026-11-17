@@ -10,7 +10,7 @@ use gpui::{
     fill, outline, point, px, relative, size, App, BorderStyle, Bounds, CursorStyle, DispatchPhase, Element,
     ElementId, ElementInputHandler, Entity, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, GlobalElementId,
     Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement, LayoutId, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PaintQuad, Pixels, Point, ScrollWheelEvent, ShapedLine, SharedString, StrikethroughStyle, Style,
+    MouseUpEvent, PaintQuad, Pixels, Point, ScrollEvent, ShapedLine, SharedString, StrikethroughStyle, Style, TextAlign,
     TextRun, UnderlineStyle, Window,
 };
 
@@ -534,7 +534,7 @@ impl Element for TerminalElement {
                 window.paint_quad(quad);
             }
             for glyphs in &prepaint.glyphs {
-                let _ = glyphs.line.paint(glyphs.origin, line_height, window, cx);
+                let _ = glyphs.line.paint(glyphs.origin, line_height, TextAlign::Left, None, window, cx);
             }
             for quad in prepaint.decorations.drain(..) {
                 window.paint_quad(quad);
@@ -543,11 +543,11 @@ impl Element for TerminalElement {
                 window.paint_quad(quad);
             }
             if let Some(glyph) = &prepaint.cursor_glyph {
-                let _ = glyph.line.paint(glyph.origin, line_height, window, cx);
+                let _ = glyph.line.paint(glyph.origin, line_height, TextAlign::Left, None, window, cx);
             }
             if let Some((backdrop, glyphs)) = prepaint.marked.take() {
                 window.paint_quad(backdrop);
-                let _ = glyphs.line.paint(glyphs.origin, line_height, window, cx);
+                let _ = glyphs.line.paint(glyphs.origin, line_height, TextAlign::Left, None, window, cx);
             }
             if let Some(scrollbar) = prepaint.scrollbar.take() {
                 window.paint_quad(scrollbar);
@@ -579,7 +579,7 @@ impl Element for TerminalElement {
         });
         let hitbox = prepaint.hitbox.clone();
         let view = self.view.clone();
-        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+        window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
             if phase == DispatchPhase::Bubble && hitbox.is_hovered(window) {
                 view.update(cx, |view, cx| view.scroll_wheel(event, cx));
                 cx.stop_propagation();

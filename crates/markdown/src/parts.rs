@@ -200,7 +200,7 @@ impl SelectableText {
     }
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         let group = self.group.clone();
         if let Some(span) = group.as_ref().filter(|_| event.modifiers.shift).and_then(|(group, order)| group.from_anchor(*order, event.position, cx)) {
             self.put_span(span, cx);

@@ -8,7 +8,7 @@ use std::path::Path;
 use act_terminal::{TerminalFont, TerminalHost, TerminalStatus, TerminalView, TerminalViewEvent};
 use futures::StreamExt;
 use gpui::{
-    actions, div, prelude::*, px, size, App, Application, Bounds, Context, Entity, Focusable, KeyBinding, Window,
+    actions, div, prelude::*, px, size, App, Bounds, Context, Entity, Focusable, KeyBinding, Window,
     WindowBounds, WindowOptions,
 };
 
@@ -39,7 +39,7 @@ fn load_fonts(cx: &App) {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    gpui_platform::application().run(|cx: &mut App| {
         load_fonts(cx);
         act_terminal::init(cx);
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
@@ -74,7 +74,7 @@ fn main() {
                         _ => {}
                     })
                     .detach();
-                    window.focus(&terminal.focus_handle(cx));
+                    window.focus(&terminal.focus_handle(cx), cx);
                     cx.new(|_| Shell { terminal })
                 },
             )

@@ -684,7 +684,7 @@ impl Pages {
             view.connect_button_press_event(move |view, _| {
                 *shared.owner.task_id.borrow_mut() = None;
                 if let Some((parent, window)) = parent.as_ref().zip(view.window().and_then(|window| super::embed::xid(&window))) {
-                    parent.focus(window);
+                    parent.focus(window, cx);
                 }
                 view.grab_focus();
                 send(&events, BrowserEvent::PageFocused { tab_id: shared.owner.id.clone() });

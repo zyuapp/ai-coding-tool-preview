@@ -144,7 +144,7 @@ pub fn follow_link(link: &LinkEvent, task_id: Option<String>, window: &mut Windo
     match &link.target {
         LinkTarget::Thread(id) => dispatch(AppCommand::TaskSelect { task_id: id.clone() }, cx),
         LinkTarget::File(file) => dispatch(AppCommand::FileOpen { task_id, path: file.file.clone(), line: file.line.map(|line| line as i64) }, cx),
-        LinkTarget::Web(url) if modifiers.secondary() => open_url_in_app(url, cx),
+        LinkTarget::Web(url) if modifiers.secondary(cx) => open_url_in_app(url, cx),
         LinkTarget::Web(url) | LinkTarget::Other(url) => dispatch(AppCommand::LinkOpen { url: url.clone() }, cx),
         LinkTarget::Image(source) => dispatch(AppCommand::ImageOpen { source: source.clone(), gallery: None }, cx),
         LinkTarget::Commit(commit) => dispatch(AppCommand::DiffOpenCommit { commit: commit.clone(), task_id }, cx),
@@ -202,7 +202,7 @@ pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx:
     let strip = STRIPS.with(|strips| strips.borrow_mut().entry(scope.message_id.clone()).or_default().clone());
     // `preview-fade`: a strip wider than the answer fades at whichever edge still has previews past
     // it, each fade growing to 28px over the first and last 4% of the scroll.
-    let max_x = f32::from(strip.max_offset().width);
+    let max_x = f32::from(strip.max_offset().x);
     let fade = (max_x > 1.0).then(|| {
         let progress = (-f32::from(strip.offset().x) / max_x).clamp(0.0, 1.0);
         gpui::EdgeFade::horizontal().start(px(0.0), px(28.0 * (progress / 0.04).min(1.0))).end(px(0.0), px(28.0 * ((1.0 - progress) / 0.04).min(1.0)))

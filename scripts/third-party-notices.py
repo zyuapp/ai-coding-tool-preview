@@ -92,7 +92,7 @@ PARAGRAPHS = {
              "see https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2.",
     "crates": f"The crates below are compiled into the app and its helpers, each used under the license named beside it. "
               f"Where a crate offers a choice of licenses, {APP} uses it under the one whose text is given below. "
-              f"gpui, taffy and xattr are modified copies; the NOTICE file in each one's folder under vendor/ in the "
+              f"Crates marked modified are changed copies; the NOTICE file in each one's folder under vendor/ in the "
               f"{APP} source describes the changes, and is reproduced at the end. Crates under the Mozilla Public "
               "License 2.0 are used unmodified; their source is available from crates.io at the version listed "
               "(https://crates.io/crates/<name>/<version>), and the license is in MPL-2.0.txt.",
@@ -247,8 +247,16 @@ def strip_apache_appendix(text):
     return (text[:start] + text[end + len("limitations under the License."):]).rstrip()
 
 
-def is_vendored(package):
-    return package["source"] is None
+def vendored_folder(package):
+    """The crate's folder relative to the repository when it is a copy under vendor/, else None."""
+    if package["source"] is not None:
+        return None
+    return os.path.relpath(os.path.dirname(package["manifest_path"]), ROOT)
+
+
+def is_modified(package):
+    folder = os.path.dirname(package["manifest_path"])
+    return any(name.lower().startswith("notice") for name in os.listdir(folder))
 
 
 def label(package):
@@ -280,7 +288,8 @@ def render(packages, head, bundled):
     out = [head]
     for package in packages:
         license = package["license"] or "see its license file"
-        suffix = "  (modified, vendor/" + package["name"] + ")" if is_vendored(package) else ""
+        folder = vendored_folder(package)
+        suffix = f"  ({'modified, ' if is_modified(package) else ''}{folder})" if folder else ""
         out.append(f"{label(package).ljust(width)}{license}{suffix}")
 
     out += ["", "", "C libraries", "-----------", "",

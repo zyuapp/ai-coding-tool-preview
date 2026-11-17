@@ -27,7 +27,7 @@ use act_ui::Assets;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
-use gpui::{div, prelude::*, px, size, App, Application, AsyncApp, Bounds, Context, Entity, WeakEntity, Window, WindowBounds, WindowOptions};
+use gpui::{div, prelude::*, px, size, App, AsyncApp, Bounds, Context, Entity, WeakEntity, Window, WindowBounds, WindowOptions};
 
 const THREAD: &str = "demo-thread";
 
@@ -310,7 +310,7 @@ fn main() {
         }
         return;
     }
-    Application::new().with_assets(Assets).run(move |cx: &mut App| {
+    gpui_platform::application().with_assets(Assets).run(move |cx: &mut App| {
         act_ui::init(cx);
         act_browser::init(cx);
         Theme::set_environment(cx, Environment::macos_glass());
@@ -392,7 +392,7 @@ fn main() {
                             let tab_id = host.pages().and_then(|pages| pages.tab_ids().first().cloned()).unwrap_or_default();
                             host.perform(&act_core::EffectWork::FindInPage { tab_id, query: query.clone(), forward: true, find_next }, cx)
                         });
-                        if let Ok(Some(task)) = task {
+                        if let Some(task) = task {
                             task.await;
                         }
                     }

@@ -68,7 +68,7 @@ impl DockChats {
         let Some(composer) = self.composers.get(tab) else { return false };
         composer.input.update(cx, |input, cx| {
             input.move_to_end(cx);
-            input.focus(window);
+            input.focus(window, cx);
         });
         true
     }
@@ -263,7 +263,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, active: &str, window: &mu
 /// A web link's click: the browser, or with ⌘ held, the dock's own browser (WebLink in MarkdownMessage.tsx).
 pub(super) fn web_link(url: String) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static {
     move |event, _, cx| {
-        if event.modifiers().secondary() {
+        if event.modifiers().secondary(cx) {
             send(json!({ "type": "browser.open", "url": url, "newTab": true }), cx);
         } else {
             dispatch(AppCommand::LinkOpen { url: url.clone() }, cx);

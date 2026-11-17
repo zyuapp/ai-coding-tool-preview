@@ -2,6 +2,7 @@
 //! the switch and the checkbox. Text is edited by a `TextInput` the caller owns.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     div, prelude::*, px, AnyElement, App, ClickEvent, CursorStyle, ElementId, Entity, FocusHandle,
@@ -96,7 +97,7 @@ fn native_cancel(input: Entity<TextInput>, font: f32, dark: bool) -> impl IntoEl
         .on_click(move |_, window, cx| {
             target.update(cx, |input, cx| {
                 input.set_text("", cx);
-                input.focus(window);
+                input.focus(window, cx);
             });
         })
         .child(
@@ -154,7 +155,7 @@ impl RenderOnce for SearchField {
             .cursor(CursorStyle::IBeam)
             .skip_tab_stop()
             .accessible(gpui::AccessInfo::new(gpui::AccessRole::Group, ""))
-            .on_click(move |_, window, cx| focus_target.read(cx).focus(window))
+            .on_click(move |_, window, cx| focus_target.update(cx, |input, cx| input.focus(window, cx)))
             .child(Icon::new(IconName::Search).size(px(icon)).color(icon_color))
             .child(
                 div()
@@ -292,7 +293,7 @@ impl RenderOnce for TextField {
             .cursor(CursorStyle::IBeam)
             .skip_tab_stop()
             .accessible(gpui::AccessInfo::new(gpui::AccessRole::Group, ""))
-            .on_click(move |_, window, cx| focus_target.read(cx).focus(window));
+            .on_click(move |_, window, cx| focus_target.update(cx, |input, cx| input.focus(window, cx)));
         field = if multiline {
             field.min_h(px(60.0)).py(px(6.0)).line_height(gpui::relative(1.45)).items_start()
         } else {
@@ -424,7 +425,7 @@ impl RenderOnce for Switch {
         };
         let on = self.on;
         let knob_element = div()
-            .id(ElementId::NamedChild(Box::new(self.id.clone()), "knob".into()))
+            .id(ElementId::NamedChild(Arc::new(self.id.clone()), "knob".into()))
             .absolute()
             .top(px(2.0))
             .left(px(2.0))

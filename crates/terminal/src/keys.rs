@@ -260,7 +260,7 @@ fn evaluate_default(ev: Event<'_>, is_mac: bool, option_is_meta: bool) -> KeyRes
 mod tests {
     use super::*;
 
-    fn press(text: &str, application_cursor: bool, is_mac: bool) -> KeyResult {
+    fn press(text: &'static str, application_cursor: bool, is_mac: bool) -> KeyResult {
         evaluate(&Keystroke::parse(text).unwrap(), application_cursor, is_mac, false)
     }
 

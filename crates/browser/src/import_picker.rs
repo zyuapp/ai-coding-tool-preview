@@ -44,7 +44,7 @@ impl ImportPicker {
                 }
             }
         });
-        search.read(cx).focus(window);
+        search.update(cx, |input, cx| input.focus(window, cx));
         Self { picker, importing, search, scroll: ScrollHandle::new(), dispatch: Rc::new(dispatch), _search_events: search_events }
     }
 

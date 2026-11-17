@@ -118,9 +118,10 @@ fn menus(checking: bool) -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action(format!("Quit {APP_NAME}"), Quit),
             ],
+            disabled: false,
         });
     }
-    menus.push(Menu { name: "File".into(), items: vec![if mac { MenuItem::action("Close Window", CloseWindow) } else { MenuItem::action("Quit", Quit) }] });
+    menus.push(Menu { name: "File".into(), items: vec![if mac { MenuItem::action("Close Window", CloseWindow) } else { MenuItem::action("Quit", Quit) }], disabled: false });
     menus.push(Menu {
         name: "Edit".into(),
         items: vec![
@@ -133,6 +134,7 @@ fn menus(checking: bool) -> Vec<Menu> {
             MenuItem::action("Delete", act_ui::input::Delete),
             MenuItem::os_action("Select All", act_ui::input::SelectAll, OsAction::SelectAll),
         ],
+        disabled: false,
     });
     menus.push(Menu {
         name: "View".into(),
@@ -143,6 +145,7 @@ fn menus(checking: bool) -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Toggle Full Screen", ToggleFullScreen),
         ],
+        disabled: false,
     });
     let mut window = vec![MenuItem::action("Minimize", Minimize), MenuItem::action("Zoom", ZoomWindow)];
     if mac {
@@ -150,9 +153,9 @@ fn menus(checking: bool) -> Vec<Menu> {
     } else {
         window.push(MenuItem::action("Close", CloseWindow));
     }
-    menus.push(Menu { name: "Window".into(), items: window });
+    menus.push(Menu { name: "Window".into(), items: window, disabled: false });
     if !mac {
-        menus.push(Menu { name: "Help".into(), items: vec![check_for_updates(), licenses()] });
+        menus.push(Menu { name: "Help".into(), items: vec![check_for_updates(), licenses()], disabled: false });
     }
     menus
 }
@@ -173,13 +176,12 @@ pub fn watch_unread(cx: &mut App) {
                 let state = workspace.read(cx).state.clone();
                 state.restored.then(|| act_core::workspace::activity::thread_lists(&state).unread_count + act_core::view::workspace::remote_unread_count(&state))
             });
-            let Ok(count) = count else { break };
             if let Some(count) = count.filter(|count| Some(*count) != shown) {
                 let had = shown.is_some_and(|shown| shown > 0);
                 shown = Some(count);
                 act_host::dock::set_unread_badge(count);
                 if had != (count > 0) {
-                    let _ = cx.update(|cx| set_dock_menu(count > 0, cx));
+                    cx.update(|cx| set_dock_menu(count > 0, cx));
                 }
             }
             cx.background_executor().timer(Duration::from_millis(300)).await;

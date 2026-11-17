@@ -192,7 +192,7 @@ impl SettingsState {
         let offset = self.main_scroll.offset();
         let max = self.main_scroll.max_offset();
         let delta = row.center().y - view.center().y;
-        let y = (offset.y - delta).max(-max.height).min(px(0.0));
+        let y = (offset.y - delta).max(-max.y).min(px(0.0));
         self.main_scroll.set_offset(point(offset.x, y));
     }
 
@@ -711,7 +711,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             }
             _ => {}
         });
-        input.update(cx, |input, _| input.focus(window));
+        input.update(cx, |input, cx| input.focus(window, cx));
         root.settings.search = Some((input, subscription));
         dispatch(AppCommand::ComputerUseRead, cx);
     }
@@ -751,7 +751,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 root.settings.scroll_to_mark(&id);
                 let stop = root.settings.marks.stops.borrow().get(&id).cloned();
                 if let Some(stop) = stop {
-                    window.focus(&stop);
+                    window.focus(&stop, cx);
                 }
                 cx.notify();
             });
@@ -809,7 +809,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             row_button("settings-show-all".into()).keep_focus_on_click().text_color(t.muted).hover(|style| style.bg(t.frame_row_hover).text_color(t.ink_dim)).child("Show all pages").on_click(move |_, window, cx| {
                 input.update(cx, |input, cx| {
                     input.reset("", cx);
-                    input.focus(window);
+                    input.focus(window, cx);
                 });
             }),
         );
@@ -838,7 +838,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .map(|button| if picked { rimmed(button, t, 9.0).bg(t.frame_row_selected).text_color(t.ink).font_weight(FontWeight(560.0)) } else { button.text_color(t.muted).hover(|style| style.bg(t.frame_row_hover).text_color(t.ink_dim)) })
                     // A title too long for the row squeezes its icon as well.
                     .child(icon(page_icon(option.section), 18.0, if picked { t.accent } else { t.muted }).shrinks())
-                    .child(div().flex_shrink().min_w_0().flex().child(label))
+                    .child(div().flex_shrink(1.).min_w_0().flex().child(label))
                     .when_some(option.page.clone(), |button, page| button.child(div().ml_auto().flex_none().max_w(relative(0.45)).clip().text_color(t.quiet_strong).text_size(px(12.0)).child(page)))
                     .on_mouse_move(cx.listener(move |root, _, _, cx| {
                         if root.settings.picked != index {
@@ -974,8 +974,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             if let Some(at) = on_page {
                 let count = root.settings.nav_focus.len();
                 match key {
-                    "down" => window.focus(&root.settings.nav_focus[(at + 1) % count]),
-                    "up" => window.focus(&root.settings.nav_focus[(at + count - 1) % count]),
+                    "down" => window.focus(&root.settings.nav_focus[(at + 1) % count], cx),
+                    "up" => window.focus(&root.settings.nav_focus[(at + count - 1) % count], cx),
                     _ => return,
                 }
                 // Left to bubble on, so the keystroke still reaches what shows focus rings.

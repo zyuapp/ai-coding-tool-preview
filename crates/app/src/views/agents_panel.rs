@@ -247,7 +247,7 @@ fn list(root: &mut Root, state: &WorkspaceState, subagents: &[Subagent], window:
             move |_, window, cx| {
                 input.update(cx, |input, cx| {
                     input.reset("", cx);
-                    input.focus(window);
+                    input.focus(window, cx);
                 })
             }
         }));

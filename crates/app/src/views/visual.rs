@@ -8,6 +8,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use act_ui::components::button::{IconButton, IconButtonVariant};
@@ -663,7 +664,7 @@ fn loading(id: ElementId, height: f32, label: bool, cx: &mut App) -> gpui::Div {
 /// A visual in a message. `pending` marks a fence still being written; `full` is the copy drawn in
 /// the viewer, whose height is its own.
 pub fn block(id: ElementId, source: SharedString, pending: bool, full: bool, window: &mut Window, cx: &mut App) -> AnyElement {
-    let named = |name: &'static str| ElementId::NamedChild(Box::new(id.clone()), name.into());
+    let named = |name: &'static str| ElementId::NamedChild(Arc::new(id.clone()), name.into());
     if pending {
         let height = visuals(cx).borrow().remembered(&source).unwrap_or(120.0);
         return loading(named("loading"), height, true, cx).into_any_element();

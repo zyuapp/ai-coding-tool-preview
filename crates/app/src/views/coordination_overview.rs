@@ -217,7 +217,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     let lead_id = lead.id.clone();
     if root.dock.overview.editing.is_none() {
         if let Some(key) = root.dock.overview.refocus.take() {
-            window.focus(&root.dock.overview.key(&key, cx));
+            window.focus(&root.dock.overview.key(&key, cx), cx);
         }
     }
     if let Some((_, input, _)) = &root.dock.overview.editing {
@@ -225,7 +225,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             root.dock.overview.focus_edit = false;
             let input = input.clone();
             input.update(cx, |input, cx| {
-                input.focus(window);
+                input.focus(window, cx);
                 input.move_to_end(cx);
             });
         }
@@ -790,7 +790,7 @@ fn settle(root: &mut Root, drawn: &Drawn, went: &HashMap<String, String>, window
         }
     };
     if let Some(focus) = target.and_then(|key| root.dock.overview.keys.get(&key).cloned()) {
-        window.focus(&focus);
+        window.focus(&focus, cx);
     }
 }
 

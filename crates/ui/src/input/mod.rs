@@ -12,7 +12,7 @@ use crate::components::scrollbar::ScrollModel;
 
 use gpui::{
     actions, App, Bounds, ClipboardItem, Context, EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyBinding,
-    prelude::FluentBuilder as _, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollWheelEvent,
+    prelude::FluentBuilder as _, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollEvent,
     SharedString, Task, UTF16Selection, Window,
 };
 
@@ -417,8 +417,8 @@ impl TextInput {
         &self.buffer
     }
 
-    pub fn focus(&self, window: &mut Window) {
-        window.focus(&self.focus_handle);
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        window.focus(&self.focus_handle, cx);
     }
 
     pub fn is_focused(&self, window: &Window) -> bool {
@@ -483,8 +483,8 @@ impl TextInput {
         self.caret.clone()
     }
 
-    pub(crate) fn key_context(&self) -> KeyContext {
-        let mut context = KeyContext::new_with_defaults();
+    pub(crate) fn key_context(&self, cx: &App) -> KeyContext {
+        let mut context = KeyContext::new_with_defaults(cx.platform_info().os);
         context.add(KEY_CONTEXT);
         if self.multiline {
             context.add("multiline");
@@ -903,7 +903,7 @@ impl TextInput {
         if self.disabled {
             return;
         }
-        window.focus(&self.focus_handle);
+        window.focus(&self.focus_handle, cx);
         let offset = self.offset_for_point(event.position);
         self.selecting = true;
         self.goal_x = None;
@@ -961,11 +961,11 @@ impl TextInput {
     }
 
     /// Scrolls by a wheel turned over the field, or over the padding around it.
-    pub fn scroll_wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn scroll_wheel(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         self.on_scroll(event, window, cx);
     }
 
-    fn on_scroll(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_scroll(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(layout) = &self.layout else { return };
         let delta = event.delta.pixel_delta(layout.line_height());
         let visible = layout.visible_size();
@@ -1098,7 +1098,7 @@ impl gpui::Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         use gpui::{div, CursorStyle, InteractiveElement, ParentElement, Styled};
         div()
-            .key_context(self.key_context())
+            .key_context(self.key_context(cx))
             .track_focus(&self.focus_handle)
             .w_full()
             .min_w_0()
@@ -1142,7 +1142,7 @@ impl gpui::Render for TextInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .on_scroll_wheel(cx.listener(Self::on_scroll))
+            .on_scroll(cx.listener(Self::on_scroll))
             .child(element::TextInputElement::new(cx.entity()))
     }
 }

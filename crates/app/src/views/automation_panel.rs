@@ -388,7 +388,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
     }
     let (schedule_input, prompt_input, surface_input, ends_input) = (form.schedule.clone(), form.prompt.clone(), form.surface_when.clone(), form.ends_when.clone());
     if form.focus_schedule {
-        schedule_input.update(cx, |input, _| input.focus(window));
+        schedule_input.update(cx, |input, cx| input.focus(window, cx));
         if let Some(form) = &mut root.automation {
             form.focus_schedule = false;
         }

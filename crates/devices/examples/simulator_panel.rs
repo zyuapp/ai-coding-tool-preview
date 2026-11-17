@@ -16,7 +16,7 @@ use act_devices::simulator::{SimulatorHost, SimulatorHostOptions, SimulatorPanel
 use act_ui::theme::Environment;
 use act_ui::{Assets, Theme};
 use futures::StreamExt;
-use gpui::{div, prelude::*, px, size, App, Application, Bounds, Context, Entity, Window, WindowBounds, WindowOptions};
+use gpui::{div, prelude::*, px, size, App, Bounds, Context, Entity, Window, WindowBounds, WindowOptions};
 
 enum Update {
     Command(AppCommand),
@@ -148,7 +148,7 @@ fn main() {
     };
     let quitting = host.clone();
 
-    Application::new().with_assets(Assets).run(move |cx: &mut App| {
+    gpui_platform::application().with_assets(Assets).run(move |cx: &mut App| {
         act_ui::init(cx);
         Theme::set_environment(cx, Environment::macos_glass());
         let bounds = Bounds::centered(None, size(px(730.0), px(960.0)), cx);

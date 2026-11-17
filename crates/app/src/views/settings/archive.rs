@@ -82,7 +82,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, marks: &Marks, window: &m
                     if let Some(input) = &input {
                         input.update(cx, |input, cx| {
                             input.reset("", cx);
-                            input.focus(window);
+                            input.focus(window, cx);
                         });
                     }
                 })))

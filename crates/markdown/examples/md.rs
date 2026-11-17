@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use act_markdown::{bind_keys, LinkCapabilities, MarkdownEvent, MarkdownStyle, MarkdownView};
 use gpui::{
-    div, prelude::*, px, rgb, size, App, Application, AssetSource, Bounds, Context, Entity,
+    div, prelude::*, px, rgb, size, App, AssetSource, Bounds, Context, Entity,
     SharedString, Window, WindowBounds, WindowOptions,
 };
 
@@ -97,7 +97,7 @@ impl Render for Sample {
 
 fn main() {
     let streaming = std::env::var("MD_STREAM").is_ok();
-    Application::new()
+    gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
             bind_keys(cx);

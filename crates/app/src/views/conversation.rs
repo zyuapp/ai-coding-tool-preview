@@ -261,7 +261,7 @@ impl ConversationState {
         }
         self.signatures = signatures;
         // What is drawn grew or the view changed size, as a diagram that finished drawing does.
-        let extent = (self.list.max_offset_for_scrollbar().height, self.list.viewport_bounds().size);
+        let extent = (self.list.max_offset_for_scrollbar().y, self.list.viewport_bounds().size);
         if self.extent != Some(extent) {
             self.extent = Some(extent);
             self.moved = true;
@@ -894,7 +894,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     // The composer is measured as it draws, so a change in what stands over it lays this out again.
     let approval_height = root.conversation.approval_probe.get().map(|bounds| bounds.size.height);
     // Room made at the foot for what stands over it moves the foot, which the view then follows.
-    let extent = root.conversation.list.max_offset_for_scrollbar().height;
+    let extent = root.conversation.list.max_offset_for_scrollbar().y;
     // The approval card follows the last row, whose place is known only once the list has drawn it.
     let last_row_bottom = |root: &Root| {
         let list = &root.conversation.list;
@@ -908,7 +908,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             || (follows_row && last_row_bottom(root) != row_bottom)
         {
             cx.notify();
-        } else if root.conversation.list.max_offset_for_scrollbar().height != extent {
+        } else if root.conversation.list.max_offset_for_scrollbar().y != extent {
             root.redraw_transcript(cx);
         }
     });
@@ -1205,7 +1205,7 @@ pub(super) fn approval_card(approval: &ApprovalView, probe: &BoundsCell, state: 
         );
     let tint = with_alpha(t.accent, 0.2);
     let lit = gpui::linear_gradient(180.0, gpui::linear_color_stop(with_alpha(gpui::white().into(), 0.18), 0.0), gpui::linear_color_stop(with_alpha(gpui::white().into(), 0.02), 1.0)).over_color(tint);
-    let glow = |color: gpui::Rgba, blur: f32, spread: f32| gpui::BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(blur), spread_radius: px(spread) };
+    let glow = |color: gpui::Rgba, blur: f32, spread: f32| gpui::BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(blur), spread_radius: px(spread), inset: false };
     glass(div(), t, GlassKind::Float, Some(14.0), None)
         .relative()
         .w_full()

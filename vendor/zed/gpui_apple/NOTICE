@@ -1,0 +1,10 @@
+Copyright 2022 - 2025 Zed Industries, Inc.
+Licensed under the Apache License, Version 2.0 (LICENSE-APACHE).
+
+This directory is a modified copy of the gpui_apple crate from Zed v1.28.1
+(https://github.com/zed-industries/zed, crates/gpui_apple, commit e8bc16ace).
+zyuapp changed it in 2026: the manifest stands alone; the Metal renderer
+draws backdrop filters, edge fades, radial gradients and layered shadows,
+and blends colours in the display's colour space (src/display_color.rs); the
+text system adds letter spacing and picks system and installed faces by
+weight as Chromium does.

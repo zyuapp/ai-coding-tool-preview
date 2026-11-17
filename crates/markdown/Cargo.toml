@@ -12,6 +12,9 @@ serde_json.workspace = true
 unicode-linebreak = "0.1.5"
 unicode-segmentation = "1.12"
 
+[dev-dependencies]
+gpui_platform.workspace = true
+
 [[example]]
 name = "md"
 path = "examples/md.rs"

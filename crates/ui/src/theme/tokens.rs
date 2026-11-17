@@ -124,6 +124,7 @@ impl ShadowLayer {
             offset: point(px(self.x), px(self.y)),
             blur_radius: px(self.blur),
             spread_radius: px(self.spread),
+            inset: false,
         }
     }
 }

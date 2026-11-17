@@ -226,7 +226,7 @@ impl RenderOnce for Toasts {
                         cx.stop_propagation();
                         if close.contains_focused(window, cx) {
                             if let Some(heir) = &heir {
-                                window.focus(heir);
+                                window.focus(heir, cx);
                             }
                         }
                         on_escape(&id, window, cx);

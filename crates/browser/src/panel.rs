@@ -22,7 +22,7 @@ use act_ui::{Icon, IconName};
 use gpui::{
     actions, canvas, div, img, linear_color_stop, linear_gradient, prelude::*, px, AnyView, App, Bounds, Context, Entity, FocusHandle, Focusable, FontWeight,
     HighlightStyle, KeyBinding, KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, Pixels, Point, RenderImage,
-    ScrollWheelEvent, SharedString, StyledText, Subscription, Window,
+    ScrollEvent, SharedString, StyledText, Subscription, Window,
 };
 
 use crate::host::BrowserHost;
@@ -35,12 +35,12 @@ pub const KEY_CONTEXT: &str = "BrowserPanel";
 /// The panel's own keys, live while the address bar or the page holds the keyboard.
 pub fn bind_keys(cx: &mut App) {
     let context = Some(KEY_CONTEXT);
-    let modifier = if cfg!(target_os = "macos") { "cmd" } else { "ctrl" };
+    let [back, forward, reload, address] = if cfg!(target_os = "macos") { ["cmd-[", "cmd-]", "cmd-r", "cmd-l"] } else { ["ctrl-[", "ctrl-]", "ctrl-r", "ctrl-l"] };
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-["), GoBack, context),
-        KeyBinding::new(&format!("{modifier}-]"), GoForward, context),
-        KeyBinding::new(&format!("{modifier}-r"), Reload, context),
-        KeyBinding::new(&format!("{modifier}-l"), FocusAddress, context),
+        KeyBinding::new(back, GoBack, context),
+        KeyBinding::new(forward, GoForward, context),
+        KeyBinding::new(reload, Reload, context),
+        KeyBinding::new(address, FocusAddress, context),
     ]);
 }
 
@@ -83,7 +83,7 @@ impl BrowserPanel {
         let address_events = cx.subscribe_in(&address, window, |this, _, event: &InputEvent, window, cx| this.address_event(event, window, cx));
         let page_events = cx.subscribe_in(&host, window, |this, _, event: &BrowserEvent, window, cx| match event {
             BrowserEvent::PageFocused { tab_id } if *tab_id == this.tab.id => {
-                this.page_focus.focus(window);
+                this.page_focus.focus(window, cx);
                 cx.notify();
             }
             BrowserEvent::PageFrame { tab_id } if *tab_id == this.tab.id => cx.notify(),
@@ -175,7 +175,7 @@ impl BrowserPanel {
         if self.tab.url.is_empty() {
             self.focus_address(window, cx);
         } else {
-            self.page_focus.focus(window);
+            self.page_focus.focus(window, cx);
             if let Some(pages) = self.host.read(cx).pages() {
                 pages.focus_tab(&self.tab.id);
             }
@@ -184,7 +184,7 @@ impl BrowserPanel {
 
     fn focus_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.host.read(cx).focus_app();
-        self.address.read(cx).focus(window);
+        self.address.update(cx, |input, cx| input.focus(window, cx));
         self.address.update(cx, |input, cx| input.select_all_text(cx));
     }
 
@@ -225,7 +225,7 @@ impl BrowserPanel {
         self.editing = false;
         self.show_address(cx);
         if self.address.read(cx).is_focused(window) {
-            self.page_focus.focus(window);
+            self.page_focus.focus(window, cx);
         }
         cx.notify();
     }
@@ -329,7 +329,7 @@ impl BrowserPanel {
     }
 
     fn page_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        self.page_focus.focus(window);
+        self.page_focus.focus(window, cx);
         self.page_pressed = true;
         self.host.read(cx).page_input(&self.tab.id, &PageInput::Focus(true));
         self.page_pointer(PointerKind::Down, event.position, Some(event.button), event.modifiers, window, cx);
@@ -475,7 +475,7 @@ impl BrowserPanel {
                         this.host.read(cx).page_input(&this.tab.id, &PageInput::Leave);
                     }
                 }))
-                .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
+                .on_scroll(cx.listener(|this, event: &ScrollEvent, window, cx| {
                     let (x, y) = this.page_point(event.position, window);
                     this.host.read(cx).page_input(&this.tab.id, &PageInput::Scroll { x, y, delta: event.delta, modifiers: event.modifiers });
                     cx.stop_propagation();

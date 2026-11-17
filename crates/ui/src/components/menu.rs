@@ -667,9 +667,9 @@ impl Menu {
             let query = search.input.read(cx).text().to_string();
             let filter = search.filter.clone();
             self.entries = filter(&query, cx);
-            search.input.read(cx).focus(window);
+            search.input.update(cx, |input, cx| input.focus(window, cx));
         } else {
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             if self.focus_first {
                 self.active = self.first_enabled();
             }
@@ -711,7 +711,7 @@ impl Menu {
             self.open_submenu(index, by_keyboard, window, cx);
             return;
         }
-        self.give_back_focus(window);
+        self.give_back_focus(window, cx);
         self.dismiss(cx);
         if let Some(handler) = item.on_select {
             handler(window, cx);
@@ -774,7 +774,7 @@ impl Menu {
     fn close_submenu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.submenu.take().is_some() {
             self.pointer_active = false;
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
         }
     }
@@ -788,7 +788,7 @@ impl Menu {
         if self.search.is_some() && delta < 0 && (self.active == Some(0) || field_focused) {
             self.active = None;
             if let Some(search) = &self.search {
-                search.input.read(cx).focus(window);
+                search.input.update(cx, |input, cx| input.focus(window, cx));
             }
             cx.notify();
             return;
@@ -807,7 +807,7 @@ impl Menu {
         if self.caret_holds {
             crate::focus::show_rings(cx);
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         if let Some(child) = self.row_children.get(index) {
             self.scroll.scroll_to_item(*child);
         }
@@ -868,13 +868,13 @@ impl Menu {
             parent.update(cx, |parent, cx| parent.dismiss_stack(window, cx));
             return;
         }
-        self.give_back_focus(window);
+        self.give_back_focus(window, cx);
         self.dismiss(cx);
     }
 
-    fn give_back_focus(&mut self, window: &mut Window) {
+    fn give_back_focus(&mut self, window: &mut Window, cx: &mut App) {
         if let Some(focus) = self.return_focus.take() {
-            window.focus(&focus);
+            window.focus(&focus, cx);
         }
     }
 
@@ -948,7 +948,7 @@ impl Menu {
                 menu.submenu = None;
             }
             if menu.search.as_ref().is_none_or(|search| !search.input.read(cx).is_focused(window)) {
-                window.focus(&menu.focus);
+                window.focus(&menu.focus, cx);
             }
             cx.notify();
         };
@@ -1259,14 +1259,14 @@ impl Render for Menu {
                 .relative()
                 .flex()
                 .flex_col()
-                .flex_shrink()
+                .flex_shrink(1.)
                 .min_h_0()
                 .when(inner, |wrap| wrap.mx(px(PAD)))
                 .when_some(self.list_max_height, |wrap, height| wrap.max_h(height))
                 .child(
                     div()
                         .id("menu-rows")
-                        .flex_shrink()
+                        .flex_shrink(1.)
                         .min_h_0()
                         .flex()
                         .flex_col()
@@ -1596,7 +1596,7 @@ impl RenderOnce for MenuTrigger {
             body = body.child(div().whitespace_nowrap().when(self.max_width.is_some(), |label| label.min_w_0().overflow_hidden().text_ellipsis()).child(label));
         }
         if let Some(width) = self.max_width {
-            trigger = trigger.flex_shrink().min_w_0().max_w(width);
+            trigger = trigger.flex_shrink(1.).min_w_0().max_w(width);
             body = body.min_w_0();
         }
         trigger = trigger.gap(px(if pill { 4.0 } else { 6.0 })).child(body.children(self.children));

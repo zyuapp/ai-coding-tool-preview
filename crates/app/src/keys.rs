@@ -68,9 +68,10 @@ mod tests {
 
     #[test]
     fn shifted_punctuation_names_the_physical_key() {
-        let stroke = keystroke(&gpui::Keystroke::parse("secondary-|").unwrap()).unwrap();
+        let os = if cfg!(target_os = "macos") { gpui::OperatingSystem::Mac } else { gpui::OperatingSystem::Linux };
+        let stroke = keystroke(&gpui::Keystroke::parse_with_os("secondary-|", os).unwrap()).unwrap();
         assert_eq!((stroke.key.as_str(), stroke.r#mod, stroke.shift), ("\\", true, true));
-        let digit = keystroke(&gpui::Keystroke::parse("secondary-!").unwrap()).unwrap();
+        let digit = keystroke(&gpui::Keystroke::parse_with_os("secondary-!", os).unwrap()).unwrap();
         assert_eq!((digit.key.as_str(), digit.shift), ("1", true));
     }
 }

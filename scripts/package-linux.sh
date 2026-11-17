@@ -11,11 +11,11 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 host_arch=$(uname -m | sed 's/arm64/aarch64/; s/amd64/x86_64/')
 arch=${1:-$host_arch}
 out=${2:-$root/target/package}
-cua_version=0.52.0
+cua_version=0.53.0
 ort_version=1.32.0
 case $arch in
-  x86_64) cua_arch=x86_64 cua_sha256=55c99ec4177170b1a440a5efd41e55bacae1e9fe257c96dcd9e5b81ef9085036 ort_arch=x64 ort_sha256=bb169b7e374731730d2ae406fb39de7be4b315f413a9132efe896261c31bb503 runtime_sha256=617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46 ;;
-  aarch64) cua_arch=arm64 cua_sha256=5c7d0a36c0e368fb2847f226ca1435c60bfb79ac3968d9b08a94d82c97da880a ort_arch=aarch64 ort_sha256=81a46251dd90da4122f4b9ceb4433f836fbc79ee1eddffca7c09033af81a1939 runtime_sha256=9a72a744d221576c9347ec074243acc5c3c7568896b12714e0e82e9f0bf47900 ;;
+  x86_64) cua_arch=x86_64 cua_sha256=fdee86c42b3f1f43916887f05e38cc6b79883668cde55c29ca862abb09db1908 ort_arch=x64 ort_sha256=bb169b7e374731730d2ae406fb39de7be4b315f413a9132efe896261c31bb503 runtime_sha256=617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46 ;;
+  aarch64) cua_arch=arm64 cua_sha256=4dcb9e1cfb3cebc995b99d85ee218978682520eae7dfa552555016e2ea9afbc4 ort_arch=aarch64 ort_sha256=81a46251dd90da4122f4b9ceb4433f836fbc79ee1eddffca7c09033af81a1939 runtime_sha256=9a72a744d221576c9347ec074243acc5c3c7568896b12714e0e82e9f0bf47900 ;;
   *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)

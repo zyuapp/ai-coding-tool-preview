@@ -16,8 +16,8 @@ app="$out/$app_name.app"
 sign_identity=${MAC_SIGN_IDENTITY:--}
 sign_flags=(--force --sign $sign_identity --options runtime)
 [[ $sign_identity == - ]] || sign_flags+=(--timestamp)
-cua_version=0.52.0
-cua_sha256=c40f7101e3c1fec2a21f026af249f33c85b16f20c12bba6f7fbfe4e9ef2923cf
+cua_version=0.53.0
+cua_sha256=9ab4b8cff7f0a72804a0ae7c17c0f8dad40e7c7b032a9099929da5d5c6648c54
 
 [[ $(uname -s) == Darwin ]] || { echo "package-mac.sh builds on macOS only." >&2; exit 1 }
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' $root/Cargo.toml | head -1)

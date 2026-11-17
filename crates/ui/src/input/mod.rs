@@ -505,6 +505,9 @@ impl TextInput {
         }
         self.was_focused = focused;
         if focused {
+            if !self.multiline && crate::focus::take_tabbed_to(&self.focus_handle, cx) {
+                self.select_all_text(cx);
+            }
             cx.emit(InputEvent::Focus);
         } else {
             self.selecting = false;

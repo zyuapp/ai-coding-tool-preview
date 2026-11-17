@@ -8,6 +8,8 @@ pub struct FocusAppearance {
     keyboard: bool,
     /// What held focus after the last keystroke, so a movement key shows rings only when it moved focus.
     last_focus: Option<FocusHandle>,
+    /// What Tab or Shift+Tab last moved focus to, until it is claimed or the pointer is pressed.
+    tabbed_to: Option<FocusHandle>,
 }
 
 impl Global for FocusAppearance {}
@@ -32,6 +34,7 @@ pub fn note_keystroke(keystroke: &Keystroke, window: &mut Window, cx: &mut App) 
         return;
     }
     let key = keystroke.key.as_str();
+    cx.global_mut::<FocusAppearance>().tabbed_to = (key == "tab" && focus != previous).then_some(focus.clone()).flatten();
     let editing = window.context_stack().iter().any(|context| context.contains(crate::input::KEY_CONTEXT));
     let turns_on = if MOVEMENT_KEYS.contains(&key) {
         focus != previous
@@ -66,7 +69,20 @@ pub fn sync(cx: &mut App) {
 /// A press of the pointer anywhere turns rings off. The app's root calls this from a capture-phase
 /// mouse-down listener.
 pub fn note_pointer(cx: &mut App) {
+    if cx.has_global::<FocusAppearance>() {
+        cx.global_mut::<FocusAppearance>().tabbed_to = None;
+    }
     quiet(cx);
+}
+
+/// Whether `handle` took focus from Tab or Shift+Tab, as a text field selects its whole value then.
+/// The answer is given once.
+pub fn take_tabbed_to(handle: &FocusHandle, cx: &mut App) -> bool {
+    if !cx.try_global::<FocusAppearance>().is_some_and(|appearance| appearance.tabbed_to.as_ref() == Some(handle)) {
+        return false;
+    }
+    cx.global_mut::<FocusAppearance>().tabbed_to = None;
+    true
 }
 
 /// The window taking or losing the keyboard turns rings off, so a control focus returns to is

@@ -49,6 +49,8 @@ const SUBMENU_INTENT: Duration = Duration::from_millis(220);
 /// The tallest a scrolling menu grows (`--menu-max-height`).
 const MAX_HEIGHT: f32 = 420.0;
 const PAD: f32 = 5.0;
+/// A search row's height: its padding around the 28px field.
+const PINNED_SEARCH_HEIGHT: f32 = 6.0 + 28.0 + 4.0;
 
 pub type SelectHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
@@ -299,6 +301,9 @@ pub struct Menu {
     /// The search sits inside the pane's padding rather than flush with its edge, as a searchable
     /// submenu's panel does (`.worktree-menu-panel`).
     inset_search: bool,
+    /// The whole pane scrolls under its search, which stays pinned over the rows (a sticky
+    /// `.menu-search` in a scrolling `.menu-popover`).
+    pane_scrolls: bool,
     empty: Option<SharedString>,
     active: Option<usize>,
     /// Whether the menu held the keyboard when last drawn.
@@ -372,6 +377,7 @@ impl Menu {
             title: None,
             min_width: px(168.0),
             inset_search: false,
+            pane_scrolls: false,
             width: None,
             max_width: None,
             empty: None,
@@ -432,6 +438,12 @@ impl Menu {
     /// A menu the frame opened takes the near-solid glass over a window material (ui/glass.css).
     pub fn from_frame(mut self) -> Self {
         self.from_frame = true;
+        self
+    }
+
+    /// Scrolls the whole pane, its search pinned over the rows, with the bar against the pane's edge.
+    pub fn pane_scrolls(mut self) -> Self {
+        self.pane_scrolls = true;
         self
     }
 
@@ -1169,22 +1181,28 @@ impl Render for Menu {
             surface = surface.child(div().flex_none().px(px(PAD + 8.0)).pt(px(PAD + 8.0)).pb(px(if self.search.is_some() { 0.0 } else { 4.0 })).text_size(px(m.text_meta)).text_color(t.quiet).font_weight(FontWeight(500.0)).child(title.clone()));
         }
         // The search field spans the pane's padding, so the rows carry it instead.
+        let pinned_search = self.pane_scrolls && self.title.is_none();
+        let mut search_row = None;
         if let Some(search) = &self.search {
-            surface = surface.child(
-                div()
-                    .flex_none()
-                    .when(self.inset_search, |search| search.mx(px(PAD)).mt(px(PAD)))
-                    .rounded_t(px(9.0))
-                    .px(px(6.0))
-                    .pt(px(if self.title.is_some() { 5.0 } else { 6.0 }))
-                    .pb(px(4.0))
-                    .bg(t.surface_glass)
-                    .child(SearchField::new("menu-search", &search.input).variant(SearchVariant::Menu)),
-            );
+            let row = div()
+                .flex_none()
+                .when(self.inset_search, |search| search.mx(px(PAD)).mt(px(PAD)))
+                .rounded_t(px(9.0))
+                .px(px(6.0))
+                .pt(px(if self.title.is_some() { 5.0 } else { 6.0 }))
+                .pb(px(4.0))
+                .bg(t.surface_glass)
+                .child(SearchField::new("menu-search", &search.input).variant(SearchVariant::Menu));
+            if pinned_search {
+                // Rows scrolled under it are frosted, as `.menu-search` blurs its backdrop.
+                search_row = Some(crate::style::Backdrop::glass_backdrop(row.absolute().top_0().left_0().right_0(), t));
+            } else {
+                surface = surface.child(row);
+            }
         }
         // A list under a search or over pinned rows scrolls inside the pane's padding (`.menu-scroll`);
         // otherwise the whole pane scrolls, padding and all, with its bar against the pane's edge.
-        let inner = searchable || !pinned.is_empty() || !edge.is_empty();
+        let inner = (searchable && !pinned_search) || !pinned.is_empty() || !edge.is_empty();
         let gutter = crate::components::scrollbar::gutter(&self.scroll);
         surface = surface.child(
             div()
@@ -1205,11 +1223,12 @@ impl Render for Menu {
                         .when(!inner, |rows| rows.pl(px(PAD)).pr(px(PAD) + gutter))
                         .when(inner, |rows| rows.pr(gutter))
                         .pb(px(if pinned.is_empty() && edge.is_empty() { PAD } else { 0.0 }))
-                        .pt(px(if searchable { 0.0 } else { PAD }))
+                        .pt(px(if search_row.is_some() { PINNED_SEARCH_HEIGHT } else if searchable { 0.0 } else { PAD }))
                         .overflow_y_scroll()
                         .track_scroll(&self.scroll)
                         .children(column),
                 )
+                .children(search_row)
                 .child(crate::components::scrollbar::Scrollbar::vertical("menu-scrollbar", &self.scroll)),
         );
         if !pinned.is_empty() {

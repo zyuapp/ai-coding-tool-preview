@@ -1074,7 +1074,7 @@ fn project_filter(root: &mut Root, state: &WorkspaceState, sidebar: &SidebarMode
         let filter_projects = projects.clone();
         let filter_chosen = chosen.clone();
         let menu = Menu::build(entries, Placement::Anchor { anchor, align: Align::Start }, window, cx, move |menu| {
-            menu.from_frame().checkable(true).min_width(px(220.0)).exempt(&probe).searchable("Search projects", move |query, _| filter_entries(&filter_projects, filter_chosen.as_deref(), query))
+            menu.from_frame().checkable(true).min_width(px(220.0)).pane_scrolls().exempt(&probe).searchable("Search projects", move |query, _| filter_entries(&filter_projects, filter_chosen.as_deref(), query))
         });
         root.menus.show("activity:project", menu, cx);
     });

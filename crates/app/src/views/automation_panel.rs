@@ -322,7 +322,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
     let mut body = div()
         .flex()
         .flex_col()
-        .child(div().child(schedule_field))
+        .child(field(schedule_field.into_any_element()))
         .child(field(TextField::new("automation-prompt", &prompt_input).label("Prompt").into_any_element()));
     if !one_shot {
         body = body.child(field(TextField::new("automation-surface", &surface_input).label("Notify me when").into_any_element()));

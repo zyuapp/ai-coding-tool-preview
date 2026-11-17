@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use gpui::{
-    deferred, div, prelude::FluentBuilder as _, px, AnyElement, AnyWindowHandle, App, Bounds, DispatchPhase, Element,
+    deferred, div, prelude::FluentBuilder as _, px, AnyElement, AnyWindowHandle, App, Bounds, DispatchPhase, Edges, Element,
     ElementId, FontWeight, Global, GlobalElementId, Hitbox, HitboxBehavior, HitboxId, InspectorElementId, InteractiveElement,
     IntoElement, KeyDownEvent, LayoutId, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, ScrollWheelEvent,
     SharedString, Stateful, StatefulInteractiveElement, Style, Styled, Task, WeakFocusHandle, Window,
@@ -154,6 +154,9 @@ struct TipZone {
     hoverable: bool,
     /// The tip repeats the control's own text, so it shows only while that text is cut short.
     overflow: bool,
+    /// The control's border, which the zone (laid out inside it) reaches out over: a tip is placed
+    /// against the control's border box.
+    border: Edges<Pixels>,
 }
 
 impl IntoElement for TipZone {
@@ -201,7 +204,8 @@ impl Element for TipZone {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
+        let outer = bounds.extend(self.border);
+        let hitbox = window.insert_hitbox(outer, HitboxBehavior::Normal);
         if let Some(id) = id {
             Tooltips::ensure(cx);
             let key = key_for(id);
@@ -219,7 +223,7 @@ impl Element for TipZone {
                 state.linger = None;
                 state.window = Some(handle);
                 state.shown_in = Some(shown_in);
-                state.shown = Some(Tip { key, text: self.text.clone(), anchor: bounds, hoverable: self.hoverable, hitbox: hitbox.id, focus });
+                state.shown = Some(Tip { key, text: self.text.clone(), anchor: outer, hoverable: self.hoverable, hitbox: hitbox.id, focus });
                 redraw_after(handle, cx);
             } else if !focused && state.focused == Some(key) {
                 state.focused = None;
@@ -230,7 +234,7 @@ impl Element for TipZone {
             }
             let state = cx.global_mut::<Tooltips>();
             if let Some(shown) = state.shown.as_mut().filter(|shown| shown.key == key) {
-                shown.anchor = bounds;
+                shown.anchor = outer;
                 shown.text = self.text.clone();
                 shown.hitbox = hitbox.id;
             }
@@ -255,6 +259,7 @@ impl Element for TipZone {
         let text = self.text.clone();
         let hoverable = self.hoverable;
         let style = text_style.take();
+        let outer = bounds.extend(self.border);
         window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
             if phase != DispatchPhase::Bubble {
                 return;
@@ -265,7 +270,7 @@ impl Element for TipZone {
                 return;
             }
             if hovered && !current {
-                Tooltips::enter(Tip { key, text: text.clone(), anchor: bounds, hoverable, hitbox: hitbox.id, focus: None }, window, cx);
+                Tooltips::enter(Tip { key, text: text.clone(), anchor: outer, hoverable, hitbox: hitbox.id, focus: None }, window, cx);
             } else if !hovered && current {
                 Tooltips::leave(key, window, cx);
             }
@@ -273,11 +278,11 @@ impl Element for TipZone {
         if hoverable {
             let text = self.text.clone();
             window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-                if phase == DispatchPhase::Bubble && bounds.contains(&event.position) {
+                if phase == DispatchPhase::Bubble && outer.contains(&event.position) {
                     Tooltips::ensure(cx);
                     cx.global_mut::<Tooltips>().hovered = Some(key);
                     cx.global_mut::<Tooltips>().shown_in = Some((window.viewport_size(), window.is_window_active()));
-                    let tip = Tip { key, text: text.clone(), anchor: bounds, hoverable: true, hitbox: hitbox_id, focus: None };
+                    let tip = Tip { key, text: text.clone(), anchor: outer, hoverable: true, hitbox: hitbox_id, focus: None };
                     cx.global_mut::<Tooltips>().shown = Some(tip);
                     window.refresh();
                 }
@@ -295,22 +300,35 @@ fn cut_short(text: &SharedString, style: &gpui::TextStyle, width: Pixels, window
 }
 
 /// Opting a control into the window's tooltip.
-pub trait Tippable: ParentElement + InteractiveElement + Sized {
+pub trait Tippable: ParentElement + InteractiveElement + Styled + Sized {
     /// Shows `text` while the pointer rests on the control. A trailing `(keys)` draws as key caps.
-    fn tip(self, text: impl Into<SharedString>) -> Self {
+    fn tip(mut self, text: impl Into<SharedString>) -> Self {
         let text = text.into();
-        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false })
+        let border = border_of(&mut self);
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, border })
     }
 
     /// Shows `text`, the control's own text, only while it is cut short.
-    fn tip_overflow(self, text: impl Into<SharedString>) -> Self {
-        self.child(TipZone { text: text.into(), hoverable: false, overflow: true })
+    fn tip_overflow(mut self, text: impl Into<SharedString>) -> Self {
+        let border = border_of(&mut self);
+        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, border })
     }
 
     /// The reason a disabled control cannot act: shown at once, and on a press, and readable.
-    fn tip_reason(self, text: impl Into<SharedString>) -> Self {
-        self.child(TipZone { text: text.into(), hoverable: true, overflow: false })
+    fn tip_reason(mut self, text: impl Into<SharedString>) -> Self {
+        let border = border_of(&mut self);
+        self.child(TipZone { text: text.into(), hoverable: true, overflow: false, border })
     }
+}
+
+/// The border a control has been given so far, in pixels.
+fn border_of(control: &mut impl Styled) -> Edges<Pixels> {
+    let widths = &control.style().border_widths;
+    let side = |width: Option<gpui::AbsoluteLength>| match width {
+        Some(gpui::AbsoluteLength::Pixels(width)) => width,
+        _ => px(0.0),
+    };
+    Edges { top: side(widths.top), right: side(widths.right), bottom: side(widths.bottom), left: side(widths.left) }
 }
 
 impl Tippable for Stateful<gpui::Div> {}

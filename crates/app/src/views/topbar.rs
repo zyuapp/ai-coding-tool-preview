@@ -370,7 +370,8 @@ fn heading_width(text: &str, weight: f32, tracked: bool, size: f32, window: &Win
         font.features = gpui::FontFeatures::tracking(HEADING_TRACKING);
     }
     let run = gpui::TextRun { len: text.len(), font, color: style.color, background_color: None, underline: None, strikethrough: None };
-    f32::from(window.text_system().shape_line(SharedString::from(text.to_string()), px(size), &[run], None).width)
+    // Rounded up to 1/64 px, as text layout measures, so a box this wide never cuts its text.
+    (f32::from(window.text_system().shape_line(SharedString::from(text.to_string()), px(size), &[run], None).width) * 64.0).ceil() / 64.0
 }
 
 /// What zen mode leaves of the topbar: a strip to drag the window by, and the way back out.

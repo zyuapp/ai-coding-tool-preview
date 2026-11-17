@@ -283,6 +283,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .child(div().id("session-panel").max_h(px(600.0)).overflow_y_scroll().rounded(px(12.0)).child(card))
         .edge(t.glass_edge, Corners::Radius(12.0))
         .rim(t.glass_rim, Corners::Radius(12.0))
+        .child(super::common::seen_by_backdrops())
 }
 
 /// The thread's subagents, working ones first, up to six; the rest are a click away in the dock.

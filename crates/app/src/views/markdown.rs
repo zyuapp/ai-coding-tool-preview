@@ -91,6 +91,7 @@ pub fn message_view(id: impl Into<ElementId>, text: &str, streaming: bool, varia
         view.set_link_capabilities(capabilities(), cx);
         view.set_has_message_id(images.is_some(), cx);
         view.set_fence_renderer(fence);
+        view.set_copy_button(super::timeline_row::block_copy_button);
         view.set_scrollbar_renderer(|id, handle, _, _| act_ui::components::scrollbar::Scrollbar::horizontal(id, handle).into_any_element());
         view
     });

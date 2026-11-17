@@ -368,22 +368,79 @@ struct Copied(Option<std::time::Instant>);
 
 const COPIED_FOR: Duration = Duration::from_millis(1400);
 
-/// Copies text on click, then shows a tick for a moment. With a `group`, it is a bare glyph until
-/// that group is under the pointer, and a pane of glass then.
+const COPY_TILE: &str = "copy-tile";
+
 /// The focus a copy button takes from the keyboard, which shows it as the pointer does.
 fn copy_focus(id: &str, window: &mut Window, cx: &mut App) -> gpui::FocusHandle {
     window.use_keyed_state(SharedString::from(format!("{id}-focus")), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone()
 }
 
-pub fn copy_button(id: &str, text: String, label: &'static str, group: Option<SharedString>, window: &mut Window, cx: &mut App) -> impl IntoElement {
-    let state = window.use_keyed_state(SharedString::from(format!("{id}-state")), cx, |_, _| Copied(None));
-    let focus = copy_focus(id, window, cx);
-    let focused = focus.is_focused(window);
-    let copied = state.read(cx).0.is_some_and(|at| at.elapsed() < COPIED_FOR);
+fn copy_state(id: &str, window: &mut Window, cx: &mut App) -> Entity<Copied> {
+    window.use_keyed_state(SharedString::from(format!("{id}-state")), cx, |_, _| Copied(None))
+}
+
+fn is_copied(state: &Entity<Copied>, cx: &App) -> bool {
+    state.read(cx).0.is_some_and(|at| at.elapsed() < COPIED_FOR)
+}
+
+/// When a copy button's tile of glass is up.
+enum CopyShow {
+    Always,
+    /// A message's: a bare glyph until its row is under the pointer or holds focus.
+    Row(SharedString),
+    /// A block's on the newest answer: a bare glyph until the block is under the pointer.
+    Block(SharedString),
+    /// A bare glyph until it is itself under the pointer.
+    Hover,
+}
+
+/// A copy button: what it copies, its name, and its tile.
+struct CopyTile {
+    id: String,
+    text: String,
+    label: SharedString,
+    /// The tile's side; the glyph stays centred in it.
+    side: f32,
+    /// The translucent fill of the block under it, which Chromium's backdrop filter draws over itself once more.
+    ground: Option<gpui::Rgba>,
+}
+
+/// Copies text on click, then shows a tick for a moment. With a `group`, it is a bare glyph until
+/// that group is under the pointer, and a pane of glass then.
+pub fn copy_button(id: &str, text: String, label: &'static str, group: Option<SharedString>, window: &mut Window, cx: &mut App) -> Div {
+    let tile = CopyTile { id: id.to_string(), text, label: label.into(), side: 28.0, ground: None };
+    copy_tile(tile, group.map_or(CopyShow::Always, CopyShow::Row), window, cx)
+}
+
+/// The glass variant's tile (`.icon-btn[data-variant="glass"]`).
+fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) -> Div {
+    let CopyTile { id, text, label, side, ground } = tile;
+    let state = copy_state(&id, window, cx);
+    let focus = copy_focus(&id, window, cx);
+    let copied = is_copied(&state, cx);
+    let lifted = copied || focus.is_focused(window);
     let t = cx.theme().tokens.clone();
-    let button = IconButton::new(SharedString::from(id.to_string()), if copied { IconName::Check } else { IconName::Copy }, if copied { "Copied" } else { label })
+    let clear = gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+    let group = match &show {
+        CopyShow::Always => None,
+        CopyShow::Hover => Some(SharedString::from(COPY_TILE)),
+        CopyShow::Row(group) | CopyShow::Block(group) => Some(group.clone()),
+    };
+    // The glyph at rest, and once its row or block is under the pointer.
+    let (rest, raised) = match (&show, copied) {
+        (_, true) => (t.success_soft, t.success_soft),
+        (CopyShow::Always, _) => (t.ink_dim, t.ink_dim),
+        (CopyShow::Row(_) | CopyShow::Hover, _) => (t.muted, t.muted),
+        (CopyShow::Block(_), _) => (t.quiet, t.ink_dim),
+    };
+    let glyph_icon = if copied { IconName::Check } else { IconName::Copy };
+    let glyph = div()
+        .text_color(if lifted { raised } else { rest })
+        .when_some(group.clone(), |glyph, group| glyph.group_hover(group, move |style| style.text_color(raised)))
+        .child(div().when(!copied, |glyph| glyph.group_hover(COPY_TILE, move |style| style.text_color(t.ink_soft))).child(ink_icon(glyph_icon, 14.0)));
+    let button = IconButton::new(SharedString::from(id), glyph_icon, if copied { SharedString::from("Copied") } else { label })
         .icon_size(14.0)
-        .no_tip()
+        .hover_look(clear, clear, t.ink_soft)
         .track_focus(&focus)
         .on_click(move |_, window, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
@@ -399,37 +456,63 @@ pub fn copy_button(id: &str, text: String, label: &'static str, group: Option<Sh
                 })
                 .detach();
         })
-        .glyph({
-            // A block's tile reads ink-dim once shown, a message's muted; either lights under the pointer.
-            let rest = if copied { t.success_soft } else if group.is_some() { t.muted } else { t.ink_dim };
-            let lit = if copied { t.success_soft } else { t.ink_soft };
-            div().text_color(rest).group_hover(COPY_TILE, move |style| style.text_color(lit)).child(ink_icon(if copied { IconName::Check } else { IconName::Copy }, 14.0))
-        });
-    // The edge is drawn over the button, whose own border box is the 28px tile; the tile is the
-    // glass variant's clear pane.
-    let lit_edge = div().absolute().inset_0().rounded(px(8.0)).border_1().border_color(gpui::transparent_black()).when(!copied, |edge| edge.group_hover(COPY_TILE, |style| style.border_color(t.line_bright)));
-    let frame = div().relative().group(COPY_TILE).rounded(px(8.0));
-    let edge = div().absolute().inset_0().rounded(px(8.0)).border_1().border_color(gpui::transparent_black());
-    let (frame, edge) = if copied {
-        (frame.bg(t.glass_clear.background()), edge.border_color(t.success_line))
-    } else {
-        match group {
-            Some(_) if focused => (frame.bg(t.glass_clear.background()), edge.border_color(t.line_strong)),
-            Some(group) => (frame.group_hover(group.clone(), |style| style.bg(t.glass_clear.background())), edge.group_hover(group, |style| style.border_color(t.line_strong))),
-            None => (frame.bg(t.glass_clear.background()), edge.border_color(t.line_strong)),
-        }
+        .glyph(glyph);
+    let outline = act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow();
+    let layer = || div().absolute().inset_0().rounded(px(8.0));
+    let pane = layer()
+        .shadow(vec![outline])
+        .when_some(ground, |pane, ground| pane.child(layer().bg(ground)))
+        .child(layer().bg(t.glass_clear.background()))
+        // CSS draws the inset rim inside the 1px border.
+        .child(div().absolute().inset(px(1.0)).rounded(px(7.0)).rim(t.glass_rim, Corners::Radius(7.0)));
+    let pane = match &group {
+        Some(group) if !lifted => pane.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)),
+        _ => pane,
     };
-    frame.child(button).child(edge).child(lit_edge)
+    // The edge at rest, once its row or block is under the pointer; under the pointer itself it is bright.
+    let (rest_edge, raised_edge) = match (&show, copied) {
+        (_, true) => (t.success_line, t.success_line),
+        (CopyShow::Always, _) => (t.line_strong, t.line_strong),
+        (CopyShow::Row(_), _) => (clear, t.line_glass),
+        (CopyShow::Block(_), _) => (clear, t.line_strong),
+        (CopyShow::Hover, _) => (clear, t.line_bright),
+    };
+    let edge = layer()
+        .border_1()
+        .border_color(if lifted { raised_edge } else { rest_edge })
+        .when_some(group, |edge, group| edge.group_hover(group, move |style| style.border_color(raised_edge)))
+        .when(!copied, |edge| edge.hover(|style| style.border_color(t.line_bright)));
+    let inset = (side - 28.0) / 2.0;
+    div().relative().flex_none().size(px(side)).group(COPY_TILE).child(pane).child(div().absolute().top(px(inset)).left(px(inset)).child(button)).child(edge)
 }
 
-const COPY_TILE: &str = "copy-tile";
+/// A block's copy button: hidden until the block is under the pointer, or holding focus or a
+/// copy. On the newest answer it is a bare glyph till then.
+fn corner_copy(tile: CopyTile, group: SharedString, emphasize: bool, window: &mut Window, cx: &mut App) -> Div {
+    let shown = emphasize || copy_focus(&tile.id, window, cx).is_focused(window) || is_copied(&copy_state(&tile.id, window, cx), cx);
+    let show = if emphasize { CopyShow::Block(group.clone()) } else { CopyShow::Always };
+    div().when(!shown, |corner| corner.opacity(0.0).group_hover(group, |style| style.opacity(1.0))).child(copy_tile(tile, show, window, cx))
+}
+
+/// The copy button a Markdown block asks for (`.copyable > .copy-affordance`).
+pub fn block_copy_button(request: act_markdown::CopyButtonRequest, window: &mut Window, cx: &mut App) -> AnyElement {
+    let t = cx.theme().tokens.clone();
+    let tile = CopyTile {
+        id: format!("{}-copy", request.group),
+        text: request.text.to_string(),
+        label: request.label,
+        side: if request.kind == act_markdown::CopyKind::CodeBlock { 26.0 } else { 28.0 },
+        ground: Some(if request.kind == act_markdown::CopyKind::Fence { t.sunken } else { t.surface }),
+    };
+    corner_copy(tile, request.group, request.emphasize, window, cx).on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).into_any_element()
+}
 
 /// A block with a copy button in its corner, shown while the block is under the pointer.
-fn copyable(id: &str, text: &str, label: &'static str, body: impl IntoElement, window: &mut Window, cx: &mut App) -> Div {
+fn copyable(id: &str, text: &str, label: &'static str, body: impl IntoElement, ground: gpui::Rgba, window: &mut Window, cx: &mut App) -> Div {
     let group: SharedString = format!("copyable-{id}").into();
-    let button = copy_button(id, text.to_string(), label, None, window, cx);
-    let shown = copy_focus(id, window, cx).is_focused(window);
-    div().relative().group(group.clone()).child(body).child(div().absolute().top(px(6.0)).right(px(6.0)).when(!shown, |corner| corner.opacity(0.0).group_hover(group, |style| style.opacity(1.0))).child(button))
+    let tile = CopyTile { id: id.to_string(), text: text.to_string(), label: label.into(), side: 28.0, ground: Some(ground) };
+    let button = corner_copy(tile, group.clone(), false, window, cx);
+    div().relative().group(group).child(body).child(div().absolute().top(px(6.0)).right(px(6.0)).child(button))
 }
 
 /// The thread a message came from, when it names one on this computer.
@@ -589,8 +672,8 @@ fn notice(model: &RowModel, message: &ConversationMessage, window: &mut Window, 
     }
     if copy {
         let text = format!("{}\n{}", message.text, message.detail.clone().unwrap_or_default());
-        let group: SharedString = format!("notice-{}", message.id).into();
-        pane = pane.group(group.clone()).child(div().absolute().top(px(2.0)).right(px(4.0)).child(copy_button(&format!("copy-{}", message.id), text, "Copy the error", Some(group), window, cx)));
+        let tile = CopyTile { id: format!("copy-{}", message.id), text, label: "Copy the error".into(), side: 28.0, ground: None };
+        pane = pane.child(div().absolute().top(px(2.0)).right(px(4.0)).child(copy_tile(tile, CopyShow::Hover, window, cx)));
     }
     div().flex().child(pane).into_any_element()
 }
@@ -811,18 +894,19 @@ fn tool_step(model: &RowModel, index: usize, step: &TimedStep, named: bool, nest
     if open {
         let body = match &step.message.detail {
             Some(detail) => {
+                let ground = if nested { t.surface } else { t.sunken };
                 let pre = div()
                     .border_1()
                     .border_color(t.line)
                     .rounded(px(8.0))
                     .p(px(11.0))
-                    .bg(if nested { t.surface } else { t.sunken })
+                    .bg(ground)
                     .text_color(t.muted_strong)
                     .font_family(cx.theme().typography.mono_family.clone())
                     .text_size(px(m.text_meta))
                     .line_height(relative(1.55))
                     .child(input_text(model, &step.message, detail, window, cx));
-                div().mx(px(8.0)).mt(px(1.0)).mb(px(9.0)).child(copyable(&format!("input-{id}"), detail, "Copy the input", pre, window, cx))
+                div().mx(px(8.0)).mt(px(1.0)).mb(px(9.0)).child(copyable(&format!("input-{id}"), detail, "Copy the input", pre, ground, window, cx))
             }
             None => div().mx(px(8.0)).mb(px(9.0)).py(px(4.0)).text_color(t.quiet).text_size(px(m.text_meta)).child("No input"),
         };

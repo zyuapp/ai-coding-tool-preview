@@ -200,6 +200,10 @@ impl LineWrapper {
             }
             truncate_ix = truncate_ix.max(index);
         }
+        // As in CSS, the first character stays and is clipped rather than ellipsed.
+        if truncate_ix == 0 && !truncation_suffix.is_empty() {
+            truncate_ix = layout.glyphs.iter().map(|&(_, index)| index).find(|&index| index > 0).unwrap_or(shaped_len);
+        }
         let result = SharedString::from(format!("{}{}", &line[..truncate_ix], truncation_suffix));
         update_runs_after_truncation(&result, truncation_suffix, runs);
         result
@@ -595,6 +599,8 @@ mod tests {
         // Truncate res: abcd… (truncate_at = 4)
         // Run res: Run0 { string: abcd…, len: 7, ... }
         perform_test(&mut wrapper, "abcdefghijkl", "abcd…", &[12], &[7], px(50.));
+        // Too narrow for any glyph and the ellipsis: the first character stays.
+        perform_test(&mut wrapper, "abcdefghijkl", "a…", &[12], &[4], px(5.));
         // Case 1: Drop some runs
         // Text: abcdefghijkl
         // Runs: Run0 { len: 4, ... }, Run1 { len: 4, ... }, Run2 { len: 4, ... }

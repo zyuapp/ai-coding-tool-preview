@@ -321,7 +321,7 @@ pub fn trigger(root: &mut Root, state: &WorkspaceState, engine: AgentEngine, mod
                 .text_color(if lit { t.ink_soft } else { t.ink_faint })
                 .cursor_pointer()
                 .when(lit, |trigger| trigger.bg(t.surface_hover))
-                .child(div().min_w_0().ellipsis().child(label))
+                .child(div().id("model-menu-label").min_w_0().ellipsis().child(label.clone()).tip_overflow(label))
                 .child(detail.flex_none())
                 .child(super::common::turning("chevron", if open { 180.0 } else { 0.0 }, 140).child(icon(IconName::ChevronDown, 14.0, t.quiet)))
                 .child(bounds_probe(&probe))

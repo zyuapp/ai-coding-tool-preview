@@ -599,6 +599,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .child(IconButton::new("dock-hide", IconName::PanelRightClose, "Hide right panel").size(IconButtonSize::Lg).icon_size(18.0).tip(super::chrome::key_tip("Hide panel", "Mod+\\")).on_click(|_, _, cx| dispatch(AppCommand::SetDockOpen { open: false }, cx)));
 
     let body_focus = root.dock.body(&active, cx);
+    // After `content`, so a tab opened this frame has its shell or composer to take the keys.
+    let content = content(root, state, &owner, &active, window, cx);
     if let Some(focus) = state.dock_focus.as_ref().filter(|focus| focus.owner == owner && focus.tab == active) {
         if focus.count != root.dock.focus_count {
             root.dock.focus_count = focus.count;
@@ -606,8 +608,6 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         }
     }
     report_keys(root, state, &active, window, cx);
-
-    let content = content(root, state, &owner, &active, window, cx);
     // The bar hangs under the panel's own header, so it covers none of it.
     let find_head = if active == DIFF_PANEL {
         root.dock.diff.toolbar_probe.get().map(|bounds| f32::from(bounds.size.height)).unwrap_or(0.0)

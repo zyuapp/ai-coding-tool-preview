@@ -445,6 +445,9 @@ impl Element for TextInputElement {
         let scroll = self.input.update(cx, |input, _| input.settle_scroll(&layout, bounds.size));
         layout.origin = bounds.origin - scroll;
         layout.visible = bounds;
+        let shown = self.input.read(cx).shown_bounds(bounds);
+        let max = size(px(0.0), (layout.content_size().height - bounds.size.height).max(px(0.0)));
+        self.input.read(cx).scroll_model().publish(shown, max);
 
         let selections = layout
             .selection_rects(selection.clone())
@@ -459,7 +462,7 @@ impl Element for TextInputElement {
             style.size.width = Some(px(1.0).into());
             style.size.height = Some(caret_height.into());
             let mut caret = AnyView::from(caret_view).cached(style).live().into_any_element();
-            window.with_content_mask(Some(ContentMask { bounds: caret_clip(bounds) }), |window| {
+            window.with_content_mask(Some(ContentMask { bounds: caret_clip(shown) }), |window| {
                 caret.prepaint_as_root(layout.origin + point(position.x, top), size(px(1.0), caret_height).map(AvailableSpace::Definite), window, cx);
             });
             caret
@@ -506,7 +509,8 @@ impl Element for TextInputElement {
         }
         window.handle_input(&focus_handle, ElementInputHandler::new(bounds, self.input.clone()), cx);
         let layout = &prepaint.layout;
-        window.with_content_mask(Some(ContentMask { bounds: caret_clip(bounds) }), |window| {
+        let shown = self.input.read(cx).shown_bounds(bounds);
+        window.with_content_mask(Some(ContentMask { bounds: caret_clip(shown) }), |window| {
             for selection in prepaint.selections.drain(..) {
                 window.paint_quad(selection);
             }
@@ -514,7 +518,7 @@ impl Element for TextInputElement {
             for line in &layout.lines {
                 let rows = line.wrap_boundaries.len() + 1;
                 let height = layout.line_height * rows as f32;
-                if y + height >= bounds.top() && y <= bounds.bottom() {
+                if y + height >= shown.top() && y <= shown.bottom() {
                     let _ = line.paint(
                         point(layout.origin.x, y),
                         layout.line_height,

@@ -25,11 +25,40 @@ pub enum ScrollAxis {
     Horizontal,
 }
 
-/// What the bar scrolls: a container's handle, or a virtual list.
+/// The scroll of an element that scrolls itself rather than through a `ScrollHandle`: it publishes
+/// what shows and how far it can go each frame, and reads back where its bar moved it.
+#[derive(Clone, Default)]
+pub struct ScrollModel(Rc<ScrollModelState>);
+
+#[derive(Default)]
+struct ScrollModelState {
+    viewport: Cell<Bounds<Pixels>>,
+    max: Cell<Size<Pixels>>,
+    scrolled: Cell<gpui::Point<Pixels>>,
+}
+
+impl ScrollModel {
+    pub fn publish(&self, viewport: Bounds<Pixels>, max: Size<Pixels>) {
+        self.0.viewport.set(viewport);
+        self.0.max.set(max);
+    }
+
+    /// How far the content has scrolled, as positive distances.
+    pub fn scrolled(&self) -> gpui::Point<Pixels> {
+        self.0.scrolled.get()
+    }
+
+    pub fn set_scrolled(&self, scrolled: gpui::Point<Pixels>) {
+        self.0.scrolled.set(scrolled);
+    }
+}
+
+/// What the bar scrolls: a container's handle, a virtual list, or an element scrolling itself.
 #[derive(Clone)]
 enum Source {
     Handle(ScrollHandle),
     List(ListState),
+    Model(ScrollModel),
 }
 
 impl Source {
@@ -37,6 +66,7 @@ impl Source {
         match self {
             Source::Handle(handle) => handle.bounds(),
             Source::List(list) => list.viewport_bounds(),
+            Source::Model(model) => model.0.viewport.get(),
         }
     }
 
@@ -44,6 +74,7 @@ impl Source {
         match self {
             Source::Handle(handle) => handle.max_offset(),
             Source::List(list) => list.max_offset_for_scrollbar(),
+            Source::Model(model) => model.0.max.get(),
         }
     }
 
@@ -51,6 +82,10 @@ impl Source {
         match self {
             Source::Handle(handle) => handle.offset(),
             Source::List(list) => list.scroll_px_offset_for_scrollbar(),
+            Source::Model(model) => {
+                let scrolled = model.scrolled();
+                point(-scrolled.x, -scrolled.y)
+            }
         }
     }
 
@@ -69,6 +104,7 @@ impl Source {
         match self {
             Source::Handle(handle) => handle.set_offset(offset),
             Source::List(list) => list.set_offset_from_scrollbar(offset),
+            Source::Model(model) => model.set_scrolled(point(-offset.x, -offset.y)),
         }
     }
 }
@@ -85,6 +121,11 @@ pub fn gutter(handle: &ScrollHandle) -> Pixels {
     if handle.max_offset().height > px(0.0) { px(THICKNESS) } else { px(0.0) }
 }
 
+/// `gutter` for an element scrolling itself.
+pub fn model_gutter(model: &ScrollModel) -> Pixels {
+    if model.0.max.get().height > px(0.0) { px(THICKNESS) } else { px(0.0) }
+}
+
 /// `gutter` for a virtual list.
 pub fn list_gutter(list: &ListState) -> Pixels {
     if list.max_offset_for_scrollbar().height > px(0.0) { px(THICKNESS) } else { px(0.0) }
@@ -93,6 +134,10 @@ pub fn list_gutter(list: &ListState) -> Pixels {
 impl Scrollbar {
     pub fn vertical(id: impl Into<ElementId>, handle: &ScrollHandle) -> Self {
         Self { id: id.into(), handle: Source::Handle(handle.clone()), axis: ScrollAxis::Vertical }
+    }
+
+    pub fn vertical_model(id: impl Into<ElementId>, model: &ScrollModel) -> Self {
+        Self { id: id.into(), handle: Source::Model(model.clone()), axis: ScrollAxis::Vertical }
     }
 
     pub fn horizontal(id: impl Into<ElementId>, handle: &ScrollHandle) -> Self {

@@ -14,6 +14,7 @@ use act_core::workspace::location::project_for;
 use act_core::AppCommand;
 use act_ui::components::button::{IconButton, IconButtonSize};
 use act_ui::components::notice::{Notice, NoticeTone};
+use act_ui::components::scrollbar::{model_gutter, Scrollbar};
 use act_ui::input::{self as text_input, Autosize, InputEvent, TextInput};
 use act_ui::overlay::{bounds_cell, bounds_probe, BoundsCell};
 use act_ui::style::{Corners, PaneFill, Raised};
@@ -103,6 +104,10 @@ pub struct ComposerState {
     _subscriptions: Vec<Subscription>,
 }
 
+/// The padding above and below the prompt, which its text scrolls through.
+const FIELD_TOP: f32 = 15.0;
+const FIELD_BOTTOM: f32 = 5.0;
+
 impl ComposerState {
     pub fn new(window: &mut Window, cx: &mut Context<Root>) -> ComposerState {
         ComposerState::scoped(None, window, cx)
@@ -110,7 +115,12 @@ impl ComposerState {
 
     /// A composer writing to `task`, or the page's own composer when None.
     pub fn scoped(task: Option<String>, window: &mut Window, cx: &mut Context<Root>) -> ComposerState {
-        let input = cx.new(|cx| TextInput::new(cx).multiline(Autosize { min_rows: 1, max_height: Some(px(420.0)) }).submit_on_enter(true).placeholder("Ask Claude anything").label(if task.is_none() { "Task prompt" } else { "Thread prompt" }));
+        let input = cx.new(|cx| {
+            let mut input = TextInput::new(cx).multiline(Autosize { min_rows: 1, max_height: Some(px(420.0)) }).submit_on_enter(true).placeholder("Ask Claude anything").label(if task.is_none() { "Task prompt" } else { "Thread prompt" });
+            // The prompt scrolls through the field's padding, as a textarea's text does.
+            input.set_bleed(px(FIELD_TOP), px(FIELD_BOTTOM), cx);
+            input
+        });
         let scope = task.clone();
         let events = cx.subscribe_in(&input, window, move |root, input, event: &InputEvent, _, cx| {
             root.in_composer(scope.as_deref(), |root| match event {
@@ -710,12 +720,15 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
     }
     let bar = div().flex().items_center().justify_between().gap(px(if narrow { 6.0 } else { 8.0 })).pt(px(7.0)).pr(px(9.0)).pb(px(9.0)).pl(px(if narrow { 10.0 } else { 8.0 })).child(leading).child(actions);
 
+    let scroll = root.composer.input.read(cx).scroll_model();
     let field = div()
         .id("composer-field")
+        .relative()
         .min_h(px(64.0))
-        .pt(px(15.0))
-        .px(px(16.0))
-        .pb(px(5.0))
+        .pt(px(FIELD_TOP))
+        .pl(px(16.0))
+        .pr(px(16.0) + model_gutter(&scroll))
+        .pb(px(FIELD_BOTTOM))
         .text_size(px(m.text_content))
         .line_height(relative(1.5))
         .text_color(t.ink)
@@ -729,6 +742,10 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
                     input.update(cx, |input, cx| input.press(event, window, cx));
                 }
             }
+        })
+        .on_scroll_wheel({
+            let input = root.composer.input.clone();
+            move |event, window, cx| input.update(cx, |input, cx| input.scroll_wheel(event, window, cx))
         })
         .capture_action(root.composer_listener(cx, |root, _: &text_input::Enter, _, cx| {
             if root.menu_choose(cx) {
@@ -772,7 +789,8 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
                 cx.stop_propagation();
             }
         }))
-        .child(root.composer.input.clone());
+        .child(root.composer.input.clone())
+        .child(Scrollbar::vertical_model("composer-scrollbar", &scroll));
 
     let away = root.composer.dictation.as_ref().is_some_and(|dictation| dictation.away(cx));
     let mut shadows: Vec<BoxShadow> = t.shadow_composer.box_shadows();

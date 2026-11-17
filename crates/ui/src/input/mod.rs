@@ -8,6 +8,8 @@ mod element;
 use std::ops::Range;
 use std::time::Duration;
 
+use crate::components::scrollbar::ScrollModel;
+
 use gpui::{
     actions, App, Bounds, ClipboardItem, Context, EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyBinding,
     prelude::FluentBuilder as _, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollWheelEvent,
@@ -178,8 +180,11 @@ pub struct TextInput {
     read_only: bool,
     /// The layout the last paint drew, for hit testing, IME rectangles and vertical motion.
     layout: Option<InputLayout>,
-    /// How far the text has scrolled within the field.
-    scroll: Point<Pixels>,
+    /// How far the text has scrolled within the field, shared with a scrollbar laid over it.
+    scroll: ScrollModel,
+    /// How far above and below its box the text still shows as it scrolls: the padding around a
+    /// field, which its text scrolls through.
+    bleed: (Pixels, Pixels),
     scroll_to_cursor: bool,
     selecting: bool,
     /// Whether a drag extends by word or by line, after a double or triple click.
@@ -225,7 +230,8 @@ impl TextInput {
             disabled: false,
             read_only: false,
             layout: None,
-            scroll: Point::default(),
+            scroll: ScrollModel::default(),
+            bleed: (Pixels::ZERO, Pixels::ZERO),
             scroll_to_cursor: false,
             selecting: false,
             drag_unit: DragUnit::Char,
@@ -344,7 +350,7 @@ impl TextInput {
     /// Replaces the text and forgets its history, as after the draft was sent.
     pub fn reset(&mut self, text: &str, cx: &mut Context<Self>) {
         self.buffer.reset(text);
-        self.scroll = Point::default();
+        self.scroll.set_scrolled(Point::default());
         self.edited(cx);
     }
 
@@ -508,7 +514,7 @@ impl TextInput {
     /// Keeps the caret inside the visible area after it moved, given the area's size.
     pub(crate) fn settle_scroll(&mut self, layout: &InputLayout, visible: gpui::Size<Pixels>) -> Point<Pixels> {
         let content = layout.content_size();
-        let mut scroll = self.scroll;
+        let mut scroll = self.scroll.scrolled();
         if self.scroll_to_cursor {
             self.scroll_to_cursor = false;
             let caret = layout.position_for_offset(self.buffer.cursor());
@@ -535,8 +541,25 @@ impl TextInput {
         if !self.multiline {
             scroll.y = gpui::px(0.0);
         }
-        self.scroll = scroll;
+        self.scroll.set_scrolled(scroll);
         scroll
+    }
+
+    /// Where a scrollbar over the field reads and moves its scroll.
+    pub fn scroll_model(&self) -> ScrollModel {
+        self.scroll.clone()
+    }
+
+    /// The field's box with the bleed above and below it: where its text shows.
+    pub(crate) fn shown_bounds(&self, bounds: Bounds<Pixels>) -> Bounds<Pixels> {
+        let (top, bottom) = self.bleed;
+        Bounds::from_corners(gpui::point(bounds.left(), bounds.top() - top), gpui::point(bounds.right(), bounds.bottom() + bottom))
+    }
+
+    /// Lets the text show `top` above and `bottom` below the field as it scrolls.
+    pub fn set_bleed(&mut self, top: Pixels, bottom: Pixels, cx: &mut Context<Self>) {
+        self.bleed = (top, bottom);
+        cx.notify();
     }
 
     fn offset_for_point(&self, position: Point<Pixels>) -> usize {
@@ -925,6 +948,11 @@ impl TextInput {
         self.selecting = false;
     }
 
+    /// Scrolls by a wheel turned over the field, or over the padding around it.
+    pub fn scroll_wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_scroll(event, window, cx);
+    }
+
     fn on_scroll(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(layout) = &self.layout else { return };
         let delta = event.delta.pixel_delta(layout.line_height());
@@ -935,18 +963,22 @@ impl TextInput {
                 return;
             }
             let max = content.height - visible.height;
-            let next = (self.scroll.y - delta.y).clamp(gpui::px(0.0), max);
-            if next != self.scroll.y {
-                self.scroll.y = next;
+            let mut scroll = self.scroll.scrolled();
+            let next = (scroll.y - delta.y).clamp(gpui::px(0.0), max);
+            if next != scroll.y {
+                scroll.y = next;
+                self.scroll.set_scrolled(scroll);
                 cx.stop_propagation();
                 cx.notify();
             }
         } else {
             let horizontal = if delta.x.abs() > delta.y.abs() { delta.x } else { gpui::px(0.0) };
             let max = (content.width - visible.width).max(gpui::px(0.0));
-            let next = (self.scroll.x - horizontal).clamp(gpui::px(0.0), max);
-            if next != self.scroll.x {
-                self.scroll.x = next;
+            let mut scroll = self.scroll.scrolled();
+            let next = (scroll.x - horizontal).clamp(gpui::px(0.0), max);
+            if next != scroll.x {
+                scroll.x = next;
+                self.scroll.set_scrolled(scroll);
                 cx.stop_propagation();
                 cx.notify();
             }

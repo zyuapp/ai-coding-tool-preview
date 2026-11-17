@@ -269,6 +269,11 @@ pub trait LayoutFlexboxContainer: LayoutPartialTree {
 
     /// Get the child's styles
     fn get_flexbox_child_style(&self, child_node_id: NodeId) -> Self::FlexboxItemStyle<'_>;
+
+    /// The unit centred offsets truncate to; 0 leaves them exact.
+    fn layout_unit(&self) -> f32 {
+        0.0
+    }
 }
 
 #[cfg(feature = "grid")]

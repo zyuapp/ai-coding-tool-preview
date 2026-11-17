@@ -148,6 +148,8 @@ struct AlgoConstants {
     align_content: AlignContent,
     /// The justify_content property of this node
     justify_content: Option<JustifyContent>,
+    /// The unit centred offsets truncate to; 0 leaves them exact
+    layout_unit: f32,
 
     /// The border-box size of the node being laid out (if known)
     node_outer_size: Size<Option<f32>>,
@@ -481,6 +483,7 @@ fn compute_constants(
         align_items,
         align_content,
         justify_content,
+        layout_unit: tree.layout_unit(),
         node_outer_size,
         node_inner_size,
         container_size,
@@ -1704,6 +1707,9 @@ fn distribute_remaining_free_space(flex_lines: &mut [FlexLine], constants: &Algo
             let justify_item = |(i, child): (usize, &mut FlexItem)| {
                 child.offset_main =
                     compute_alignment_offset(free_space, num_items, gap, justify_content_mode, layout_reverse, i == 0);
+                if i == 0 && justify_content_mode == JustifyContent::Center {
+                    child.offset_main = in_layout_units(child.offset_main, constants.layout_unit);
+                }
             };
 
             if layout_reverse {
@@ -1764,6 +1770,18 @@ fn resolve_cross_axis_auto_margins(flex_lines: &mut [FlexLine], constants: &Algo
     }
 }
 
+/// Truncates `offset` toward zero to a multiple of `unit`, as Chromium's fixed-point layout unit
+/// divides; a `unit` of 0 leaves it exact.
+#[inline]
+fn in_layout_units(offset: f32, unit: f32) -> f32 {
+    if unit > 0.0 {
+        // The nudge keeps a float just short of a whole unit from losing it.
+        (offset / unit + offset.signum() * 1e-3).trunc() * unit
+    } else {
+        offset
+    }
+}
+
 /// Align all flex items along the cross-axis.
 ///
 /// # [9.6. Cross-Axis Alignment](https://www.w3.org/TR/css-flexbox-1/#cross-alignment)
@@ -1794,7 +1812,7 @@ fn align_flex_items_along_cross_axis(
                 free_space
             }
         }
-        AlignSelf::Center => free_space / 2.0,
+        AlignSelf::Center => in_layout_units(free_space / 2.0, constants.layout_unit),
         AlignSelf::Baseline => {
             if constants.is_row {
                 max_baseline - child.baseline
@@ -2371,5 +2389,23 @@ mod tests {
         tree.compute_layout(root, Size::MAX_CONTENT).unwrap();
         assert_eq!(tree.layout(first).unwrap().location.x, 0.0);
         assert_eq!(tree.layout(pushed).unwrap().location.x, 250.0);
+    }
+
+    #[test]
+    fn a_centred_item_truncates_to_the_layout_unit() {
+        let mut tree: TaffyTree<()> = TaffyTree::new();
+        tree.disable_rounding();
+        tree.set_layout_unit(1.0 / 64.0);
+        let label = tree.new_leaf(Style { size: Size { width: length(10.0_f32), height: length(14.390625_f32) }, ..Default::default() }).unwrap();
+        let tall = tree.new_leaf(Style { size: Size { width: length(10.0_f32), height: length(30.046875_f32) }, ..Default::default() }).unwrap();
+        let style = Style { size: Size { width: length(100.0_f32), height: length(26.0_f32) }, align_items: Some(AlignItems::Center), justify_content: Some(JustifyContent::Center), flex_direction: FlexDirection::Column, ..Default::default() };
+        let column = tree.new_with_children(style.clone(), &[label]).unwrap();
+        let overflowing = tree.new_with_children(Style { flex_direction: FlexDirection::Row, ..style }, &[tall]).unwrap();
+        let root = tree.new_with_children(Style::default(), &[column, overflowing]).unwrap();
+        tree.compute_layout(root, Size::MAX_CONTENT).unwrap();
+        // Halves of free space truncate toward zero: 5.8046875 to 5.796875, -2.0234375 to -2.015625.
+        assert_eq!(tree.layout(label).unwrap().location.y, 5.796875);
+        assert_eq!(tree.layout(label).unwrap().location.x, 45.0);
+        assert_eq!(tree.layout(tall).unwrap().location.y, -2.015625);
     }
 }

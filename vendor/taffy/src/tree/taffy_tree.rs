@@ -77,11 +77,13 @@ impl std::error::Error for TaffyError {}
 pub(crate) struct TaffyConfig {
     /// Whether to round layout values
     pub(crate) use_rounding: bool,
+    /// The unit centred flex offsets truncate to (`LayoutFlexboxContainer::layout_unit`); 0 leaves them exact.
+    pub(crate) layout_unit: f32,
 }
 
 impl Default for TaffyConfig {
     fn default() -> Self {
-        Self { use_rounding: true }
+        Self { use_rounding: true, layout_unit: 0.0 }
     }
 }
 
@@ -478,6 +480,11 @@ where
     fn get_flexbox_child_style(&self, child_node_id: NodeId) -> Self::FlexboxItemStyle<'_> {
         &self.taffy.nodes[child_node_id.into()].style
     }
+
+    #[inline(always)]
+    fn layout_unit(&self) -> f32 {
+        self.taffy.config.layout_unit
+    }
 }
 
 #[cfg(feature = "grid")]
@@ -566,6 +573,12 @@ impl<NodeContext> TaffyTree<NodeContext> {
     /// Disable rounding of layout values. Rounding is enabled by default.
     pub fn disable_rounding(&mut self) {
         self.config.use_rounding = false;
+    }
+
+    /// Truncates centred flex offsets to multiples of `unit`, as Chromium halves free space in its
+    /// fixed-point layout unit. 0 leaves them exact.
+    pub fn set_layout_unit(&mut self, unit: f32) {
+        self.config.layout_unit = unit;
     }
 
     /// Creates and adds a new unattached leaf node to the tree, and returns the node of the new node

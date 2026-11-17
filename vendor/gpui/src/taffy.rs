@@ -189,6 +189,7 @@ impl TaffyLayoutEngine {
             transform(available_space.height),
         );
 
+        self.taffy.set_layout_unit(scale_factor / 64.);
         self.taffy
             .compute_layout_with_measure(
                 id.into(),

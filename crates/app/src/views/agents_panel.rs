@@ -464,7 +464,7 @@ fn inspector(root: &mut Root, subagent: &Subagent, window: &mut Window, cx: &mut
         root.dock.agents.inspected = None;
         cx.notify();
     }));
-    div()
+    let inspector = div()
         .id("subagent-inspector")
         .when(!cx.theme().tokens.reduced_motion, |inspector| inspector.enter(gpui::Transition::ease_out(160), |style| style.opacity(0.0).transform(gpui::ElementTransform::translate(px(18.0), px(0.0)))))
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::Complementary, format!("{} details", subagent.description)))
@@ -480,8 +480,9 @@ fn inspector(root: &mut Root, subagent: &Subagent, window: &mut Window, cx: &mut
             }
         }))
         .child(header)
-        .child(div().id("inspector-scroll").flex_1().min_h_0().overflow_y_scroll().child(heading).child(details).children(summary).child(activity))
-        .into_any_element()
+        .child(div().id("inspector-scroll").flex_1().min_h_0().overflow_y_scroll().child(heading).child(details).children(summary).child(activity));
+    // On the glass sheet the inspector stands a frame gap in from the dock's edge.
+    div().size_full().when(t.page.a == 0.0, |frame| frame.pl(px(m.frame_gap))).child(inspector).into_any_element()
 }
 
 fn group_thousands(value: i64) -> String {

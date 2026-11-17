@@ -257,6 +257,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             .hover(|style| style.bg(t.control_hover).text_color(t.ink))
             .text_color(t.ink_dim)
             .text_size(px(m.text_meta))
+            .line_height(gpui::relative(1.2))
             .font_weight(FontWeight(520.0))
             .cursor_pointer()
             .child(div().flex_none().child(act_ui::Icon::new(IconName::FolderOpen).size(px(14.0))))

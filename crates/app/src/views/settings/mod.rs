@@ -159,7 +159,7 @@ impl Default for SettingsState {
             picked: 0,
             picked_moved: false,
             nav_scroll: ScrollHandle::new(),
-            main_scroll: ScrollHandle::new(),
+            main_scroll: ScrollHandle::new().with_whole_pixel_max(),
             main_bounds: bounds_cell(),
             marks: Marks::default(),
             seen_visit: None,

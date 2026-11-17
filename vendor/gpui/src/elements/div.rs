@@ -1895,9 +1895,11 @@ impl Interactivity {
                 .tracked_scroll_handle
                 .as_ref()
                 .map(|handle| handle.0.borrow_mut());
+            let mut whole_pixel_max = false;
             if let Some(mut scroll_handle_state) = tracked_scroll_handle.as_deref_mut() {
                 scroll_handle_state.overflow = style.overflow;
                 scroll_to_bottom = mem::take(&mut scroll_handle_state.scroll_to_bottom);
+                whole_pixel_max = scroll_handle_state.whole_pixel_max;
             }
 
             let rem_size = window.rem_size();
@@ -1911,7 +1913,7 @@ impl Interactivity {
             // places here.
             let padded_content_size = self.content_size + padding_size;
             let scroll_max = (padded_content_size - bounds.size)
-                .map(round_to_two_decimals)
+                .map(|pixels| if whole_pixel_max { pixels.round() } else { round_to_two_decimals(pixels) })
                 .max(&Default::default());
             // Clamp scroll offset in case scroll max is smaller now (e.g., if children
             // were removed or the bounds became larger).
@@ -3351,6 +3353,7 @@ struct ScrollHandleState {
     scroll_to_bottom: bool,
     overflow: Point<Overflow>,
     active_item: Option<ScrollActiveItem>,
+    whole_pixel_max: bool,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -3382,6 +3385,13 @@ impl ScrollHandle {
     /// Construct a new scroll handle.
     pub fn new() -> Self {
         Self(Rc::default())
+    }
+
+    /// Rounds the maximum offset to whole pixels, as a browser rounds a scroller's extent, so
+    /// content scrolled to the end stays on the pixel grid.
+    pub fn with_whole_pixel_max(self) -> Self {
+        self.0.borrow_mut().whole_pixel_max = true;
+        self
     }
 
     /// Get the current scroll offset.
@@ -3551,5 +3561,31 @@ impl ScrollHandle {
     /// Get the count of children for scrollable item.
     pub fn children_count(&self) -> usize {
         self.0.borrow().child_bounds.len()
+    }
+}
+
+#[cfg(test)]
+mod scroll_test {
+    use crate::{self as gpui, div, point, px, size, AppContext, Context, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled, TestAppContext, Window};
+
+    struct Scroller(ScrollHandle);
+
+    impl Render for Scroller {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().id("scroller").size_full().overflow_y_scroll().track_scroll(&self.0).child(div().flex_none().h(px(50.4)))
+        }
+    }
+
+    #[gpui::test]
+    fn a_whole_pixel_max_rounds_a_fractional_extent(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        let plain = ScrollHandle::new();
+        let whole = ScrollHandle::new().with_whole_pixel_max();
+        for handle in [&plain, &whole] {
+            let handle = handle.clone();
+            cx.draw(point(px(0.), px(0.)), size(px(100.), px(20.)), |_, cx| cx.new(|_| Scroller(handle)));
+        }
+        assert!((plain.max_offset().height - px(30.4)).abs() < px(0.01));
+        assert_eq!(whole.max_offset().height, px(30.));
     }
 }

@@ -32,11 +32,14 @@ pub struct TopbarState {
     pub bar_probe: BoundsCell,
     /// How many applications the open "Open in" menu lists; None before the scan answers.
     pub open_in_shown: Option<Option<usize>>,
+    /// The thread title's focus, which a closed rename field hands back.
+    pub title_focus: Option<gpui::FocusHandle>,
+    pub refocus_title: bool,
 }
 
 impl Default for TopbarState {
     fn default() -> Self {
-        TopbarState { menu_probe: bounds_cell(), open_in_probe: bounds_cell(), bar_probe: bounds_cell(), open_in_shown: None }
+        TopbarState { menu_probe: bounds_cell(), open_in_probe: bounds_cell(), bar_probe: bounds_cell(), open_in_shown: None, title_focus: None, refocus_title: false }
     }
 }
 
@@ -188,10 +191,17 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         }
         Some(thread) => {
             let id = thread.id.clone();
+            let focus = root.topbar.title_focus.get_or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
+            if std::mem::take(&mut root.topbar.refocus_title) {
+                window.focus(&focus);
+            }
+            let pencil_lit = focus.is_focused(window) && act_ui::focus::keyboard_focus_visible(cx);
             title_line = title_line.child(no_drag_shrink(
                 div()
                     .id("heading-thread")
                     .accessible(gpui::AccessInfo::new(gpui::AccessRole::Button, thread.title.clone()))
+                    .track_focus(&focus)
+                    .focus_ring(true)
                     .group("heading-thread")
                     .flex_shrink()
                     .min_w(px(heading_width("0", 590.0, false, m.text_heading, window) * 4.0))
@@ -206,7 +216,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .transition(gpui::Transition::ease(120).only(&[gpui::TransitionProperty::Background, gpui::TransitionProperty::Color]))
                     .hover(|style| style.bg(t.surface_hover))
                     .child(div().id("heading-thread-title").min_w_0().ellipsis().child(thread.title.clone()).tip_overflow(thread.title.clone()))
-                    .when(width > 480.0, |title| title.child(div().id("heading-thread-pencil").flex_none().transition(gpui::Transition::ease(120)).text_color(t.quiet_soft).group_hover("heading-thread", |style| style.text_color(t.muted_strong)).child(act_ui::Icon::new(IconName::Pencil).size(px(14.0))).tip("Rename")))
+                    .when(width > 480.0, |title| title.child(div().id("heading-thread-pencil").flex_none().transition(gpui::Transition::ease(120)).text_color(if pencil_lit { t.muted_strong } else { t.quiet_soft }).group_hover("heading-thread", |style| style.text_color(t.muted_strong)).child(act_ui::Icon::new(IconName::Pencil).size(px(14.0))).tip("Rename")))
                     .on_click(cx.listener(move |root, _, _, cx| {
                         root.renaming_heading = Some(id.clone());
                         root.start_rename(&id, cx);

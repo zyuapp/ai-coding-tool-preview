@@ -45,6 +45,15 @@ pub fn note_keystroke(keystroke: &Keystroke, window: &mut Window, cx: &mut App) 
     }
 }
 
+/// Turns rings on, as focus moved from a text field by a key does in a browser.
+pub fn show_rings(cx: &mut App) {
+    if !cx.global::<FocusAppearance>().keyboard {
+        cx.global_mut::<FocusAppearance>().keyboard = true;
+        sync(cx);
+        cx.refresh_windows();
+    }
+}
+
 /// Hands GPUI the ring a focused control draws, in the theme's colour while focus came from the keyboard.
 pub fn sync(cx: &mut App) {
     use crate::theme::ActiveTheme;

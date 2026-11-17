@@ -246,6 +246,10 @@ impl Root {
                 } else {
                     dispatch(AppCommand::TaskRename { task_id: id.clone(), title }, cx);
                 }
+                if matches!(event, InputEvent::Submit) && root.renaming_heading.is_some() {
+                    root.topbar.refocus_title = true;
+                    act_ui::focus::show_rings(cx);
+                }
                 root.stop_rename(cx);
             }
             _ => {}
@@ -289,9 +293,15 @@ impl Root {
             .when(self.rename_invalid, |field| field.shadow(vec![gpui::BoxShadow { color: t.danger.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(1.0) }]))
             .bg(t.surface_input)
             .text_color(t.ink)
+            // The field holds focus while it is shown, so it wears the keyboard's ring whenever rings show.
+            .when(act_ui::focus::keyboard_focus_visible(cx), |field| field.relative().border_color(t.focus_ring).child(div().absolute().inset_0().rounded(px(5.0)).border_1().border_color(t.focus_ring)))
             .map(|field| if heading { act_ui::style::letter_spacing(field, 0.0) } else { field.text_size(px(14.0)) })
-            .on_key_down(cx.listener(|root, event: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(move |root, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
+                    if heading {
+                        root.topbar.refocus_title = true;
+                        act_ui::focus::note_keystroke(&event.keystroke, window, cx);
+                    }
                     root.rename_input = None;
                     root.stop_rename(cx);
                     cx.stop_propagation();

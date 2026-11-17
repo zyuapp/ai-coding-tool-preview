@@ -453,9 +453,19 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             0
         };
         let heading_id = SharedString::from(format!("section-{label}"));
+        let toggle_focus = window.use_keyed_state(SharedString::from(format!("{heading_id}-focus")), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
+        let action_focus = window.use_keyed_state(SharedString::from(format!("{heading_id}-action-focus")), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
+        // The fold shows while anything in the heading holds focus, as `:focus-within` shows it.
+        let focus_within = toggle_focus.is_focused(window) || (dotted > 0 && action_focus.is_focused(window));
         let toggle = div()
             .id(heading_id.clone())
             .accessible(gpui::AccessInfo::new(gpui::AccessRole::Button, "").expanded(open))
+            .track_focus(&toggle_focus)
+            .focus_ring(true)
+            .flex_1()
+            .min_w_0()
+            // Without an action, the toggle runs to the rows' edge, inset as far as on its left.
+            .when(dotted == 0, |toggle| toggle.mr(px(4.0 - m.row_inset)))
             .h(px(30.0))
             .flex()
             .items_center()
@@ -471,15 +481,18 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
             .cursor_pointer()
             .child(label.to_uppercase())
             .when(!open && !threads.is_empty(), |toggle| toggle.child(count_chip(threads.len().to_string(), t)))
-            .child(chevron(open, heading_id.clone()))
+            .child(chevron(open, focus_within, heading_id.clone()))
             .on_click(move |_, _, cx| dispatch(AppCommand::SetSectionOpen { section, open: !open }, cx));
-        let mut heading = div().group(heading_id.clone()).flex().items_center().justify_between().min_h(px(30.0)).pl(px(10.0)).pr(px(m.row_inset)).child(toggle);
+        let mut heading = div().group(heading_id.clone()).flex().items_center().min_h(px(30.0)).pl(px(10.0)).pr(px(m.row_inset)).child(toggle);
         if dotted > 0 {
             let tip: SharedString = if dotted == 1 { "Dismiss 1 thread".into() } else { format!("Dismiss all {dotted} threads").into() };
             let project = sidebar.activity_project.clone();
             heading = heading.child(
                 div()
                     .id("dismiss-all")
+                    .track_focus(&action_focus)
+                    .focus_ring(true)
+                    .flex_none()
                     .w(px(28.0))
                     .h(px(34.0))
                     .mx(px(-3.0))
@@ -489,7 +502,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .rounded(px(6.0))
                     .text_color(t.quiet)
                     .group_hover(heading_id.clone(), |style| style.text_color(t.muted_strong))
-                    .hover(|style| style.bg(t.wash).text_color(t.ink_dim))
+                    .hover(|style| style.bg(t.wash))
                     .cursor_pointer()
                     .child(act_ui::Icon::new(IconName::CheckCheck).size(px(16.0)))
                     .tip(tip)
@@ -904,19 +917,26 @@ fn update_button(state: &WorkspaceState, cx: &mut Context<Root>) -> Option<gpui:
     }
 }
 
-/// The fold mark: a chevron drawn as two strokes in the heading's colour, open pointing down.
-fn chevron(open: bool, group: SharedString) -> impl IntoElement {
+/// The size the fold mark's glyph is drawn at, so its strokes match a 6px box's right and bottom
+/// edges turned 45 degrees.
+const CHEVRON_GLYPH: f32 = 10.25;
+
+/// The fold mark: a chevron drawn as two strokes in the heading's colour, open pointing down. It
+/// takes a 6px box in the heading and turns about the box's centre, its strokes past the box.
+fn chevron(open: bool, focus_within: bool, group: SharedString) -> impl IntoElement {
+    let overhang = (CHEVRON_GLYPH - 6.0) / 2.0;
+    // The glyph's corner sits 1.8px nearer its centre than the turned box's does; open, it is also
+    // lifted 2px.
+    let transform = if open { gpui::ElementTransform::translate(px(0.0), px(-0.2)) } else { gpui::ElementTransform::translate(px(1.8), px(0.0)).rotated(-90.0) };
     div()
         .id("chevron")
+        .relative()
         .flex_none()
-        .size(px(10.0))
-        .flex()
-        .items_center()
-        .justify_center()
+        .size(px(6.0))
         .transition(gpui::Transition::ease(120).only(&[gpui::TransitionProperty::Opacity, gpui::TransitionProperty::Transform]))
-        .transform(gpui::ElementTransform::rotate(if open { 0.0 } else { -90.0 }))
-        .when(open, |mark| mark.opacity(0.0).group_hover(group, |style| style.opacity(1.0)))
-        .child(ink_icon(IconName::HeadingChevron, 10.0))
+        .transform(transform)
+        .when(open && !focus_within, |mark| mark.opacity(0.0).group_hover(group, |style| style.opacity(1.0)))
+        .child(div().absolute().left(px(-overhang)).top(px(-overhang)).size(px(CHEVRON_GLYPH)).flex().child(ink_icon(IconName::HeadingChevron, CHEVRON_GLYPH)))
 }
 
 /// Narrows the activity lists to one project (ProjectFilter).

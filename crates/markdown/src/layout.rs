@@ -1080,24 +1080,25 @@ impl RichText {
         let Some((keys, entry)) = self.paint.link_keys.clone() else { return Vec::new() };
         let mut stops = Vec::new();
         for (link, span) in self.text.links.iter().enumerate() {
-            if !self.paint.link_access.get(link).is_some_and(Option::is_some) {
-                continue;
+            let Some(Some(access)) = self.paint.link_access.get(link) else { continue };
+            // The link's own boxes from its glyph on, as the anchor measures them: a commit is a
+            // button as tall as its line, any other link its text's boxes.
+            let rects = if access.role == gpui::AccessRole::Button { range_rects(&self.text, span.range.clone()) } else { range_text_rects(&self.text, span.range.clone()) };
+            let mut rects: Vec<Bounds<Pixels>> = rects.unwrap_or_default().into_iter().filter(|rect| rect.size.width > px(0.)).collect();
+            let glyph = self.text.boxes.iter().position(|item| item.link == Some(link) && matches!(item.kind, BoxKind::Glyph(_)));
+            if let (Some(glyph), Some(height)) = (glyph.and_then(|index| box_rect(&self.text, index)), rects.first().map(|rect| rect.size.height)) {
+                let glyph = Bounds::new(point(glyph.origin.x, glyph.origin.y + (glyph.size.height - height) / 2.), size(glyph.size.width, height));
+                match rects.first_mut() {
+                    Some(first) if (first.origin.y - glyph.origin.y).abs() < px(1.) => *first = first.union(&glyph),
+                    _ => rects.insert(0, glyph),
+                }
             }
-            let Some(first) = range_rects(&self.text, span.range.clone()).and_then(|rects| rects.into_iter().find(|rect| rect.size.width > px(0.))) else {
-                continue;
-            };
+            let Some(first) = rects.first().copied() else { continue };
             let focus = keys.focus.borrow_mut().entry((entry, link)).or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
             let target = span.target.clone();
             let activate = keys.activate.clone();
             if let (Some(slot), Some(Some(tip))) = (&keys.tip, self.paint.link_tips.get(link)) {
-                // The link's own boxes, as the anchor measures them, from its glyph on.
-                let mut rects = range_text_rects(&self.text, span.range.clone()).unwrap_or_default();
-                let glyph = self.text.boxes.iter().position(|item| item.link == Some(link) && matches!(item.kind, BoxKind::Glyph(_)));
-                if let (Some(first), Some(width)) = (rects.first_mut(), glyph.and_then(|index| self.spec.box_widths.get(index))) {
-                    first.origin.x -= *width;
-                    first.size.width += *width;
-                }
-                for (index, rect) in rects.into_iter().filter(|rect| rect.size.width > px(0.)).enumerate() {
+                for (index, rect) in rects.into_iter().enumerate() {
                     let id = ElementId::Name(format!("{}-{entry}-{link}-{index}", keys.tip_prefix).into());
                     let mut zone = gpui::div().w(rect.size.width).h(rect.size.height).child(slot(id, tip.clone(), window, cx)).into_any_element();
                     zone.layout_as_root(rect.size.into(), window, cx);
@@ -1108,7 +1109,6 @@ impl RichText {
             let mut stop = gpui::div()
                 .track_focus(&focus)
                 .focus_ring(true)
-                .rounded(px(4.))
                 .w(first.size.width)
                 .h(first.size.height)
                 .on_key_down(move |event, _, cx| {
@@ -1326,6 +1326,19 @@ pub fn range_rects(text: &InlineText, range: Range<usize>) -> Option<Vec<Bounds<
         ));
     }
     Some(rects)
+}
+
+/// Where an inline box was last drawn, as tall as its line.
+fn box_rect(text: &InlineText, index: usize) -> Option<Bounds<Pixels>> {
+    let cache = text.cache.borrow();
+    let painted = cache.painted.as_ref()?;
+    let line_height = painted.lines.line_height;
+    painted.lines.lines.iter().enumerate().find_map(|(line_index, line)| {
+        let item = line.items.iter().find(|item| matches!(item.kind, ItemKind::Box { index: at } if at == index))?;
+        let left = painted.bounds.origin.x + painted.offsets[line_index] + item.x;
+        let top = painted.bounds.origin.y + line_height * line_index as f32;
+        Some(Bounds::new(point(left, top), size(item.width, line_height)))
+    })
 }
 
 /// `range_rects` cut down to the text's own boxes, as a DOM range measures them: each line keeps

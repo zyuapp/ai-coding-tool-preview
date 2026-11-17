@@ -1422,6 +1422,7 @@ pub struct MenuTrigger {
     children: Vec<AnyElement>,
     on_click: Option<Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>>,
     probe: Option<BoundsCell>,
+    max_width: Option<Pixels>,
 }
 
 impl MenuTrigger {
@@ -1441,7 +1442,14 @@ impl MenuTrigger {
             children: Vec::new(),
             on_click: None,
             probe: None,
+            max_width: None,
         }
+    }
+
+    /// Caps its width, cutting the label with an ellipsis when it runs over.
+    pub fn max_width(mut self, width: Pixels) -> Self {
+        self.max_width = Some(width);
+        self
     }
 
     /// What assistive technology calls it when its words alone do not say enough.
@@ -1479,7 +1487,6 @@ impl MenuTrigger {
 
     pub fn chevron(mut self, chevron: bool) -> Self {
         self.chevron = chevron;
-    max_width: Option<Pixels>,
         self
     }
 
@@ -1499,16 +1506,9 @@ impl MenuTrigger {
         self.tip = Some(tip.into());
         self
     }
-            max_width: None,
 
     /// Records where the trigger was drawn, for placing its menu.
     pub fn probe(mut self, cell: &BoundsCell) -> Self {
-    /// Caps its width, cutting the label with an ellipsis when it runs over.
-    pub fn max_width(mut self, width: Pixels) -> Self {
-        self.max_width = Some(width);
-        self
-    }
-
         self.probe = Some(cell.clone());
         self
     }

@@ -35,8 +35,74 @@ pub struct AutomationForm {
     /// A new schedule being written before any exists.
     creating: bool,
     focus_schedule: bool,
+    /// Where a drag on the prompt's corner began, and how tall the prompt was then.
+    prompt_drag: Option<(f32, f32)>,
     ticker: Option<gpui::Task<()>>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// The prompt's rows before it is dragged taller or shorter, as a textarea's `rows`.
+const PROMPT_ROWS: usize = 10;
+/// The least the prompt's text area may be dragged to: a multi-line field's 60px less its padding and border.
+const PROMPT_MIN_HEIGHT: f32 = 46.0;
+
+/// What a drag on the prompt's corner carries.
+struct PromptGrip;
+
+fn prompt_line(cx: &gpui::App) -> f32 {
+    cx.theme().metrics.text_control * 1.45
+}
+
+/// The prompt, a fixed height that scrolls, with a grip in its corner that drags it taller or shorter.
+fn prompt_field(input: &Entity<TextInput>, t: &act_ui::theme::Tokens, cx: &mut Context<Root>) -> gpui::Stateful<gpui::Div> {
+    let ink = super::common::with_alpha(t.ink, 0.65);
+    let grip = gpui::canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let at = |x: f32, y: f32| bounds.origin + gpui::point(px(x), px(y));
+            for (from, to) in [((3.0, 9.0), (9.0, 3.0)), ((7.0, 9.0), (9.0, 7.0))] {
+                let mut path = gpui::PathBuilder::stroke(px(1.0));
+                path.move_to(at(from.0, from.1));
+                path.line_to(at(to.0, to.1));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, ink);
+                }
+            }
+        },
+    )
+    .size_full();
+    let start = input.clone();
+    div()
+        .id("automation-prompt-field")
+        .relative()
+        .mt(px(9.0))
+        .child(TextField::new("automation-prompt", input).label("Prompt"))
+        .child(
+            div()
+                .id("automation-prompt-grip")
+                .absolute()
+                .right(px(3.0))
+                .bottom(px(3.0))
+                .size(px(9.0))
+                .child(grip)
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |root, event: &gpui::MouseDownEvent, _, cx| {
+                        let height = start.read(cx).autosize().max_height.map(f32::from).unwrap_or_default();
+                        if let Some(form) = &mut root.automation {
+                            form.prompt_drag = Some((f32::from(event.position.y), height));
+                        }
+                    }),
+                )
+                .on_drag(PromptGrip, |_, _, _, cx| cx.new(|_| gpui::Empty)),
+        )
+        .on_drag_move(cx.listener(|root, event: &gpui::DragMoveEvent<PromptGrip>, _, cx| {
+            let Some(form) = &root.automation else { return };
+            let Some((from, height)) = form.prompt_drag else { return };
+            let height = (height + f32::from(event.event.position.y) - from).max(PROMPT_MIN_HEIGHT);
+            let rows = (height / prompt_line(cx)).ceil() as usize;
+            form.prompt.update(cx, |input, cx| input.set_autosize(Autosize { min_rows: rows, max_height: Some(px(height)) }, cx));
+        }))
 }
 
 fn local(at: i64) -> chrono::DateTime<chrono::Local> {
@@ -172,11 +238,12 @@ impl Root {
         let creating = automation.is_none() && self.automation.as_ref().is_some_and(|form| form.creating && form.task == task);
         let observe = |input: &Entity<TextInput>, cx: &mut Context<Root>| cx.subscribe(input, |root, _, event: &InputEvent, cx| if matches!(event, InputEvent::Changed) { root.automation_edited(cx) });
         let schedule = cx.new(|cx| TextInput::new(cx).with_text(&fields.schedule).placeholder("0 8 * * *"));
-        let prompt = cx.new(|cx| TextInput::new(cx).with_text(&fields.prompt).multiline(Autosize { min_rows: 10, max_height: None }).placeholder(if automation.is_some() { "" } else { "What each run should do" }));
+        let prompt_height = PROMPT_ROWS as f32 * prompt_line(cx);
+        let prompt = cx.new(|cx| TextInput::new(cx).with_text(&fields.prompt).multiline(Autosize { min_rows: PROMPT_ROWS, max_height: Some(px(prompt_height)) }).placeholder(if automation.is_some() { "" } else { "What each run should do" }));
         let surface_when = cx.new(|cx| TextInput::new(cx).with_text(&fields.surface_when).placeholder("Every run"));
         let ends_when = cx.new(|cx| TextInput::new(cx).with_text(&fields.ends_when).placeholder("Repeats until removed"));
         let subscriptions = [&schedule, &prompt, &surface_when, &ends_when].into_iter().map(|input| observe(input, cx)).collect();
-        self.automation = Some(AutomationForm { revision, task, schedule, prompt, surface_when, ends_when, creating, focus_schedule: false, ticker: None, _subscriptions: subscriptions });
+        self.automation = Some(AutomationForm { revision, task, schedule, prompt, surface_when, ends_when, creating, focus_schedule: false, prompt_drag: None, ticker: None, _subscriptions: subscriptions });
     }
 
     fn form_fields(&self, cx: &gpui::App) -> Option<AutomationFields> {
@@ -323,7 +390,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         .flex()
         .flex_col()
         .child(field(schedule_field.into_any_element()))
-        .child(field(TextField::new("automation-prompt", &prompt_input).label("Prompt").into_any_element()));
+        .child(prompt_field(&prompt_input, &t, cx));
     if !one_shot {
         body = body.child(field(TextField::new("automation-surface", &surface_input).label("Notify me when").into_any_element()));
     }

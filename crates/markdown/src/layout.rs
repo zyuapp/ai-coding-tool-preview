@@ -664,6 +664,8 @@ pub struct RichPrepaint {
     hitbox: Hitbox,
     links: Vec<Hitbox>,
     stops: Vec<gpui::AnyElement>,
+    /// Where layout placed the block before its box was rounded to device pixels.
+    unrounded_top: Pixels,
 }
 
 fn align_offset(align: TextAlign, available: Pixels, width: Pixels) -> Pixels {
@@ -794,7 +796,8 @@ impl Element for RichText {
         });
         drop(cache);
         let stops = self.link_stops(window, cx);
-        RichPrepaint { hitbox, links, stops }
+        let unrounded_top = window.unrounded_layout_origin(*layout_id).y;
+        RichPrepaint { hitbox, links, stops, unrounded_top }
     }
 
     fn paint(
@@ -826,7 +829,10 @@ impl Element for RichText {
         let ascent = system.ascent(strut_id, self.spec.size);
         let descent = system.descent(strut_id, self.spec.size).abs();
         let line_height = self.spec.line_height;
-        let baseline_offset = gpui::line_baseline(line_height, ascent, descent, window.scale_factor());
+        let scale = window.scale_factor();
+        let baseline_offset = gpui::line_baseline(line_height, ascent, descent, scale);
+        // Lines stack from where layout placed the block, before its box was rounded to device pixels.
+        let unrounded_top = prepaint.unrounded_top;
         let mask = window.layout_content_mask();
         let first_visible = painted.line_at(mask.origin.y);
         let last_visible = painted.line_at(mask.origin.y + mask.size.height);
@@ -837,7 +843,7 @@ impl Element for RichText {
             }
             let top = bounds.origin.y + line_height * line_index as f32;
             let left = bounds.origin.x + painted.offsets[line_index];
-            let baseline = top + baseline_offset;
+            let baseline = px((f32::from(unrounded_top + line_height * line_index as f32 + baseline_offset) * scale).round() / scale);
 
             if let Some(background) = self.paint.code_background {
                 for (start_box, end_box) in &code_pairs {

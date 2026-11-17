@@ -521,7 +521,8 @@ impl<'a> Ctx<'a> {
             box_widths,
             strut: make_font(&base.family, base.weight, false),
             size: base.size,
-            line_height: base.line_height,
+            // Floored to Chromium's 1/64px layout unit, in which lines stack.
+            line_height: px((f32::from(base.line_height) * 64.).floor() / 64.),
             wrap,
             align,
         }
@@ -1251,7 +1252,8 @@ impl<'a> Ctx<'a> {
             .id(ElementId::NamedChild(Box::new(id.clone()), "scroll".into()))
             .overflow_x_scroll()
             .px(px(CODE_PADDING_X))
-            .py(px(CODE_PADDING_Y))
+            .pt(px(CODE_PADDING_Y))
+            .pb(px(CODE_PADDING_Y - 1.))
             .flex()
             // A line wider than the block keeps its length, so the block has something to scroll.
             .child(div().flex_none().min_w_full().flex().flex_col().items_start().child(text));
@@ -1260,8 +1262,11 @@ impl<'a> Ctx<'a> {
         if let Some((handle, _)) = &sideways {
             pre = pre.track_scroll(handle);
         }
+        // The clear bottom border lies under the scrollbar.
         let pre = div()
             .relative()
+            .border_b_1()
+            .border_color(gpui::transparent_black())
             .child(pre)
             .child(OverflowGutter::new(content, px(SCROLLBAR_THICKNESS)))
             .children(sideways.map(|(_, bar)| bar));

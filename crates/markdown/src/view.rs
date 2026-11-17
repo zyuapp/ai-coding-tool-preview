@@ -334,8 +334,9 @@ impl MarkdownView {
     }
 
     /// Shows a link's hint (a file's path, "Open commit") with the host's tooltip: `slot` draws a
-    /// zone filling its parent that shows the hint while the pointer rests on it.
-    pub fn set_link_tip(&mut self, slot: impl Fn(ElementId, SharedString, &mut Window, &mut App) -> gpui::AnyElement + 'static) {
+    /// zone filling its parent that shows the hint while the pointer rests on it, placed against
+    /// the whole link's box.
+    pub fn set_link_tip(&mut self, slot: impl Fn(ElementId, SharedString, gpui::Bounds<gpui::Pixels>, &mut Window, &mut App) -> gpui::AnyElement + 'static) {
         self.tip_slot = Some(Rc::new(slot));
     }
 

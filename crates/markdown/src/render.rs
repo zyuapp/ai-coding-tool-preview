@@ -65,8 +65,9 @@ pub type CopyButtonSlot = Rc<dyn Fn(CopyButtonRequest, &mut Window, &mut App) ->
 pub type FenceSlot =
     Rc<dyn Fn(FenceRequest, &mut Window, &mut App) -> Option<(AnyElement, SharedString)>>;
 
-/// Draws the host's tooltip zone filling its parent, given an id unique in the window and the hint.
-pub type LinkTipSlot = Rc<dyn Fn(ElementId, SharedString, &mut Window, &mut App) -> AnyElement>;
+/// Draws the host's tooltip zone filling its parent, given an id unique in the window, the hint
+/// and the whole link's box in window coordinates, which the tip is placed against.
+pub type LinkTipSlot = Rc<dyn Fn(ElementId, SharedString, Bounds<Pixels>, &mut Window, &mut App) -> AnyElement>;
 
 /// Draws the host's scrollbar over a block that scrolls sideways, given the block's scroll handle.
 pub type ScrollbarSlot = Rc<dyn Fn(ElementId, &gpui::ScrollHandle, &mut Window, &mut App) -> AnyElement>;

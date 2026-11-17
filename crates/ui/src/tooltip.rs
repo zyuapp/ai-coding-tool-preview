@@ -29,6 +29,8 @@ struct Tip {
     key: u64,
     text: SharedString,
     anchor: Bounds<Pixels>,
+    /// Where the tip is placed against: the anchor, or the whole of a control drawn in pieces.
+    place: Bounds<Pixels>,
     hoverable: bool,
     /// The control's hitbox in the latest frame, which says whether it is still drawn.
     hitbox: HitboxId,
@@ -168,6 +170,8 @@ struct TipZone {
     border: Edges<Pixels>,
     /// Where the text an overflow tip repeats is drawn, when that is not the whole control.
     text_box: Option<BoundsCell>,
+    /// The whole control's box, in window coordinates, when the zone covers only a piece of it.
+    place: Option<Bounds<Pixels>>,
 }
 
 impl IntoElement for TipZone {
@@ -234,7 +238,7 @@ impl Element for TipZone {
                 state.linger = None;
                 state.window = Some(handle);
                 state.shown_in = Some(shown_in);
-                state.shown = Some(Tip { key, text: self.text.clone(), anchor: outer, hoverable: self.hoverable, hitbox: hitbox.id, focus });
+                state.shown = Some(Tip { key, text: self.text.clone(), anchor: outer, place: self.place.unwrap_or(outer), hoverable: self.hoverable, hitbox: hitbox.id, focus });
                 redraw_after(handle, cx);
             } else if !focused && state.focused == Some(key) {
                 state.focused = None;
@@ -249,6 +253,7 @@ impl Element for TipZone {
             }
             if let Some(shown) = state.shown.as_mut().filter(|shown| shown.key == key) {
                 shown.anchor = outer;
+                shown.place = self.place.unwrap_or(outer);
                 shown.text = self.text.clone();
                 shown.hitbox = hitbox.id;
                 state.entered = Some(self.text.clone());
@@ -259,7 +264,7 @@ impl Element for TipZone {
                 && state.pending.is_none()
                 && state.entered.as_ref() != Some(&self.text);
             if retell {
-                let tip = Tip { key, text: self.text.clone(), anchor: outer, hoverable: self.hoverable, hitbox: hitbox.id, focus: None };
+                let tip = Tip { key, text: self.text.clone(), anchor: outer, place: self.place.unwrap_or(outer), hoverable: self.hoverable, hitbox: hitbox.id, focus: None };
                 Tooltips::enter(tip, window, cx);
             }
         }
@@ -285,6 +290,7 @@ impl Element for TipZone {
         let style = text_style.take();
         let width = text_width(&self.text_box, bounds);
         let outer = bounds.extend(self.border);
+        let place = self.place.unwrap_or(outer);
         window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
             if phase != DispatchPhase::Bubble {
                 return;
@@ -300,7 +306,7 @@ impl Element for TipZone {
                 return;
             }
             if hovered && !current {
-                Tooltips::enter(Tip { key, text: text.clone(), anchor: outer, hoverable, hitbox: hitbox.id, focus: None }, window, cx);
+                Tooltips::enter(Tip { key, text: text.clone(), anchor: outer, place, hoverable, hitbox: hitbox.id, focus: None }, window, cx);
             } else if !hovered && current {
                 Tooltips::leave(key, window, cx);
             }
@@ -312,7 +318,7 @@ impl Element for TipZone {
                     Tooltips::ensure(cx);
                     cx.global_mut::<Tooltips>().hovered = Some(key);
                     cx.global_mut::<Tooltips>().shown_in = Some((window.viewport_size(), window.is_window_active()));
-                    let tip = Tip { key, text: text.clone(), anchor: outer, hoverable: true, hitbox: hitbox_id, focus: None };
+                    let tip = Tip { key, text: text.clone(), anchor: outer, place, hoverable: true, hitbox: hitbox_id, focus: None };
                     cx.global_mut::<Tooltips>().shown = Some(tip);
                     window.refresh();
                 }
@@ -339,32 +345,40 @@ pub trait Tippable: ParentElement + InteractiveElement + Styled + Sized {
     fn tip(mut self, text: impl Into<SharedString>) -> Self {
         let text = text.into();
         let border = border_of(&mut self);
-        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: false, border, text_box: None })
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: false, border, text_box: None, place: None })
     }
 
     /// Like `tip`, and shown again when a press changes `text` while the pointer stays.
     fn tip_again(mut self, text: impl Into<SharedString>) -> Self {
         let text = text.into();
         let border = border_of(&mut self);
-        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: true, border, text_box: None })
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: true, border, text_box: None, place: None })
     }
 
     /// Shows `text`, the control's own text, only while it is cut short.
     fn tip_overflow(mut self, text: impl Into<SharedString>) -> Self {
         let border = border_of(&mut self);
-        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border, text_box: None })
+        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border, text_box: None, place: None })
     }
 
     /// Like `tip_overflow`, for a control whose text is drawn in the box `text_box` records.
     fn tip_overflow_of(mut self, text: impl Into<SharedString>, text_box: &BoundsCell) -> Self {
         let border = border_of(&mut self);
-        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border, text_box: Some(text_box.clone()) })
+        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border, text_box: Some(text_box.clone()), place: None })
     }
 
     /// The reason a disabled control cannot act: shown at once, and on a press, and readable.
     fn tip_reason(mut self, text: impl Into<SharedString>) -> Self {
         let border = border_of(&mut self);
-        self.child(TipZone { text: text.into(), hoverable: true, overflow: false, again: false, border, text_box: None })
+        self.child(TipZone { text: text.into(), hoverable: true, overflow: false, again: false, border, text_box: None, place: None })
+    }
+
+    /// Like `tip`, for one piece of a control drawn in pieces, such as a link wrapped across
+    /// lines: the tip is placed against `place`, the whole control's box in window coordinates.
+    fn tip_placed(mut self, text: impl Into<SharedString>, place: Bounds<Pixels>) -> Self {
+        let text = text.into();
+        let border = border_of(&mut self);
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: false, border, text_box: None, place: Some(place) })
     }
 }
 
@@ -488,7 +502,7 @@ pub fn tooltip_layer(window: &mut Window, cx: &mut App) -> impl IntoElement {
                     }
                 })
             });
-        deferred(placed(Placement::Tooltip { anchor: tip.anchor }, body)).with_priority(100)
+        deferred(placed(Placement::Tooltip { anchor: tip.place }, body)).with_priority(100)
     });
     TooltipWatch { tip: tip.map(IntoElement::into_any_element) }
 }

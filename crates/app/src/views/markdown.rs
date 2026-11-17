@@ -92,7 +92,7 @@ pub fn message_view(id: impl Into<ElementId>, text: &str, streaming: bool, varia
         view.set_has_message_id(images.is_some(), cx);
         view.set_fence_renderer(fence);
         view.set_copy_button(super::timeline_row::block_copy_button);
-        view.set_link_tip(|id, tip, _, _| gpui::div().id(id).size_full().tip(tip).into_any_element());
+        view.set_link_tip(|id, tip, place, _, _| gpui::div().id(id).size_full().tip_placed(tip, place).into_any_element());
         view.set_scrollbar_renderer(|id, handle, _, _| act_ui::components::scrollbar::Scrollbar::horizontal(id, handle).into_any_element());
         view
     });

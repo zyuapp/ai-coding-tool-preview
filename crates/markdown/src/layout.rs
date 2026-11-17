@@ -801,8 +801,9 @@ impl Element for RichText {
             offsets,
         });
         drop(cache);
-        let stops = self.link_stops(window, cx);
-        let unrounded_top = window.unrounded_layout_origin(*layout_id).y;
+        let unrounded = window.unrounded_layout_origin(*layout_id);
+        let stops = self.link_stops(unrounded - bounds.origin, window, cx);
+        let unrounded_top = unrounded.y;
         RichPrepaint { hitbox, links, stops, unrounded_top }
     }
 
@@ -820,12 +821,19 @@ impl Element for RichText {
         for hitbox in &prepaint.links {
             window.set_cursor_style(gpui::CursorStyle::PointingHand, hitbox);
         }
-        for stop in &mut prepaint.stops {
-            stop.paint(window, cx);
-        }
         if window.is_accessibility_active() {
             self.paint_access(bounds, window);
         }
+        self.paint_lines(bounds, prepaint.unrounded_top, window, cx);
+        // A focus ring is drawn over the text, as a browser draws an outline.
+        for stop in &mut prepaint.stops {
+            stop.paint(window, cx);
+        }
+    }
+}
+
+impl RichText {
+    fn paint_lines(&self, bounds: Bounds<Pixels>, unrounded_top: Pixels, window: &mut Window, cx: &mut App) {
         let cache = self.text.cache.borrow();
         let Some(painted) = cache.painted.clone() else {
             return;
@@ -838,7 +846,6 @@ impl Element for RichText {
         let scale = window.scale_factor();
         let baseline_offset = gpui::line_baseline(line_height, ascent, descent, scale);
         // Lines stack from where layout placed the block, before its box was rounded to device pixels.
-        let unrounded_top = prepaint.unrounded_top;
         let mask = window.layout_content_mask();
         let first_visible = painted.line_at(mask.origin.y);
         let last_visible = painted.line_at(mask.origin.y + mask.size.height);
@@ -1074,8 +1081,9 @@ impl RichText {
 
     /// Each live link as a keyboard stop laid over its first line: Tab reaches it, Enter presses
     /// it with the modifiers held, as a browser's link. A link with a hint also takes the host's
-    /// tooltip over each of its lines.
-    fn link_stops(&self, window: &mut Window, cx: &mut App) -> Vec<gpui::AnyElement> {
+    /// tooltip over each of its lines, placed against the whole link where layout put it before
+    /// rounding (`shift` from the drawn box).
+    fn link_stops(&self, shift: Point<Pixels>, window: &mut Window, cx: &mut App) -> Vec<gpui::AnyElement> {
         use gpui::{InteractiveElement, ParentElement, Styled};
         let Some((keys, entry)) = self.paint.link_keys.clone() else { return Vec::new() };
         let mut stops = Vec::new();
@@ -1085,12 +1093,18 @@ impl RichText {
             // button as tall as its line, any other link its text's boxes.
             let rects = if access.role == gpui::AccessRole::Button { range_rects(&self.text, span.range.clone()) } else { range_text_rects(&self.text, span.range.clone()) };
             let mut rects: Vec<Bounds<Pixels>> = rects.unwrap_or_default().into_iter().filter(|rect| rect.size.width > px(0.)).collect();
-            let glyph = self.text.boxes.iter().position(|item| item.link == Some(link) && matches!(item.kind, BoxKind::Glyph(_)));
-            if let (Some(glyph), Some(height)) = (glyph.and_then(|index| box_rect(&self.text, index)), rects.first().map(|rect| rect.size.height)) {
-                let glyph = Bounds::new(point(glyph.origin.x, glyph.origin.y + (glyph.size.height - height) / 2.), size(glyph.size.width, height));
-                match rects.first_mut() {
-                    Some(first) if (first.origin.y - glyph.origin.y).abs() < px(1.) => *first = first.union(&glyph),
-                    _ => rects.insert(0, glyph),
+            // Its glyph and a code span's padding are the link's too.
+            if let Some(height) = rects.first().map(|rect| rect.size.height) {
+                for index in (0..self.text.boxes.len()).filter(|index| self.text.boxes[*index].link == Some(link)) {
+                    let Some(item) = box_rect(&self.text, index) else { continue };
+                    let item = Bounds::new(point(item.origin.x, item.origin.y + (item.size.height - height) / 2.), size(item.size.width, height));
+                    match rects.iter_mut().find(|rect| (rect.origin.y - item.origin.y).abs() < px(1.)) {
+                        Some(rect) => *rect = rect.union(&item),
+                        None => {
+                            let at = rects.iter().position(|rect| rect.origin.y > item.origin.y).unwrap_or(rects.len());
+                            rects.insert(at, item);
+                        }
+                    }
                 }
             }
             let Some(first) = rects.first().copied() else { continue };
@@ -1098,9 +1112,11 @@ impl RichText {
             let target = span.target.clone();
             let activate = keys.activate.clone();
             if let (Some(slot), Some(Some(tip))) = (&keys.tip, self.paint.link_tips.get(link)) {
+                let whole = rects.iter().fold(first, |all, rect| all.union(rect));
+                let place = Bounds::new(whole.origin + shift, whole.size);
                 for (index, rect) in rects.into_iter().enumerate() {
                     let id = ElementId::Name(format!("{}-{entry}-{link}-{index}", keys.tip_prefix).into());
-                    let mut zone = gpui::div().w(rect.size.width).h(rect.size.height).child(slot(id, tip.clone(), window, cx)).into_any_element();
+                    let mut zone = gpui::div().w(rect.size.width).h(rect.size.height).child(slot(id, tip.clone(), place, window, cx)).into_any_element();
                     zone.layout_as_root(rect.size.into(), window, cx);
                     zone.prepaint_at(rect.origin, window, cx);
                     stops.push(zone);

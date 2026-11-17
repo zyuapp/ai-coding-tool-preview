@@ -82,6 +82,13 @@ fn system_ui_weight(weight: FontWeight) -> FontWeight {
     FontWeight(FACES[index])
 }
 
+/// The face Chromium asks `NSFontManager` for in any other installed family: the CSS weight floored
+/// to a hundred, so 550 is the family's Medium face, not its Semibold. Loaded fonts match by CSS
+/// rules, as web fonts do.
+fn font_manager_weight(weight: FontWeight) -> FontWeight {
+    FontWeight(((weight.0 / 100.0).floor() * 100.0).clamp(100.0, 900.0))
+}
+
 impl MacTextSystem {
     pub(crate) fn new() -> Self {
         Self(RwLock::new(MacTextSystemState {
@@ -162,6 +169,8 @@ impl PlatformTextSystem for MacTextSystem {
 
             let weight = if crate::text_system::font_name_with_fallbacks(&font.family, ".AppleSystemUIFont") == ".AppleSystemUIFont" {
                 system_ui_weight(font.weight)
+            } else if lock.memory_source.select_family_by_name(&font.family).is_err() {
+                font_manager_weight(font.weight)
             } else {
                 font.weight
             };

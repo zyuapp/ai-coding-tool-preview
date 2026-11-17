@@ -6,9 +6,9 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    point, px, size, App, Background, Bounds, BorderStyle, Corners as QuadCorners, DispatchPhase, Edges, Element,
+    point, px, size, App, Background, Bounds, Corners as QuadCorners, DispatchPhase, Element,
     ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton,
-    ListState, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Position, ScrollHandle, Size, Style, Window,
+    ListState, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Position, ScrollHandle, Size, Style, Window,
 };
 
 use crate::color::{alpha, BLACK, WHITE};
@@ -279,21 +279,16 @@ impl Element for Scrollbar {
         let inset = px(if hovered { 3.0 } else { 4.0 });
         let visible = Bounds::from_corners(thumb.origin + point(inset, inset), thumb.bottom_right() - point(inset, inset));
         let base = alpha(t.ink, if hovered { 0.26 } else { 0.14 });
-        let sheen_from = crate::color::over(alpha(WHITE, 0.2), base);
-        let sheen_to = crate::color::over(alpha(WHITE, 0.04), base);
         let angle = if self.axis == ScrollAxis::Vertical { 90.0 } else { 180.0 };
-        let background: Background =
-            gpui::linear_gradient(angle, gpui::linear_color_stop(sheen_from, 0.0), gpui::linear_color_stop(sheen_to, 0.7));
+        let sheen: Background = gpui::linear_gradient(angle, gpui::linear_color_stop(alpha(WHITE, 0.2), 0.0), gpui::linear_color_stop(alpha(WHITE, 0.04), 0.7));
         let edge = if theme.variant() == ThemeVariant::Dark { alpha(WHITE, 0.12) } else { alpha(BLACK, 0.14) };
         let radius = visible.size.width.min(visible.size.height) / 2.0;
-        window.paint_quad(PaintQuad {
-            bounds: visible,
-            corner_radii: QuadCorners::all(radius),
-            background,
-            border_widths: Edges::all(px(0.5)),
-            border_color: edge.into(),
-            border_style: BorderStyle::Solid,
-        });
+        // The sheen is its own layer over the fill, so the gradient blends white with white.
+        window.paint_quad(gpui::fill(visible, base).corner_radii(radius));
+        window.paint_quad(gpui::fill(visible, sheen).corner_radii(radius));
+        // A glint along the top and a half-pixel hairline all round: inset shadows, which do not snap to whole pixels as borders do.
+        let shadow = |color: gpui::Rgba, y: f32, blur: f32, spread: f32| gpui::BoxShadow { color: color.into(), offset: point(px(0.0), px(y)), blur_radius: px(blur), spread_radius: px(spread) };
+        window.paint_inset_shadows(visible, QuadCorners::all(radius), &[shadow(alpha(WHITE, 0.28), 1.0, 0.5, -0.5), shadow(edge, 0.0, 0.0, 0.5)]);
 
         let handle = self.handle.clone();
         let axis = self.axis;

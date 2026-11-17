@@ -867,6 +867,7 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
         }))
         .on_key_down(root.composer_listener(cx, |root, event: &KeyDownEvent, window, cx| match event.keystroke.key.as_str() {
             "escape" => {
+                act_ui::focus::note_keystroke(&event.keystroke, window, cx);
                 root.close_library(window, cx);
                 cx.stop_propagation();
             }
@@ -923,7 +924,6 @@ fn effort_slider(root: &Root, steps: &[EffortSpec], value: AgentEffort, tiny: bo
                 .rounded_full()
                 .transition(glide.only(&[gpui::TransitionProperty::Transform]).and(gpui::Transition::ease(160).only(&[gpui::TransitionProperty::Background])))
                 .transform(gpui::ElementTransform::scale(swell))
-                act_ui::focus::note_keystroke(&event.keystroke, window, cx);
                 .bg(if drag.is_some() {
                     gpui::solid_background(super::common::with_alpha(t.surface_inverse, 0.3))
                 } else {

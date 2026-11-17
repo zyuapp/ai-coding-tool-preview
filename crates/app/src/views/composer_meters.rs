@@ -75,9 +75,11 @@ fn card_row(label: String, value: String, share: f64, high: bool, detail: Option
 }
 
 /// A meter's hover card, rising over the composer from the meter's right edge.
-fn usage_card(title: String, aside: Option<String>, rows: Vec<gpui::Div>, cx: &Context<Root>) -> AnyElement {
+fn usage_card(title: String, aside: Option<String>, rows: Vec<gpui::Div>, window: &Window, cx: &Context<Root>) -> AnyElement {
     let t = cx.theme().tokens.clone();
     let m = cx.theme().metrics.clone();
+    // The title and its aside share a baseline.
+    let [title_top, aside_top] = super::model_library::baseline_group([(m.text_control, Some(m.text_control * 1.3)), (m.text_meta, Some(m.text_meta * 1.3))], window).0;
     let card = glass(div(), &t, GlassKind::Popover, None, None)
         .id("usage-card")
         .enter(gpui::Transition::ease(120), |style| style.opacity(0.0).transform(gpui::ElementTransform::translate(px(0.0), px(4.0))))
@@ -91,7 +93,7 @@ fn usage_card(title: String, aside: Option<String>, rows: Vec<gpui::Div>, cx: &C
         .text_color(t.ink)
         .text_size(px(m.text_control))
         .line_height(gpui::relative(1.3))
-        .child(div().flex().items_baseline().justify_between().gap(px(12.0)).child(div().font_weight(FontWeight(600.0)).child(title)).when_some(aside, |heading, aside| heading.child(div().text_color(t.quiet_strong).text_size(px(m.text_meta)).child(aside))))
+        .child(div().flex().items_start().justify_between().gap(px(12.0)).child(div().mt(px(title_top)).font_weight(FontWeight(600.0)).child(title)).when_some(aside, |heading, aside| heading.child(div().mt(px(aside_top)).text_color(t.quiet_strong).text_size(px(m.text_meta)).child(aside))))
         .children(rows);
     deferred(div().absolute().right(px(-8.0)).bottom(px(42.0)).child(card)).with_priority(2).into_any_element()
 }
@@ -166,7 +168,7 @@ pub fn plan_meter(root: &mut Root, state: &WorkspaceState, engine: AgentEngine, 
         .on_click(|_, _, cx| send(serde_json::json!({ "type": "view.set-settings-open", "open": true, "section": "usage" }), cx));
     let mut wrap = div().relative().flex().child(meter);
     if shown {
-        wrap = wrap.child(usage_card(label, plan_label(subscription.as_deref()), card_rows, cx));
+        wrap = wrap.child(usage_card(label, plan_label(subscription.as_deref()), card_rows, window, cx));
     }
     Some(wrap.into_any_element())
 }
@@ -207,7 +209,7 @@ pub fn context_meter(root: &mut Root, state: &WorkspaceState, width: f32, window
     let mut holder = div().relative().flex().child(gauge);
     if hovered {
         let row = card_row(format!("{percent}% used"), format!("{}% left", 100 - percent), percent as f64, high, Some(format!("{} / {} tokens used", compact_tokens(usage.tokens), compact_tokens(usage.limit))), cx);
-        holder = holder.child(usage_card("Context window".into(), None, vec![row], cx));
+        holder = holder.child(usage_card("Context window".into(), None, vec![row], window, cx));
     }
     let settled = !state.active_runs.contains_key(&thread.id) && act_core::workspace::activity::waiting_on(state, Some(&thread.id), &act_core::reducer::sending::prompt_key(state)).is_none();
     let compact = high && settled && root.composer.task.is_none() && act_core::reducer::runs::compactable_session(state, thread);

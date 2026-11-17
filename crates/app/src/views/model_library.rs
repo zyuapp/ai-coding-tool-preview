@@ -670,6 +670,8 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
     results = results.child(div().flex().justify_between().gap(px(10.0)).px(px(10.0)).pt(px(5.0)).pb(px(6.0)).text_size(px(m.text_meta)).text_color(t.quiet_strong).child(heading).child(div().text_color(t.quiet_soft).child(format!("{count} models"))));
     let several = shown.len() > 1;
     let mut pick_index = 0usize;
+    // A model's name and what it is for share a baseline.
+    let [name_shift, description_shift] = baseline_shifts([(m.text_control, None), (m.text_meta, Some(m.text_meta * 1.35))], window);
     for (group, models) in &shown {
         if several {
             results = results.child(div().px(px(10.0)).pt(px(10.0)).pb(px(4.0)).text_color(t.quiet).text_size(px(m.text_badge)).font_weight(FontWeight(560.0)).child(group.heading.label.clone()));
@@ -704,8 +706,8 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
                 .text_size(px(m.text_control))
                 .child(div().flex_none().w(px(14.0)).child(if selected { icon(IconName::Check, 14.0, t.ink).into_any_element() } else { div().into_any_element() }))
                 .when(!tiny, |row| row.child(icon(model_glyph(group.heading.engine, &spec.id), 16.0, if lit { t.ink } else { t.quiet_strong })))
-                .child(div().flex_none().text_color(if selected || lit { t.ink } else { t.ink_dim }).font_weight(FontWeight(500.0)).child(spec.label.clone()))
-                .child(div().min_w_0().ellipsis().text_size(px(m.text_meta)).text_color(if lit { t.ink } else { t.quiet_strong }).id(SharedString::from(format!("model-description-{}-{}", group.heading.engine.as_str(), spec.id))).child(spec.description.clone()).tip_overflow(spec.description.clone()));
+                .child(div().flex_none().relative().top(px(name_shift)).text_color(if selected || lit { t.ink } else { t.ink_dim }).font_weight(FontWeight(500.0)).child(spec.label.clone()))
+                .child(div().min_w_0().relative().top(px(description_shift)).ellipsis().text_size(px(m.text_meta)).line_height(gpui::relative(1.35)).text_color(if lit { t.ink } else { t.quiet_strong }).id(SharedString::from(format!("model-description-{}-{}", group.heading.engine.as_str(), spec.id))).child(spec.description.clone()).tip_overflow(spec.description.clone()));
             if !selectable {
                 row = row.opacity(0.5);
             } else {
@@ -767,11 +769,15 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
 
     let model_name = model_name(&catalog, &choice);
     let (steps, effort) = effort_steps(&catalog, &choice);
-    let axis = |name: &'static str, detail: Option<String>| {
-        let mut axis = div().flex().items_baseline().gap(px(5.0)).min_w_0().text_color(t.ink_soft).text_size(px(m.text_menu)).font_weight(FontWeight(500.0)).child(name);
+    // The setting's name and its detail share a baseline.
+    let axis = |name: &'static str, detail: Option<String>, line_height: Option<f32>| {
+        let [name_top, detail_top] = baseline_group([(m.text_menu, line_height), (m.text_meta, line_height)], window).0;
+        let mut axis = div().flex().items_start().gap(px(5.0)).min_w_0().text_color(t.ink_soft).text_size(px(m.text_menu)).font_weight(FontWeight(500.0)).when_some(line_height, |axis, height| axis.line_height(px(height)));
         axis = if narrow { axis } else { axis.w(px(164.0)).flex_none().pl(px(15.0)) };
         if let Some(detail) = detail {
-            axis = axis.child(div().min_w_0().text_size(px(m.text_meta)).text_color(t.quiet).font_weight(FontWeight(400.0)).ellipsis().child(format!("· {detail}")));
+            axis = axis.child(div().flex_none().mt(px(name_top)).child(name)).child(div().min_w_0().mt(px(detail_top)).text_size(px(m.text_meta)).text_color(t.quiet).font_weight(FontWeight(400.0)).ellipsis().child(format!("· {detail}")));
+        } else {
+            axis = axis.child(name);
         }
         axis
     };
@@ -785,7 +791,7 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
     } else {
         effort_slider(root, &steps, effort, tiny, window, cx).into_any_element()
     };
-    let effort_row = setting().items_start().child(axis("Effort", Some(model_name.clone())).line_height(px(22.0))).child(div().flex_1().min_w_0().when(!narrow, |body| body.ml(px(8.0))).child(effort_body));
+    let effort_row = setting().items_start().child(axis("Effort", Some(model_name.clone()), Some(22.0))).child(div().flex_1().min_w_0().when(!narrow, |body| body.ml(px(8.0))).child(effort_body));
     let policy = choice.policy;
     let options: Vec<SegmentedOption> = offered_policies(choice.engine)
         .into_iter()
@@ -801,7 +807,7 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
         })
         .collect();
     let task_id = choice.task_id.clone();
-    let mode_row = setting().items_center().border_t_1().border_color(t.line_soft).child(axis("Mode", None)).child(
+    let mode_row = setting().items_center().border_t_1().border_color(t.line_soft).child(axis("Mode", None, None)).child(
         div().flex_1().min_w_0().when(!narrow, |body| body.ml(px(8.0))).child(Segmented::new("library-modes", options, policy.as_str()).fill().on_change(move |value, _, cx| {
             send(json!({ "type": "task.set-policy", "taskId": task_id, "policy": value.to_string() }), cx);
         })),

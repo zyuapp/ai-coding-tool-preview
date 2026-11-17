@@ -111,6 +111,14 @@ impl TerminalHost {
             sessions.insert(terminal_id.to_owned(), session.clone());
             session
         };
+        // A shell cannot start in a folder that is gone: it exits 1, as a child failing its chdir does.
+        if !std::path::Path::new(cwd).is_dir() {
+            let mut update = TerminalUpdate::new(terminal_id);
+            update.status = Some(TerminalStatus::Exited);
+            update.exit_code = Some(1);
+            (self.inner.on_update)(update);
+            return;
+        }
         if let Err(error) = spawn(&session) {
             let mut update = TerminalUpdate::new(terminal_id);
             update.status = Some(TerminalStatus::Exited);
@@ -514,6 +522,15 @@ mod tests {
         assert!(data.starts_with("\r\n… 2 KB of output dropped\r\n"));
         assert!(data.ends_with(&"x".repeat(MAX_FLUSH_BYTES)));
         assert_eq!(group_thousands(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn a_missing_folder_exits_without_a_shell() {
+        let updates = Arc::new(Mutex::new(Vec::new()));
+        let seen = updates.clone();
+        let host = TerminalHost::new(move |update| seen.lock().push(update));
+        host.start("t1", "/nonexistent/act-terminal-missing");
+        assert!(updates.lock().iter().any(|update| update.status == Some(TerminalStatus::Exited) && update.exit_code == Some(1)));
     }
 
     #[test]

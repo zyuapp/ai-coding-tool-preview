@@ -1011,6 +1011,7 @@ impl RenderOnce for Segmented {
         group.children(self.options.into_iter().enumerate().map(|(index, option)| {
             let chosen = option.value == self.value;
             let tone = option.tone.map(|tone| t.tone(tone));
+            let danger = option.tone == Some(crate::theme::Tone::Danger);
             let mut segment = div()
                 .id(ElementId::NamedInteger("segment".into(), index as u64))
                 .skip_tab_stop()
@@ -1064,7 +1065,7 @@ impl RenderOnce for Segmented {
                         .pane(Pane::sheened(t.surface_menu_hover))
                         .shadow(t.shadow_thumb.box_shadows())
                         .rim(t.glass_rim, Corners::Radius(radius))
-                        .text_color(t.ink)
+                        .text_color(if danger { t.danger } else { t.ink })
                 } else {
                     let color = t.ink_dim;
                     segment.text_color(t.muted).hover(move |style| style.text_color(color))
@@ -1072,7 +1073,7 @@ impl RenderOnce for Segmented {
             }
             if let Some(icon) = option.icon {
                 let glyph = Icon::new(icon).size(px(option.icon_size));
-                segment = segment.child(if chosen && !pills { glyph.color(t.accent) } else { glyph });
+                segment = segment.child(if chosen && !pills { glyph.color(if danger { t.danger } else { t.accent }) } else { glyph });
             }
             segment = segment.child(option.label.clone());
             if chosen && ringed {

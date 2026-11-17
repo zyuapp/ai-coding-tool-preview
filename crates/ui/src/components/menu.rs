@@ -348,6 +348,9 @@ pub struct Menu {
     /// Opened from the window's frame (the sidebars), where too little stands behind it to blur.
     from_frame: bool,
     top_level: bool,
+    /// The pointer washes its own row and leaves the keyboard's where it is.
+    caret_holds: bool,
+    pointer_row: Option<usize>,
 }
 
 impl EventEmitter<DismissEvent> for Menu {}
@@ -404,6 +407,8 @@ impl Menu {
             searched_text_empty: true,
             from_frame: false,
             top_level: false,
+            caret_holds: false,
+            pointer_row: None,
         }
     }
 
@@ -434,6 +439,14 @@ impl Menu {
     /// glass while the sidebar shows an expanded control (ui/glass.css).
     pub fn top_level(mut self) -> Self {
         self.top_level = true;
+        self
+    }
+
+    /// Rows do not take the keyboard on hover, as in a plain menu surface (`MenuSurface`): the row
+    /// under the pointer and the keyboard's row, shown once keys move it, both wear the wash, and
+    /// Enter takes the keyboard's.
+    pub fn caret_holds(mut self) -> Self {
+        self.caret_holds = true;
         self
     }
 
@@ -760,6 +773,9 @@ impl Menu {
     fn highlight(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.active = Some(index);
         self.pointer_active = false;
+        if self.caret_holds {
+            crate::focus::show_rings(cx);
+        }
         window.focus(&self.focus);
         if let Some(child) = self.row_children.get(index) {
             self.scroll.scroll_to_item(*child);
@@ -869,6 +885,13 @@ impl Menu {
     }
 
     fn hover_row(&mut self, index: usize, hovered: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.caret_holds {
+            if hovered || self.pointer_row == Some(index) {
+                self.pointer_row = hovered.then_some(index);
+                cx.notify();
+            }
+            return;
+        }
         if !hovered {
             if self.active == Some(index) {
                 self.pointer_on_row = false;
@@ -915,8 +938,12 @@ impl Menu {
         let t = &theme.tokens;
         let m = &theme.metrics;
         let open = self.submenu.as_ref().is_some_and(|open| open.index == index);
-        let washed = !item.disabled
-            && (open || (self.active == Some(index) && (!self.pointer_active || self.pointer_on_row)) || (self.search_default(index)));
+        let caret = if self.caret_holds {
+            self.active == Some(index) && crate::focus::keyboard_focus_visible(cx)
+        } else {
+            self.active == Some(index) && (!self.pointer_active || self.pointer_on_row)
+        };
+        let washed = !item.disabled && (open || caret || self.pointer_row == Some(index) || self.search_default(index));
         let ink = if item.disabled {
             t.quiet
         } else if item.danger {

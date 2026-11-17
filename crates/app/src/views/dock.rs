@@ -570,7 +570,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 item.into()
             })
             .collect();
-        let menu = Menu::build(entries, Placement::Below { anchor, align: Align::End, gap: px(MENU_GAP) }, window, cx, |menu| menu.width(px(236.0)).highlighted(first).exempt(&probe));
+        let menu = Menu::build(entries, Placement::Below { anchor, align: Align::End, gap: px(MENU_GAP) }, window, cx, |menu| menu.width(px(236.0)).highlighted(first).caret_holds().exempt(&probe));
         root.menus.show(ADD_TAB_MENU, menu, cx);
     }));
     let head_height = if sheet { m.chrome_head - m.frame_gap } else { m.chrome_head };

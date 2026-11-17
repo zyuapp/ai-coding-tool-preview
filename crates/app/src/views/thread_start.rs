@@ -281,6 +281,7 @@ fn coordinator_toggle(state: &WorkspaceState, cx: &Context<Root>) -> AnyElement 
         .rounded(px(8.0))
         .border_1()
         .text_size(px(m.text_meta))
+        .line_height(gpui::relative(1.2))
         .font_weight(gpui::FontWeight(560.0))
         .cursor_pointer()
         .border_color(gpui::transparent_black())

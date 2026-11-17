@@ -63,6 +63,8 @@ pub struct DockState {
     resizer_focus: Option<FocusHandle>,
     /// The thread whose review the dock last held, while it holds one.
     diff_mounted: Option<String>,
+    /// The pointer is on the resize strip, which hangs outside the dock's own hover area.
+    resizer_hovered: bool,
     /// A tab was closed from the keyboard, so the strip takes the keyboard back once it redraws.
     refocus_tabs: bool,
     bodies: HashMap<String, FocusHandle>,
@@ -92,6 +94,7 @@ impl Default for DockState {
             track: 0.0,
             tab_focus: HashMap::new(),
             resizer_focus: None,
+            resizer_hovered: false,
             diff_mounted: None,
             refocus_tabs: false,
             bodies: HashMap::new(),
@@ -674,7 +677,6 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .when(sheet, |dock| dock.bg(t.sunken).rounded(px(m.page_radius)))
         .child(head)
         .child(body)
-        .when(!sheet, |dock| dock.child(div().absolute().top_0().bottom_0().left_0().w(px(1.0)).bg(t.line_glass)))
         // Glass over the dock frosts the dock and stands in for it, so its text leaves no sharp ghost.
         .when(!sheet && t.glass_blur, |dock| {
             dock.child(gpui::canvas(|_, _, _| {}, move |bounds, _, window, _| window.replace_under_backdrops(bounds)).absolute().top_0().left_0().size_full())
@@ -685,7 +687,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     if !expanded {
         outer = outer.child(resizer(root, sheet, window, cx));
     }
-    outer
+    // The dock's edge lies over the resizer's line, as `.right-dock::before` does.
+    outer.when(!sheet, |outer| outer.child(div().absolute().top_0().bottom_0().left_0().w(px(1.0)).bg(t.line_glass)))
 }
 
 /// Left and Right walk the tabs and Home and End jump to either end; Enter or Space selects the one
@@ -742,6 +745,7 @@ fn resizer(root: &mut Root, sheet: bool, window: &Window, cx: &mut Context<Root>
     let (right, workspace) = root.dock.workspace;
     let focus = root.dock.resizer_focus.get_or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
     let ring = focus.is_focused(window) && act_ui::focus::keyboard_focus_visible(cx);
+    let strip_hovered = root.dock.resizer_hovered;
     div()
         .id("right-dock-resizer")
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::Splitter, "Resize right panel"))
@@ -754,8 +758,14 @@ fn resizer(root: &mut Root, sheet: bool, window: &Window, cx: &mut Context<Root>
         .w(px(16.0))
         .occlude()
         .cursor_col_resize()
+        .on_hover(cx.listener(|root, hovered: &bool, _, cx| {
+            if root.dock.resizer_hovered != *hovered {
+                root.dock.resizer_hovered = *hovered;
+                cx.notify();
+            }
+        }))
         .child(div().absolute().top_0().bottom_0().left(px(seam - 1.0)).w(px(2.0)).bg(t.line_input).when(!ring, |line| line.invisible().group_hover("dock-resizer", |style| style.visible())))
-        .child(div().id("dock-grip").transition(gpui::Transition::ease(150)).absolute().top(relative(0.5)).mt(px(-16.0)).left(px(seam - 2.0)).w(px(4.0)).h(px(32.0)).rounded(px(2.0)).bg(t.line_input).when(!ring, |grip| grip.opacity(0.4).group_hover("right-dock-outer", |style| style.opacity(1.0))))
+        .child(div().id("dock-grip").transition(gpui::Transition::ease(150)).absolute().top(relative(0.5)).mt(px(-16.0)).left(px(seam - 2.0)).w(px(4.0)).h(px(32.0)).rounded(px(2.0)).bg(t.line_input).when(!ring && !strip_hovered, |grip| grip.opacity(0.4).group_hover("right-dock-outer", |style| style.opacity(1.0))))
         // Arrows move the edge 10px, 50px with Shift; Home and End take the width to its least and most; Enter resets it.
         .on_key_down(cx.listener(|root, event: &KeyDownEvent, _, cx| {
             let keys = &event.keystroke;

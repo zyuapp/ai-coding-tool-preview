@@ -65,6 +65,9 @@ pub type CopyButtonSlot = Rc<dyn Fn(CopyButtonRequest, &mut Window, &mut App) ->
 pub type FenceSlot =
     Rc<dyn Fn(FenceRequest, &mut Window, &mut App) -> Option<(AnyElement, SharedString)>>;
 
+/// Draws the host's tooltip zone filling its parent, given an id unique in the window and the hint.
+pub type LinkTipSlot = Rc<dyn Fn(ElementId, SharedString, &mut Window, &mut App) -> AnyElement>;
+
 /// Draws the host's scrollbar over a block that scrolls sideways, given the block's scroll handle.
 pub type ScrollbarSlot = Rc<dyn Fn(ElementId, &gpui::ScrollHandle, &mut Window, &mut App) -> AnyElement>;
 
@@ -105,6 +108,51 @@ pub(crate) struct CopyFeedback {
 pub(crate) type CopyHandler = Rc<dyn Fn(usize, SharedString, &mut Window, &mut App)>;
 
 pub(crate) const COPY_CONFIRM: Duration = Duration::from_millis(1400);
+
+/// The commit a web link opens instead when its words are only an inline code hash the checkout
+/// knows, as MarkdownCode draws a commit button inside the anchor.
+pub(crate) fn commit_in_link(
+    text: &InlineText,
+    link: usize,
+    known: Option<&dyn Fn(&str) -> bool>,
+) -> Option<String> {
+    let span = text.links.get(link)?;
+    if matches!(span.target, LinkTarget::Commit(_)) {
+        return None;
+    }
+    let code = text.text.get(span.range.clone())?;
+    let only_code = text
+        .spans
+        .iter()
+        .filter(|span| span.link == Some(link))
+        .all(|span| span.style.code);
+    (only_code && crate::links::is_commit_hash(code) && known.is_some_and(|known| known(code)))
+        .then(|| code.to_string())
+}
+
+/// What a link does when clicked: a web link around a known commit hash opens the commit.
+pub(crate) fn link_target(
+    text: &InlineText,
+    link: usize,
+    known: Option<&dyn Fn(&str) -> bool>,
+) -> Option<LinkTarget> {
+    match commit_in_link(text, link, known) {
+        Some(hash) => Some(LinkTarget::Commit(hash)),
+        None => text.links.get(link).map(|link| link.target.clone()),
+    }
+}
+
+/// The hint the pointer resting on a link shows: where a file link goes, or that a commit opens.
+pub(crate) fn link_tip(
+    text: &InlineText,
+    link: usize,
+    known: Option<&dyn Fn(&str) -> bool>,
+) -> Option<String> {
+    match link_target(text, link, known)? {
+        LinkTarget::Commit(hash) if !known.is_some_and(|known| known(&hash)) => None,
+        target => target.tooltip(),
+    }
+}
 
 pub(crate) struct Ctx<'a> {
     pub style: &'a MarkdownStyle,
@@ -514,20 +562,7 @@ impl<'a> Ctx<'a> {
                 if !self.known_commit.is_some_and(|known| known(hash)) {
                     return (base.clone(), None);
                 }
-                let color = if hovered {
-                    style.link_hover
-                } else {
-                    style.link
-                };
-                let line = if hovered { color } else { style.link_line };
-                (
-                    SpanPaint {
-                        color,
-                        underline: Some(line),
-                        strike: base.strike,
-                    },
-                    None,
-                )
+                (self.commit_paint(entry, link, base), None)
             }
             _ => {
                 let color = if hovered {
@@ -557,6 +592,22 @@ impl<'a> Ctx<'a> {
         }
     }
 
+    /// A known commit hash: link blue over a quiet line, both lit under the pointer (`.message-commit`).
+    fn commit_paint(&self, entry: usize, link: usize, base: &SpanPaint) -> SpanPaint {
+        let style = self.style;
+        let hovered = self.hovered == Some((entry, link));
+        let color = if hovered {
+            style.link_hover
+        } else {
+            style.link
+        };
+        SpanPaint {
+            color,
+            underline: Some(if hovered { color } else { style.link_line }),
+            strike: base.strike,
+        }
+    }
+
     /// Whether a link renders as a link: a commit hash only once the checkout knows it.
     fn link_live(&self, text: &InlineText, link: usize) -> bool {
         match &text.links[link].target {
@@ -570,7 +621,7 @@ impl<'a> Ctx<'a> {
         if !self.link_live(text, link) {
             return None;
         }
-        let (role, label, url) = match &text.links[link].target {
+        let (role, label, url) = match &link_target(text, link, self.known_commit)? {
             LinkTarget::Commit(hash) => (gpui::AccessRole::Button, Some(format!("View commit {hash}").into()), None),
             LinkTarget::Web(url) | LinkTarget::Other(url) => (gpui::AccessRole::Link, None, Some(SharedString::from(url.clone()))),
             LinkTarget::File(_) | LinkTarget::Thread(_) | LinkTarget::Image(_) => (gpui::AccessRole::Link, None, None),
@@ -612,18 +663,11 @@ impl<'a> Ctx<'a> {
                 strike: s.strike,
             };
             let paint = match span.link {
+                Some(link) if commit_in_link(text, link, self.known_commit).is_some() => {
+                    self.commit_paint(entry, link, &plain)
+                }
                 Some(link) if self.link_live(text, link) => {
-                    let mut paint = self.link_paint(entry, text, link, &plain).0;
-                    // A known commit hash inside a link is still drawn as a commit.
-                    let code = &text.text[span.range.clone()];
-                    if s.code
-                        && !matches!(text.links[link].target, LinkTarget::Commit(_))
-                        && crate::links::is_commit_hash(code)
-                        && self.known_commit.is_some_and(|known| known(code))
-                    {
-                        paint.color = style.link;
-                    }
-                    paint
+                    self.link_paint(entry, text, link, &plain).0
                 }
                 _ => plain,
             };
@@ -721,6 +765,7 @@ impl<'a> Ctx<'a> {
             links,
             access: self.next_access.take(),
             link_access: (0..text.links.len()).map(|link| self.link_access(text, link)).collect(),
+            link_tips: (0..text.links.len()).map(|link| link_tip(text, link, self.known_commit).map(SharedString::from)).collect(),
             link_keys: self.link_keys.clone().filter(|_| !text.links.is_empty()).map(|keys| (keys, entry)),
         };
         RichText::new(text.clone(), Rc::new(spec), paint).into_any_element()
@@ -1535,4 +1580,44 @@ fn glyph(asset: Option<SharedString>, kind: Glyph, color: Hsla) -> AnyElement {
     )
     .size(px(14.))
     .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::links::LinkCapabilities;
+    use crate::parse::{parse, ParseOptions};
+
+    fn first_inline(source: &str) -> InlineText {
+        let options = ParseOptions {
+            capabilities: LinkCapabilities {
+                open_commit: true,
+                ..LinkCapabilities::default()
+            },
+            has_message_id: false,
+        };
+        let mut found = None;
+        parse(source, options).visit_inlines(&mut |inline| {
+            if found.is_none() {
+                found = Some(InlineText {
+                    text: inline.text.clone(),
+                    spans: inline.spans.clone(),
+                    links: inline.links.clone(),
+                    ..InlineText::default()
+                });
+            }
+        });
+        found.expect("an inline")
+    }
+
+    #[test]
+    fn web_link_around_a_known_hash_opens_the_commit() {
+        let text = first_inline("[`a60b184`](https://github.com/o/r/commit/a60b184)");
+        let known: &dyn Fn(&str) -> bool = &|hash| hash == "a60b184";
+        let unknown: &dyn Fn(&str) -> bool = &|_| false;
+        assert_eq!(link_target(&text, 0, Some(known)), Some(LinkTarget::Commit("a60b184".into())));
+        assert!(matches!(link_target(&text, 0, Some(unknown)), Some(LinkTarget::Web(_))));
+        let words = first_inline("[see `a60b184`](https://github.com/o/r/commit/a60b184)");
+        assert!(matches!(link_target(&words, 0, Some(known)), Some(LinkTarget::Web(_))));
+    }
 }

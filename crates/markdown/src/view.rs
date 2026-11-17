@@ -138,6 +138,7 @@ pub struct MarkdownView {
     entries: Rc<RefCell<Vec<TextEntry>>>,
     known_commit: Option<KnownCommit>,
     copy_slot: Option<CopyButtonSlot>,
+    tip_slot: Option<crate::render::LinkTipSlot>,
     fence_slot: Option<FenceSlot>,
     scrollbar_slot: Option<crate::render::ScrollbarSlot>,
     feedback: Option<CopyFeedback>,
@@ -203,6 +204,7 @@ impl MarkdownView {
             entries: Rc::default(),
             known_commit: None,
             copy_slot: None,
+            tip_slot: None,
             fence_slot: None,
             scrollbar_slot: None,
             feedback: None,
@@ -329,6 +331,12 @@ impl MarkdownView {
             + 'static,
     ) {
         self.copy_slot = Some(Rc::new(slot));
+    }
+
+    /// Shows a link's hint (a file's path, "Open commit") with the host's tooltip: `slot` draws a
+    /// zone filling its parent that shows the hint while the pointer rests on it.
+    pub fn set_link_tip(&mut self, slot: impl Fn(ElementId, SharedString, &mut Window, &mut App) -> gpui::AnyElement + 'static) {
+        self.tip_slot = Some(Rc::new(slot));
     }
 
     /// Lets the host draw fenced blocks of its own languages, such as `mermaid` and `visual`.
@@ -872,10 +880,9 @@ impl MarkdownView {
                 && drag.granularity == Granularity::Character
         });
         if let Some(link) = clicked {
-            let target = entries
-                .get(link.0)
-                .and_then(|entry| entry.text.links.get(link.1))
-                .map(|link| link.target.clone());
+            let target = entries.get(link.0).and_then(|entry| {
+                crate::render::link_target(&entry.text, link.1, self.known_commit.as_deref())
+            });
             self.selection = None;
             if let Some(target) = target {
                 cx.emit(MarkdownEvent::Link(LinkEvent {
@@ -934,7 +941,12 @@ impl Render for MarkdownView {
             now,
             animate: self.animate && window.is_window_active(),
             highlights: self.highlights.clone(),
-            link_keys: Some(crate::layout::LinkKeys { focus: self.link_focus.clone(), activate: link_activate }),
+            link_keys: Some(crate::layout::LinkKeys {
+                focus: self.link_focus.clone(),
+                activate: link_activate,
+                tip: self.tip_slot.clone(),
+                tip_prefix: SharedString::from(format!("md-tip-{}", cx.entity_id())),
+            }),
             measure_until: Default::default(),
             asked_frame: Default::default(),
         });

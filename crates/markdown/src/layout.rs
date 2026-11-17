@@ -616,6 +616,8 @@ pub struct TextPaint {
     pub link_access: Vec<Option<LinkAccess>>,
     /// Makes each live link a stop the keyboard reaches and presses.
     pub link_keys: Option<(LinkKeys, usize)>,
+    /// By link index: the hint shown while the pointer rests on it.
+    pub link_tips: Vec<Option<SharedString>>,
 }
 
 /// Where a message keeps its links' keyboard focus, and what pressing one does.
@@ -624,6 +626,10 @@ pub struct LinkKeys {
     /// By text block and link index.
     pub focus: Rc<RefCell<std::collections::HashMap<(usize, usize), gpui::FocusHandle>>>,
     pub activate: Rc<dyn Fn(crate::links::LinkTarget, gpui::Modifiers, &mut App)>,
+    /// Draws the host's tooltip over a link, given an id unique in the window and its hint.
+    pub tip: Option<crate::render::LinkTipSlot>,
+    /// Starts the ids the tip zones take, so they differ between messages.
+    pub tip_prefix: SharedString,
 }
 
 impl std::fmt::Debug for LinkKeys {
@@ -1055,9 +1061,10 @@ impl RichText {
     }
 
     /// Each live link as a keyboard stop laid over its first line: Tab reaches it, Enter presses
-    /// it with the modifiers held, as a browser's link.
+    /// it with the modifiers held, as a browser's link. A link with a hint also takes the host's
+    /// tooltip over each of its lines.
     fn link_stops(&self, window: &mut Window, cx: &mut App) -> Vec<gpui::AnyElement> {
-        use gpui::{InteractiveElement, Styled};
+        use gpui::{InteractiveElement, ParentElement, Styled};
         let Some((keys, entry)) = self.paint.link_keys.clone() else { return Vec::new() };
         let mut stops = Vec::new();
         for (link, span) in self.text.links.iter().enumerate() {
@@ -1070,6 +1077,22 @@ impl RichText {
             let focus = keys.focus.borrow_mut().entry((entry, link)).or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
             let target = span.target.clone();
             let activate = keys.activate.clone();
+            if let (Some(slot), Some(Some(tip))) = (&keys.tip, self.paint.link_tips.get(link)) {
+                // The link's own boxes, as the anchor measures them, from its glyph on.
+                let mut rects = range_text_rects(&self.text, span.range.clone()).unwrap_or_default();
+                let glyph = self.text.boxes.iter().position(|item| item.link == Some(link) && matches!(item.kind, BoxKind::Glyph(_)));
+                if let (Some(first), Some(width)) = (rects.first_mut(), glyph.and_then(|index| self.spec.box_widths.get(index))) {
+                    first.origin.x -= *width;
+                    first.size.width += *width;
+                }
+                for (index, rect) in rects.into_iter().filter(|rect| rect.size.width > px(0.)).enumerate() {
+                    let id = ElementId::Name(format!("{}-{entry}-{link}-{index}", keys.tip_prefix).into());
+                    let mut zone = gpui::div().w(rect.size.width).h(rect.size.height).child(slot(id, tip.clone(), window, cx)).into_any_element();
+                    zone.layout_as_root(rect.size.into(), window, cx);
+                    zone.prepaint_at(rect.origin, window, cx);
+                    stops.push(zone);
+                }
+            }
             let mut stop = gpui::div()
                 .track_focus(&focus)
                 .focus_ring(true)

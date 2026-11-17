@@ -7,7 +7,7 @@ use act_core::AppCommand;
 use act_markdown::{LinkAction, LinkCapabilities, LinkEvent, LinkTarget, MarkdownEvent, MarkdownStyle, MarkdownView};
 use act_ui::theme::{ActiveTheme, Theme};
 use act_ui::tooltip::Tippable;
-use gpui::{px, App, ElementId, Entity, Hsla, IntoElement, Window};
+use gpui::{px, App, ElementId, Entity, Hsla, InteractiveElement, IntoElement, Styled, Window};
 
 use crate::effects::window_desktop;
 use crate::workspace::dispatch;
@@ -92,6 +92,7 @@ pub fn message_view(id: impl Into<ElementId>, text: &str, streaming: bool, varia
         view.set_has_message_id(images.is_some(), cx);
         view.set_fence_renderer(fence);
         view.set_copy_button(super::timeline_row::block_copy_button);
+        view.set_link_tip(|id, tip, _, _| gpui::div().id(id).size_full().tip(tip).into_any_element());
         view.set_scrollbar_renderer(|id, handle, _, _| act_ui::components::scrollbar::Scrollbar::horizontal(id, handle).into_any_element());
         view
     });

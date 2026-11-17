@@ -52,9 +52,14 @@ fn field(slot: &mut Option<Field>, key: String, text: &str, placeholder: &str, f
         on_event(root, &input, event, cx);
         cx.notify();
     });
+    // A dialog's first draw gives the field the keyboard (`initial_focus`), after noting the
+    // control that opened it; a field made again while the dialog is open takes it here.
     if focus {
+        let reopened = slot.is_some();
         input.update(cx, |input, cx| {
-            input.focus(window);
+            if reopened {
+                input.focus(window);
+            }
             input.select_all_text(cx);
         });
     }

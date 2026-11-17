@@ -34,6 +34,27 @@ struct DialogState {
     focused_once: bool,
 }
 
+/// The layer's state, made on its first draw. When the layer leaves the tree, the keyboard goes
+/// back to what held it before, unless something else took it meanwhile.
+fn modal_state(id: ElementId, window: &mut Window, cx: &mut App) -> gpui::Entity<DialogState> {
+    window.use_keyed_state(id, cx, |window, cx| {
+        let opener = window.focused(cx);
+        let handle = window.window_handle();
+        cx.on_release(move |_, cx| {
+            let Some(opener) = opener else { return };
+            cx.defer(move |cx| {
+                let _ = handle.update(cx, |_, window, cx| {
+                    if window.focus_stranded(cx) {
+                        window.focus(&opener);
+                    }
+                });
+            });
+        })
+        .detach();
+        DialogState { focus: cx.focus_handle(), focused_once: false }
+    })
+}
+
 /// Covers the window. A modal is drawn in the normal tree, not deferred, so the menus it opens
 /// (which are deferred) can draw over it; the root draws it last, after everything it covers.
 fn layer(window: &Window, child: impl IntoElement) -> impl IntoElement {
@@ -131,7 +152,7 @@ pub fn dialog_paragraph(text: impl Into<SharedString>, cx: &App) -> gpui::Div {
 
 impl RenderOnce for Dialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window.use_keyed_state(self.id.clone(), cx, |_, cx| DialogState { focus: cx.focus_handle(), focused_once: false });
+        let state = modal_state(self.id.clone(), window, cx);
         let focus = state.read(cx).focus.clone();
         if !state.read(cx).focused_once {
             match &self.initial_focus {
@@ -262,7 +283,7 @@ impl ParentElement for Viewer {
 
 impl RenderOnce for Viewer {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window.use_keyed_state(self.id.clone(), cx, |_, cx| DialogState { focus: cx.focus_handle(), focused_once: false });
+        let state = modal_state(self.id.clone(), window, cx);
         let focus = state.read(cx).focus.clone();
         if !state.read(cx).focused_once {
             window.focus(&focus);

@@ -63,7 +63,7 @@ fn field(slot: &mut Option<Field>, key: String, text: &str, placeholder: &str, f
 }
 
 fn cancel_focus(root: &mut Root, cx: &mut Context<Root>) -> FocusHandle {
-    root.dialogs.cancel.get_or_insert_with(|| cx.focus_handle()).clone()
+    root.dialogs.cancel.get_or_insert_with(|| cx.focus_handle().tab_stop(true)).clone()
 }
 
 fn close(command: AppCommand) -> impl Fn(&mut Window, &mut gpui::App) + 'static {
@@ -512,7 +512,7 @@ fn worktree_move(root: &mut Root, view: &WorktreeMoveView, cx: &mut Context<Root
         .child(div().mb(px(22.0)).child(icon(IconName::MoveRight, 22.0, t.quiet)))
         .child(place(to, true));
     let worktree = view.worktree;
-    let confirm = root.dialogs.confirm.get_or_insert_with(|| cx.focus_handle()).clone();
+    let confirm = root.dialogs.confirm.get_or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
     let title = if worktree { "Give this thread a worktree?" } else { "Return this thread to your project checkout?" };
     Dialog::new("worktree-move", close(AppCommand::MoveWorktree { worktree: None }))
         .width(px(438.0))

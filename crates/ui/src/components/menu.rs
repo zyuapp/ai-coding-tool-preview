@@ -729,6 +729,7 @@ impl Menu {
 
     fn close_submenu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.submenu.take().is_some() {
+            self.pointer_active = false;
             window.focus(&self.focus);
             cx.notify();
         }
@@ -805,8 +806,19 @@ impl Menu {
                 return;
             }
         }
+        // A searchable panel steps back to its parent; an item submenu closes the whole stack.
+        if self.search_config.is_some() {
+            if let Some(parent) = self.parent.as_ref().and_then(|parent| parent.upgrade()) {
+                parent.update(cx, |parent, cx| parent.close_submenu(window, cx));
+                return;
+            }
+        }
+        self.dismiss_stack(window, cx);
+    }
+
+    fn dismiss_stack(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(parent) = self.parent.as_ref().and_then(|parent| parent.upgrade()) {
-            parent.update(cx, |parent, cx| parent.close_submenu(window, cx));
+            parent.update(cx, |parent, cx| parent.dismiss_stack(window, cx));
             return;
         }
         self.give_back_focus(window);

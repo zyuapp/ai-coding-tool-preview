@@ -318,6 +318,8 @@ pub struct SidebarState {
     pub active_probe: BoundsCell,
     /// Each row's place in the keyboard's tab order.
     pub row_focus: HashMap<String, gpui::FocusHandle>,
+    /// The row a rename ended by a key hands focus back to once it is drawn again.
+    pub refocus_row: Option<String>,
     /// The row the keyboard is on, measured each frame, under which its menu opens from the keyboard.
     pub focused_probe: BoundsCell,
     /// The row under the pointer, whose rail widens to its actions.
@@ -340,7 +342,7 @@ pub struct SidebarState {
 
 impl Default for SidebarState {
     fn default() -> Self {
-        SidebarState { scroll: ScrollHandle::new(), filter_probe: bounds_cell(), computer_probe: bounds_cell(), width: None, floating: None, folded: false, followed: None, resizer_focus: None, active_probe: bounds_cell(), row_focus: HashMap::new(), focused_probe: bounds_cell(), hovered_row: None, computer_focus: None, filter_focus: None, row_height: Rc::default(), list_tops: HashMap::new(), drawn: Vec::new(), model: None, shown: None, slide_start: None }
+        SidebarState { scroll: ScrollHandle::new(), filter_probe: bounds_cell(), computer_probe: bounds_cell(), width: None, floating: None, folded: false, followed: None, resizer_focus: None, active_probe: bounds_cell(), row_focus: HashMap::new(), refocus_row: None, focused_probe: bounds_cell(), hovered_row: None, computer_focus: None, filter_focus: None, row_height: Rc::default(), list_tops: HashMap::new(), drawn: Vec::new(), model: None, shown: None, slide_start: None }
     }
 }
 

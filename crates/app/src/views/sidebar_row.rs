@@ -281,6 +281,10 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     let marks_count = marks.len();
 
     let focus = root.sidebar.row_focus.entry(thread.id.clone()).or_insert_with(|| cx.focus_handle().tab_stop(true)).clone();
+    if !editing && root.sidebar.refocus_row.as_deref() == Some(thread.id.as_str()) {
+        root.sidebar.refocus_row = None;
+        _window.focus(&focus);
+    }
     let focus_ring = focus.is_focused(_window) && act_ui::focus::keyboard_focus_visible(cx);
     // The row's own buttons show while the keyboard is on them too, as `:focus-within` shows them.
     let more_focus = _window.use_keyed_state(SharedString::from(format!("{}-more-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();

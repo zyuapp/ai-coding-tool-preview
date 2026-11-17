@@ -246,8 +246,12 @@ impl Root {
                 } else {
                     dispatch(AppCommand::TaskRename { task_id: id.clone(), title }, cx);
                 }
-                if matches!(event, InputEvent::Submit) && root.renaming_heading.is_some() {
-                    root.topbar.refocus_title = true;
+                if matches!(event, InputEvent::Submit) {
+                    if root.renaming_heading.is_some() {
+                        root.topbar.refocus_title = true;
+                    } else {
+                        root.sidebar.refocus_row = root.renaming.clone();
+                    }
                     act_ui::focus::show_rings(cx);
                 }
                 root.stop_rename(cx);
@@ -300,8 +304,10 @@ impl Root {
                 if event.keystroke.key == "escape" {
                     if heading {
                         root.topbar.refocus_title = true;
-                        act_ui::focus::note_keystroke(&event.keystroke, window, cx);
+                    } else {
+                        root.sidebar.refocus_row = root.renaming.clone();
                     }
+                    act_ui::focus::note_keystroke(&event.keystroke, window, cx);
                     root.rename_input = None;
                     root.stop_rename(cx);
                     cx.stop_propagation();

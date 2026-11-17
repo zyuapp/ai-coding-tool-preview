@@ -442,7 +442,7 @@ impl Element for TextInputElement {
         let shows_caret = selection.is_empty() && !input.is_disabled() && input.focus_handle.is_focused(window) && window.is_window_active();
         let caret_view = input.caret();
 
-        let scroll = self.input.update(cx, |input, _| input.settle_scroll(&layout, bounds.size));
+        let scroll = self.input.update(cx, |input, _| input.settle_scroll(&layout, bounds.size, (font_size * 1.2).min(line_height)));
         layout.origin = bounds.origin - scroll;
         layout.visible = bounds;
         let shown = self.input.read(cx).shown_bounds(bounds);

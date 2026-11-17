@@ -186,6 +186,8 @@ pub struct TextInput {
     /// field, which its text scrolls through.
     bleed: (Pixels, Pixels),
     scroll_to_cursor: bool,
+    /// The caret got there by moving rather than by an edit, so a caret out of sight is centred.
+    caret_moved: bool,
     selecting: bool,
     /// Whether a drag extends by word or by line, after a double or triple click.
     drag_unit: DragUnit,
@@ -233,6 +235,7 @@ impl TextInput {
             scroll: ScrollModel::default(),
             bleed: (Pixels::ZERO, Pixels::ZERO),
             scroll_to_cursor: false,
+            caret_moved: false,
             selecting: false,
             drag_unit: DragUnit::Char,
             drag_origin: 0..0,
@@ -433,6 +436,7 @@ impl TextInput {
     fn edited(&mut self, cx: &mut Context<Self>) {
         self.goal_x = None;
         self.scroll_to_cursor = true;
+        self.caret_moved = false;
         self.show_cursor(cx);
         cx.emit(InputEvent::Changed);
         cx.notify();
@@ -440,6 +444,7 @@ impl TextInput {
 
     fn moved(&mut self, cx: &mut Context<Self>) {
         self.scroll_to_cursor = true;
+        self.caret_moved = true;
         self.show_cursor(cx);
         cx.notify();
     }
@@ -511,20 +516,17 @@ impl TextInput {
         self.layout = Some(layout);
     }
 
-    /// Keeps the caret inside the visible area after it moved, given the area's size.
-    pub(crate) fn settle_scroll(&mut self, layout: &InputLayout, visible: gpui::Size<Pixels>) -> Point<Pixels> {
+    /// Keeps the caret inside the visible area after it moved, given the area's size and the
+    /// caret's height.
+    pub(crate) fn settle_scroll(&mut self, layout: &InputLayout, visible: gpui::Size<Pixels>, caret_height: Pixels) -> Point<Pixels> {
         let content = layout.content_size();
         let mut scroll = self.scroll.scrolled();
         if self.scroll_to_cursor {
             self.scroll_to_cursor = false;
             let caret = layout.position_for_offset(self.buffer.cursor());
-            let line_height = layout.line_height();
             if self.multiline {
-                if caret.y < scroll.y {
-                    scroll.y = caret.y;
-                } else if caret.y + line_height > scroll.y + visible.height {
-                    scroll.y = caret.y + line_height - visible.height;
-                }
+                let caret_top = caret.y + (layout.line_height() - caret_height) / 2.0;
+                scroll.y = reveal_caret(scroll.y, caret_top, caret_height, visible.height, self.bleed, self.caret_moved);
             } else {
                 let margin = gpui::px(1.0);
                 if caret.x < scroll.x {
@@ -1132,5 +1134,46 @@ impl gpui::Render for TextInput {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
             .child(element::TextInputElement::new(cx.entity()))
+    }
+}
+
+/// The scroll that shows a multiline field's caret box, as Chromium reveals it: within the bleed,
+/// to the nearest edge, except that a move leaving the caret wholly out of sight centres it.
+fn reveal_caret(scroll: Pixels, caret_top: Pixels, caret_height: Pixels, visible: Pixels, (above, below): (Pixels, Pixels), centre_hidden: bool) -> Pixels {
+    let caret_bottom = caret_top + caret_height;
+    let shown_top = scroll - above;
+    let shown_bottom = scroll + visible + below;
+    let revealed = if centre_hidden && (caret_bottom <= shown_top || caret_top >= shown_bottom) {
+        caret_top + caret_height / 2.0 + above - (above + visible + below) / 2.0
+    } else if caret_top < shown_top {
+        caret_top + above
+    } else if caret_bottom > shown_bottom {
+        caret_bottom - visible - below
+    } else {
+        scroll
+    };
+    revealed.floor()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reveal_caret;
+    use gpui::px;
+
+    /// A 17px prompt on 25.5px lines, 380px tall, with 15px and 5px of bleed, as in the composer.
+    fn reveal(scroll: f32, row: f32, moved: bool) -> f32 {
+        let caret_height = 17.0 * 1.2;
+        f32::from(reveal_caret(px(scroll), px(row * 25.5 + (25.5 - caret_height) / 2.0), px(caret_height), px(380.0), (px(15.0), px(5.0)), moved))
+    }
+
+    #[test]
+    fn caret_reveal_matches_chromium() {
+        // Typing onto a new last line scrolls only far enough to show the caret.
+        assert_eq!(reveal(249.0, 25.0, false), 275.0);
+        // A caret already in sight stays put.
+        assert_eq!(reveal(275.0, 24.0, true), 275.0);
+        // Moving up onto a half-hidden line takes it to the top edge; past it, the line is centred.
+        assert_eq!(reveal(275.0, 10.0, true), 272.0);
+        assert_eq!(reveal(272.0, 9.0, true), 57.0);
     }
 }

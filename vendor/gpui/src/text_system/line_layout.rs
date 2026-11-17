@@ -204,7 +204,7 @@ impl LineLayout {
 /// Where a line may break in `text`, as the byte offsets of the characters a new line may start with,
 /// as Blink decides: after a run of spaces, by its ASCII table between two printable ASCII
 /// characters, and by UAX #14 otherwise.
-fn break_opportunities(text: &str) -> Vec<usize> {
+pub fn break_opportunities(text: &str) -> Vec<usize> {
     let unicode: Vec<usize> = unicode_linebreak::linebreaks(text).map(|(index, _)| index).collect();
     let mut opportunities = Vec::new();
     let mut before_previous = '\0';

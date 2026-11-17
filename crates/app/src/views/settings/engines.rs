@@ -52,7 +52,7 @@ pub fn render(state: &WorkspaceState, marks: &Marks, window: &mut Window, cx: &m
             row.action(Button::new(SharedString::from(format!("sign-in-{engine:?}")), "Sign in").name(format!("Sign in to {}", engine_label(engine))).on_click(move |_, _, cx| dispatch(AppCommand::EngineSignIn { engine }, cx)))
         } else if update.as_ref().is_some_and(|update| update.command.is_some()) {
             row.action(
-                spinning_button(format!("update-{engine:?}"), if updating { "Updating…" } else { "Update" }, IconName::RefreshCw, updating)
+                (if updating { spinning_button(format!("update-{engine:?}"), "Updating…", IconName::RefreshCw, true) } else { Button::new(SharedString::from(format!("update-{engine:?}")), "Update") })
                     .name(format!("{} {}", if updating { "Updating" } else { "Update" }, engine_label(engine)))
                     .disabled(state.engine_updating.is_some() || checking)
                     .on_click(move |_, _, cx| dispatch(AppCommand::EngineUpdate { engine, computer_id: None }, cx)),

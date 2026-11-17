@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn app_keeps_its_shortcuts_and_the_page_gets_the_rest() {
         let shortcuts = AppShortcuts::default();
-        let wants = |stroke: &str| shortcuts.wants_keystroke(&gpui::Keystroke::parse(stroke).unwrap());
+        let wants = |stroke: &'static str| shortcuts.wants_keystroke(&gpui::Keystroke::parse(stroke).unwrap());
         assert!(wants("ctrl-b"));
         assert!(wants("ctrl-l"));
         assert!(!wants("ctrl-a"));

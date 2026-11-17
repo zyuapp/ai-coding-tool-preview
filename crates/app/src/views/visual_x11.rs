@@ -227,7 +227,7 @@ impl ClipView {
                 if inside {
                     // After the rows under it have handled the press, which may take focus themselves.
                     let focus = focus.clone();
-                    window.defer(cx, move |window, _| window.focus(&focus, cx));
+                    window.defer(cx, move |window, cx| window.focus(&focus, cx));
                     painted.pressed.set(true);
                     painted.offscreen.input(&pointer(PointerKind::Down, event.position, button_of(event.button), event.modifiers));
                 }
@@ -272,7 +272,7 @@ impl ClipView {
                 let parent = parent.clone();
                 view.connect_button_press_event(move |view, _| {
                     if let Some(window) = view.window().and_then(|window| act_browser::linux::embed::xid(&window)) {
-                        parent.focus(window, cx);
+                        parent.focus(window);
                     }
                     view.grab_focus();
                     gtk::glib::Propagation::Proceed

@@ -512,8 +512,9 @@ fn transcript(root: &mut Root, view: &DockConversationView, empty: Empty, window
             .flex()
             .items_center()
             .justify_center()
-            .px(px(40.0))
-            .pb(px(f32::from(window.viewport_size().height) * 0.07))
+            .pt(px(30.0))
+            .px(px(22.0))
+            .pb(px(34.0 + f32::from(window.viewport_size().height) * 0.07))
             .child(
                 div()
                     .flex()

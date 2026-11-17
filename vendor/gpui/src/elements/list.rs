@@ -75,6 +75,8 @@ struct StateInner {
     anchor: Option<ScrollAnchor>,
     /// What heights learned off screen above the scroll top added, applied when it next lays out.
     pending_shift: Option<(usize, Pixels)>,
+    /// Whether items stack by their heights rounded to whole pixels (`ListState::whole_pixel_items`).
+    whole_pixel_items: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -323,6 +325,7 @@ impl ListState {
             measuring_behavior: ListMeasuringBehavior::default(),
             anchor: None,
             pending_shift: None,
+            whole_pixel_items: false,
         })));
         this.splice(0..0, item_count);
         this
@@ -333,6 +336,13 @@ impl ListState {
     /// This is useful for ensuring that the scrollbar size is correct instead of based on only rendered elements.
     pub fn measure_all(self) -> Self {
         self.0.borrow_mut().measuring_behavior = ListMeasuringBehavior::Measure(false);
+        self
+    }
+
+    /// Stacks items by their heights rounded to whole pixels, as a virtualizer that places rows from
+    /// rounded measurements (`Math.round` of each border box) does.
+    pub fn whole_pixel_items(self) -> Self {
+        self.0.borrow_mut().whole_pixel_items = true;
         self
     }
 
@@ -716,6 +726,7 @@ impl StateInner {
         window: &mut Window,
         cx: &mut App,
     ) {
+        let whole = self.whole_pixel_items;
         match &mut self.measuring_behavior {
             ListMeasuringBehavior::Visible => {
                 return;
@@ -739,7 +750,7 @@ impl StateInner {
         for (ix, item) in cursor.enumerate() {
             let size = item.size().unwrap_or_else(|| {
                 let mut element = render_item(ix, window, cx);
-                element.layout_as_root(available_item_space, window, cx)
+                item_size(element.layout_as_root(available_item_space, window, cx), whole)
             });
 
             measured_items.push(ListItem::Measured {
@@ -760,6 +771,7 @@ impl StateInner {
         window: &mut Window,
         cx: &mut App,
     ) -> LayoutItemsResponse {
+        let whole = self.whole_pixel_items;
         let old_items = self.items.clone();
         let mut measured_items = VecDeque::new();
         let mut item_layouts = VecDeque::new();
@@ -792,7 +804,7 @@ impl StateInner {
             if visible_height < available_height || size.is_none() {
                 let item_index = scroll_top.item_ix + ix;
                 let mut element = render_item(item_index, window, cx);
-                let element_size = element.layout_as_root(available_item_space, window, cx);
+                let element_size = item_size(element.layout_as_root(available_item_space, window, cx), whole);
                 size = Some(element_size);
                 if visible_height < available_height {
                     item_layouts.push_back(ItemLayout {
@@ -827,7 +839,7 @@ impl StateInner {
                 if let Some(item) = cursor.item() {
                     let item_index = cursor.start().0;
                     let mut element = render_item(item_index, window, cx);
-                    let element_size = element.layout_as_root(available_item_space, window, cx);
+                    let element_size = item_size(element.layout_as_root(available_item_space, window, cx), whole);
                     let focus_handle = item.focus_handle();
                     rendered_height += element_size.height;
                     measured_items.push_front(ListItem::Measured {
@@ -876,7 +888,7 @@ impl StateInner {
                     *size
                 } else {
                     let mut element = render_item(cursor.start().0, window, cx);
-                    element.layout_as_root(available_item_space, window, cx)
+                    item_size(element.layout_as_root(available_item_space, window, cx), whole)
                 };
 
                 leading_overdraw += size.height;
@@ -909,7 +921,7 @@ impl StateInner {
                 if item.contains_focused(window, cx) {
                     let item_index = cursor.start().0;
                     let mut element = render_item(cursor.start().0, window, cx);
-                    let size = element.layout_as_root(available_item_space, window, cx);
+                    let size = item_size(element.layout_as_root(available_item_space, window, cx), whole);
                     item_layouts.push_back(ItemLayout {
                         index: item_index,
                         element,
@@ -939,6 +951,7 @@ impl StateInner {
         window: &mut Window,
         cx: &mut App,
     ) -> Result<(LayoutItemsResponse, ListAnchorFrame), Retry> {
+        let whole = self.whole_pixel_items;
         window.transact(|window| {
             match self.measuring_behavior {
                 ListMeasuringBehavior::Measure(has_measured) if !has_measured => {
@@ -978,6 +991,10 @@ impl StateInner {
             if bounds.size.height > padding.top + padding.bottom {
                 let mut item_origin = bounds.origin + Point::new(px(0.), padding.top);
                 item_origin.y -= layout_response.scroll_top.offset_in_item;
+                // The list scrolls by whole device pixels, as Chromium snaps `scrollTop`.
+                let scrolled = self.scroll_top(&layout_response.scroll_top);
+                let scale = window.scale_factor();
+                item_origin.y += scrolled - Pixels((scrolled.0 * scale).round() / scale);
                 for item in &mut layout_response.item_layouts {
                     if let Some(frame) = window.list_anchors.last_mut() {
                         frame.item_ix = item.index;
@@ -1014,7 +1031,7 @@ impl StateInner {
                                     let mut item = render_item(cursor.start().0, window, cx);
                                     let item_available_size =
                                         size(bounds.size.width.into(), AvailableSpace::MinContent);
-                                    item.layout_as_root(item_available_size, window, cx)
+                                    item_size(item.layout_as_root(item_available_size, window, cx), whole)
                                 });
                                 height -= size.height;
                             }
@@ -1390,6 +1407,11 @@ impl sum_tree::SeekTarget<'_, ListItemSummary, ListItemSummary> for Height {
     }
 }
 
+/// An item's measured size, its height rounded to whole pixels when the list stacks items that way.
+fn item_size(size: Size<Pixels>, whole: bool) -> Size<Pixels> {
+    if whole { Size { width: size.width, height: size.height.round() } } else { size }
+}
+
 #[cfg(test)]
 mod test {
 
@@ -1581,6 +1603,22 @@ mod test {
         state.scroll_to(ListOffset { item_ix: 0, offset_in_item: px(0.) });
         cx.draw(point(px(0.), px(0.)), size(px(100.), px(30.)), |_, cx| cx.new(|_| TestView(state.clone())));
         assert_eq!(state.logical_scroll_top().item_ix, 0);
+    }
+
+    #[gpui::test]
+    fn whole_pixel_items_stack_by_their_rounded_heights(cx: &mut TestAppContext) {
+        use crate::{AppContext, Context, Element, IntoElement, ListState, Render, Styled, Window, div, list, point, px, size};
+        let cx = cx.add_empty_window();
+        let state = ListState::new(5, crate::ListAlignment::Top, px(10.)).measure_all().whole_pixel_items();
+        struct TestView(ListState);
+        impl Render for TestView {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                list(self.0.clone(), |_, _, _| div().h(px(10.4)).w_full().into_any()).w_full().h_full()
+            }
+        }
+        cx.draw(point(px(0.), px(0.)), size(px(100.), px(20.)), |_, cx| cx.new(|_| TestView(state.clone())));
+        // Five rows 10.4 tall stack 10 apart: 50 under a 20 tall viewport.
+        assert_eq!(state.scroll_max(), px(30.));
     }
 
     #[gpui::test]

@@ -136,7 +136,8 @@ impl ConversationState {
     }
 
     pub fn new() -> ConversationState {
-        let list = ListState::new(0, ListAlignment::Top, px(1200.0));
+        // The timeline places rows by their rounded heights, as its virtualizer measures them.
+        let list = ListState::new(0, ListAlignment::Top, px(1200.0)).whole_pixel_items();
         let view = Rc::new(RefCell::new(View::Foot));
         let at_foot = Rc::new(Cell::new(true));
         let moved_at = Rc::new(Cell::new(None));

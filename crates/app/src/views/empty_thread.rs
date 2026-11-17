@@ -71,7 +71,9 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     }
     let column = |child: gpui::AnyElement| div().w_full().pl(px(inset)).pr(px(inset + side)).flex().justify_center().child(child);
     let question = if state.restored { format!("What should {} work on?", engine_label(engine)) } else { "Loading threads…".into() };
+    // After the session card, as the composer and recents follow it in the page.
     div()
+        .tab_order(1)
         .size_full()
         .flex()
         .flex_col()

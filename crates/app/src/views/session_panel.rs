@@ -281,7 +281,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .elevation(&t.shadow_composer)
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::Complementary, "Session panel"))
         .child(div().id("session-panel").max_h(px(600.0)).overflow_y_scroll().rounded(px(12.0)).child(card))
-        .edge(t.glass_edge, Corners::Radius(12.0))
+        .edge(Corners::Radius(12.0))
         .rim(t.glass_rim, Corners::Radius(12.0))
         .child(super::common::seen_by_backdrops())
 }

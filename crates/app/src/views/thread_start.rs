@@ -404,12 +404,12 @@ fn tray(content: gpui::Div, cx: &mut Context<Root>) -> AnyElement {
         .pane(t.glass)
         .glass_backdrop(&t)
         .shadow({
-            // `.glass-pane::before`'s dark hairline outside the edge.
+            // `.glass-pane::before`'s dark hairline outside the edge, over its shadow.
             let mut shadows = t.shadow_float.box_shadows();
-            shadows.insert(0, act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
+            shadows.push(act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
             shadows
         })
-        .edged_rim(t.glass_edge, t.glass_rim, Corners::Radius(17.0))
+        .edged_rim(t.glass_rim, t.shadow_float.glint.then_some(t.glint), Corners::Radius(17.0))
         .child(content)
         .into_any_element()
 }

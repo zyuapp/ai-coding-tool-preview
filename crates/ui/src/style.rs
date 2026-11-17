@@ -55,18 +55,28 @@ pub trait Raised: ParentElement + Sized {
     }
 
     /// A glass pane's 1px edge (`.glass-pane::before`), drawn inside the box without taking room from its content.
-    fn edge(self, color: Rgba, corners: Corners) -> Self {
-        self.child(overlay(corners).border_1().border_color(color))
+    fn edge(self, corners: Corners) -> Self {
+        self.child(glass_edge(corners, EdgeOrigin::BorderBox))
     }
 
     /// A glass pane's edge with its rim inside it, as the pane's inset shadows sit within its border.
-    fn edged_rim(self, edge: Rgba, rim: Rim, corners: Corners) -> Self {
+    /// `glint` is a `--glass-pane-shadow` glint, drawn there under the rim.
+    fn edged_rim(self, rim: Rim, glint: Option<Rgba>, corners: Corners) -> Self {
         let inner = match corners {
             Corners::Radius(radius) => Corners::Radius((radius - 1.0).max(0.0)),
             Corners::Full => Corners::Full,
         };
-        let inside = inner.apply(div().absolute().top(px(1.0)).left(px(1.0)).right(px(1.0)).bottom(px(1.0))).children(rim_layers(rim, inner));
-        self.edge(edge, corners).child(inside)
+        let inside = inner
+            .apply(div().absolute().top(px(1.0)).left(px(1.0)).right(px(1.0)).bottom(px(1.0)))
+            .children(glint.map(|color| glint_layer(color, inner)))
+            .children(rim_layers(rim, inner));
+        self.edge(corners).child(inside)
+    }
+
+    /// `.glass-pane`: the pane as a layer under the element's content, edged and rimmed. `glint` is
+    /// the element's own shadow's glint, which the pane's glass covers.
+    fn glass_pane(self, pane: Pane, rim: Rim, glint: Option<Rgba>, corners: Corners) -> Self {
+        self.children(glint.map(|color| glint_layer(color, corners))).child(overlay(corners).pane(pane)).edged_rim(rim, None, corners)
     }
 
     /// An elevation's glint, if it has one.
@@ -80,6 +90,116 @@ pub trait Raised: ParentElement + Sized {
 }
 
 impl<T: ParentElement + Sized> Raised for T {}
+
+/// `--glass-edge`: the white a float's 1px edge catches at each angle of a conic gradient from its
+/// centre, brightest toward the top-left and again toward the bottom-right.
+const GLASS_EDGE: [(f32, f32); 9] = [(0.0, 0.05), (60.0, 0.01), (100.0, 0.02), (140.0, 0.08), (185.0, 0.01), (225.0, 0.004), (280.0, 0.03), (315.0, 0.15), (360.0, 0.05)];
+
+/// The edge's alpha at an offset from the gradient's centre; 0deg points up and angles run clockwise.
+fn glass_edge_alpha(dx: f32, dy: f32) -> f32 {
+    let angle = dx.atan2(-dy).to_degrees().rem_euclid(360.0);
+    GLASS_EDGE
+        .windows(2)
+        .find(|pair| angle <= pair[1].0)
+        .map(|pair| pair[0].1 + (pair[1].1 - pair[0].1) * (angle - pair[0].0) / (pair[1].0 - pair[0].0))
+        .unwrap_or(GLASS_EDGE[0].1)
+}
+
+/// Where the edge's gradient is laid out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EdgeOrigin {
+    /// A float's background: the gradient fills the padding box and repeats into the border, so
+    /// each side of the edge shows the light of the side across from it.
+    PaddingBox,
+    /// `.glass-pane::before`: the gradient spans the border box.
+    BorderBox,
+}
+
+/// The conic glass edge, drawn over its element's border box. Inside an element with a 1px border
+/// (`PaddingBox`) it reaches out over that border.
+pub fn glass_edge(corners: Corners, origin: EdgeOrigin) -> impl IntoElement {
+    let out = px(if origin == EdgeOrigin::PaddingBox { -1.0 } else { 0.0 });
+    gpui::canvas(|_, _, _| {}, move |bounds, _, window, _| paint_glass_edge(bounds, corners, origin, window)).absolute().top(out).left(out).right(out).bottom(out)
+}
+
+/// Paints the edge as runs of the 1px ring, each in the gradient's colour at its middle. Straight
+/// sides are plain rects; each corner's arc is the rounded ring cut to the cells it crosses.
+fn paint_glass_edge(bounds: gpui::Bounds<Pixels>, corners: Corners, origin: EdgeOrigin, window: &mut gpui::Window) {
+    let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+    if w < 2.0 || h < 2.0 {
+        return;
+    }
+    let radius = match corners {
+        Corners::Radius(radius) => radius,
+        Corners::Full => w.min(h) / 2.0,
+    }
+    .min(w / 2.0)
+    .min(h / 2.0);
+    let alpha_at = |x: f32, y: f32| match origin {
+        EdgeOrigin::PaddingBox => {
+            let (tw, th) = (w - 2.0, h - 2.0);
+            glass_edge_alpha((x - 1.0).rem_euclid(tw) - tw / 2.0, (y - 1.0).rem_euclid(th) - th / 2.0)
+        }
+        EdgeOrigin::BorderBox => glass_edge_alpha(x - w / 2.0, y - h / 2.0),
+    };
+    let white = |alpha: f32| gpui::Hsla { h: 0.0, s: 0.0, l: 1.0, a: alpha };
+    let rect = |x: f32, y: f32, rw: f32, rh: f32| gpui::Bounds::new(bounds.origin + gpui::point(px(x), px(y)), gpui::size(px(rw), px(rh)));
+
+    // Straight runs, merged while the colour holds within a level of 8-bit white.
+    let run = |horizontal: bool, fixed: f32, from: f32, to: f32, window: &mut gpui::Window| {
+        let sample = |along: f32| if horizontal { alpha_at(along, fixed + 0.5) } else { alpha_at(fixed + 0.5, along) };
+        let paint = |start: f32, end: f32, window: &mut gpui::Window| {
+            let alpha = sample((start + end) / 2.0);
+            let bounds = if horizontal { rect(start, fixed, end - start, 1.0) } else { rect(fixed, start, 1.0, end - start) };
+            window.paint_quad(gpui::fill(bounds, white(alpha)));
+        };
+        let mut start = from;
+        let mut start_alpha = sample(from + 0.5);
+        let mut at = from;
+        while at < to {
+            let next = (at + 1.0).min(to);
+            if (sample((at + next) / 2.0) - start_alpha).abs() > 0.002 {
+                paint(start, at, window);
+                start = at;
+                start_alpha = sample((at + next) / 2.0);
+            }
+            at = next;
+        }
+        if to > start {
+            paint(start, to, window);
+        }
+    };
+    run(true, 0.0, radius, w - radius, window);
+    run(true, h - 1.0, radius, w - radius, window);
+    run(false, 0.0, radius, h - radius, window);
+    run(false, w - 1.0, radius, h - radius, window);
+
+    if radius <= 0.0 {
+        return;
+    }
+    let cells = radius.ceil() as usize;
+    let ring = gpui::Corners::all(px(radius));
+    // Each corner square, as its origin and the arc's centre within the box.
+    let squares = [(0.0, 0.0, radius, radius), (w - radius, 0.0, w - radius, radius), (0.0, h - radius, radius, h - radius), (w - radius, h - radius, w - radius, h - radius)];
+    for (sx, sy, cx, cy) in squares {
+        for row in 0..cells {
+            for col in 0..cells {
+                let (x0, y0) = (sx + col as f32, sy + row as f32);
+                let (x1, y1) = ((x0 + 1.0).min(sx + radius), (y0 + 1.0).min(sy + radius));
+                let near = (cx.clamp(x0, x1) - cx).hypot(cy.clamp(y0, y1) - cy);
+                let far = (cx - x0).abs().max((cx - x1).abs()).hypot((cy - y0).abs().max((cy - y1).abs()));
+                if far <= radius - 1.0 || near >= radius {
+                    continue;
+                }
+                let alpha = alpha_at((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+                let mask = gpui::ContentMask { bounds: rect(x0, y0, x1 - x0, y1 - y0) };
+                window.with_content_mask(Some(mask), |window| {
+                    window.paint_quad(gpui::quad(bounds, ring, gpui::transparent_black(), px(1.0), white(alpha), gpui::BorderStyle::default()));
+                });
+            }
+        }
+    }
+}
 
 /// Fills an element with a pane, sheen and all.
 pub trait PaneFill: Styled + Sized {
@@ -214,8 +334,10 @@ pub fn glass(element: Div, tokens: &Tokens, kind: GlassKind, radius: Option<f32>
         }]);
     }
     if floats {
-        let edge = tone.map(|tone| tone.line).unwrap_or(tokens.glass_edge);
-        element = element.border_1().border_color(edge);
+        element = match tone {
+            Some(tone) => element.border_1().border_color(tone.line),
+            None => element.border_1().border_color(gpui::transparent_black()).child(glass_edge(corners, EdgeOrigin::PaddingBox)),
+        };
         let mut shadows = match kind {
             GlassKind::Popover => tokens.shadow_menu.box_shadows(),
             GlassKind::Float => tokens.shadow_float.box_shadows(),
@@ -302,4 +424,17 @@ pub fn glass_in<E: gpui::InteractiveElement>(element: E) -> E {
 pub fn icon_touch() -> gpui::Transition {
     use gpui::TransitionProperty::*;
     gpui::Transition::ease_out(110).only(&[Color, Border, Opacity]).and(touch().only(&[Background, Transform]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::glass_edge_alpha;
+
+    #[test]
+    fn the_glass_edge_turns_clockwise_from_the_top() {
+        assert!((glass_edge_alpha(0.0, -10.0) - 0.05).abs() < 1e-4);
+        assert!((glass_edge_alpha(-10.0, -10.0) - 0.15).abs() < 1e-4);
+        assert!((glass_edge_alpha(10.0, 0.0) - 0.0175).abs() < 1e-4);
+        assert!((glass_edge_alpha(0.0, 10.0) - (0.08 + (0.01 - 0.08) * 40.0 / 45.0)).abs() < 1e-4);
+    }
 }

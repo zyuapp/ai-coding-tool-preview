@@ -399,8 +399,6 @@ pub struct Tokens {
     pub glass_rim: Rim,
     /// The float rim's dark hairline outside the edge.
     pub glass_float_outline: Rgba,
-    /// The 1px edge a float's border catches light along.
-    pub glass_edge: Rgba,
     pub glass_control: Pane,
     pub glass_control_hover: Pane,
     pub glass_pick: Pane,
@@ -821,7 +819,6 @@ impl Tokens {
                 bottom: alpha(WHITE, light_dark(0.1, 0.03)),
             },
             glass_float_outline: alpha(crate::color::BLACK, light_dark(0.12, 0.35)),
-            glass_edge: alpha(WHITE, 0.05),
             glass_control: Pane::sheened(wash),
             glass_control_hover: Pane::sheened(surface_hover),
             glass_pick: Pane::sheened(alpha(accent, 0.26)),

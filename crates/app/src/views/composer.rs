@@ -17,7 +17,7 @@ use act_ui::components::notice::{Notice, NoticeTone};
 use act_ui::components::scrollbar::{model_gutter, Scrollbar};
 use act_ui::input::{self as text_input, Autosize, InputEvent, TextInput};
 use act_ui::overlay::{bounds_cell, bounds_probe, BoundsCell};
-use act_ui::style::{Corners, PaneFill, Raised};
+use act_ui::style::{Corners, Raised};
 use act_ui::style::Backdrop;
 use act_ui::theme::ActiveTheme;
 use act_ui::tooltip::Tippable;
@@ -803,11 +803,12 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
     } else {
         None
     };
+    // Shadows paint in order, each over the last: the ring over the composer's own shadows, and
+    // `.glass-pane::before`'s dark hairline outside the edge over both.
     if let Some((color, spread)) = ring {
-        shadows.insert(0, BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(spread) });
+        shadows.push(BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(spread) });
     }
-    // `.glass-pane::before`'s dark hairline outside the edge, drawn over the composer's own shadows.
-    shadows.insert(0, act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
+    shadows.push(act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
 
     let pane_probe = root.composer.pane_probe.clone();
     let radius = if docked { 14.0 } else { 17.0 };
@@ -819,11 +820,9 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
         .w_full()
         .max_w(px(860.0))
         .rounded(px(radius))
-        .pane(t.glass)
         .glass_backdrop(t)
         .shadow(shadows)
-        .edged_rim(t.glass_edge, t.glass_rim, Corners::Radius(radius))
-        .elevation_glint(&t.shadow_composer, t, Corners::Radius(radius))
+        .glass_pane(t.glass, t.glass_rim, t.shadow_composer.glint.then_some(t.glint), Corners::Radius(radius))
         .child(bounds_probe(&pane_probe))
         .child(super::common::seen_by_backdrops());
     if let Some(reason) = unopenable {

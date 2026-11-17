@@ -342,6 +342,8 @@ pub struct Menu {
     group_icons: Vec<(SharedString, IconName)>,
     /// The first row is marked as Enter's choice only once something is typed.
     default_needs_query: bool,
+    /// Enter in the search field takes the first row, which wears the highlight meanwhile.
+    search_submits: bool,
     searched_text_empty: bool,
     /// Opened from the window's frame (the sidebars), where too little stands behind it to blur.
     from_frame: bool,
@@ -398,6 +400,7 @@ impl Menu {
             pinned_edge: false,
             group_icons: Vec::new(),
             default_needs_query: false,
+            search_submits: true,
             searched_text_empty: true,
             from_frame: false,
             top_level: false,
@@ -474,6 +477,12 @@ impl Menu {
     /// theme pickers do.
     pub fn default_needs_query(mut self, needs: bool) -> Self {
         self.default_needs_query = needs;
+        self
+    }
+
+    /// Whether Enter in the search field takes the first row; a list where it does not marks none.
+    pub fn search_submits(mut self, submits: bool) -> Self {
+        self.search_submits = submits;
         self
     }
 
@@ -569,7 +578,7 @@ impl Menu {
                 }
             }
             InputEvent::Submit => {
-                if !(menu.default_needs_query && input.read(cx).text().trim().is_empty()) {
+                if menu.search_submits && !(menu.default_needs_query && input.read(cx).text().trim().is_empty()) {
                     menu.pending_submit = true;
                     cx.notify();
                 }
@@ -783,7 +792,7 @@ impl Menu {
 
     fn confirm(&mut self, _: &MenuConfirm, window: &mut Window, cx: &mut Context<Self>) {
         let field_focused = self.search.as_ref().is_some_and(|search| search.input.read(cx).is_focused(window));
-        let target = if field_focused { self.first_searched() } else { self.active };
+        let target = if field_focused { self.first_searched().filter(|_| self.search_submits) } else { self.active };
         if let Some(index) = target {
             self.choose(index, true, window, cx);
         }
@@ -1006,7 +1015,7 @@ impl Menu {
 
     /// The row Enter takes while the caret is in the search field.
     fn search_default(&self, index: usize) -> bool {
-        self.search.is_some() && self.search_focused && self.first_searched() == Some(index) && !(self.default_needs_query && self.searched_text_empty)
+        self.search.is_some() && self.search_submits && self.search_focused && self.first_searched() == Some(index) && !(self.default_needs_query && self.searched_text_empty)
     }
 }
 
@@ -1084,7 +1093,7 @@ impl Render for Menu {
                 MenuEntry::Note { text, danger } => column.push(note(text.clone(), *danger, t, m).into_any_element()),
             }
         }
-        if item_count == 0 {
+        if item_count == 0 && !entries.iter().any(|entry| matches!(entry, MenuEntry::Note { .. })) {
             let empty = self.empty.clone().or_else(|| self.search.as_ref().map(|_| "No matches".into()));
             if let Some(empty) = empty {
                 column.push(note(empty, false, t, m).into_any_element());
@@ -1093,8 +1102,14 @@ impl Render for Menu {
 
         let searchable = self.search.is_some();
         let frame_glass = crate::style::frame_glass(&cx.theme().environment, self.from_frame, self.top_level);
-        let mut surface = glass(div(), t, GlassKind::Popover, None, None)
+        let mut surface = glass(div(), t, GlassKind::Popover, None, None);
+        // A submenu sits inside its blurred parent, so it is painted solid in the parent's colour.
+        if self.parent.is_some() {
+            surface.style().backdrop_filter = None;
+        }
+        let mut surface = surface
             .when(frame_glass, |surface| surface.bg(t.surface_glass))
+            .when(self.parent.is_some(), |surface| surface.bg(gpui::Rgba { a: 1.0, ..t.surface_glass }))
             .flex()
             .flex_col()
             .min_w(self.min_width)

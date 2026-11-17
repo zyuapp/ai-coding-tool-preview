@@ -55,9 +55,10 @@ impl Placement {
                 let below = viewport.height - anchor.bottom() - gap - edge;
                 let above = anchor.top() - gap - edge;
                 let down = below >= size.height || below >= above;
+                // A float hung from the trigger's right edge lands on the whole pixel left of it, as in the page.
                 let start = match align {
                     Align::Start => anchor.left(),
-                    Align::End => anchor.right() - size.width,
+                    Align::End => (anchor.right() - size.width).floor(),
                 };
                 let y = if down { anchor.bottom() + gap } else { anchor.top() - gap - size.height };
                 point(clamp_x(start), y)

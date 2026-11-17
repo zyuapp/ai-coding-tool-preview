@@ -195,7 +195,7 @@ impl Root {
         let anchor = self.composer.start.project.get().unwrap_or_default();
         let probe = self.composer.start.project.clone();
         let menu = Menu::build(project_entries(&state, ""), upward(anchor, window), window, cx, move |menu| {
-            menu.checkable(true).min_width(px(220.0)).max_width(px(340.0)).max_height(px(280.0)).pinned_edge(true).group_icon("Recent", IconName::Clock).exempt(&probe).searchable("Search projects", |query, cx| {
+            menu.checkable(true).search_submits(false).min_width(px(220.0)).max_width(px(340.0)).max_height(px(280.0)).pinned_edge(true).group_icon("Recent", IconName::Clock).exempt(&probe).searchable("Search projects", |query, cx| {
                 let state = crate::workspace::workspace(cx).read(cx).state.clone();
                 project_entries(&state, query)
             })

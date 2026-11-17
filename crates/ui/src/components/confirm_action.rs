@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use gpui::{div, prelude::*, px, App, ElementId, FocusHandle, SharedString, Window};
+use gpui::{div, prelude::*, px, App, ElementId, FocusHandle, Pixels, SharedString, Window};
 
 use super::button::{Button, ButtonSize, ButtonVariant};
 use crate::icon::IconName;
@@ -24,6 +24,7 @@ pub struct ConfirmAction {
     name: Option<SharedString>,
     on_confirm: Rc<dyn Fn(&mut Window, &mut App)>,
     armed: Option<Rc<std::cell::Cell<bool>>>,
+    gap: Pixels,
 }
 
 impl ConfirmAction {
@@ -48,7 +49,14 @@ impl ConfirmAction {
             name: None,
             on_confirm: Rc::new(on_confirm),
             armed: None,
+            gap: px(8.0),
         }
+    }
+
+    /// The space between the armed pair, which in the page sit in their parent's row and take its gap.
+    pub fn gap(mut self, gap: Pixels) -> Self {
+        self.gap = gap;
+        self
     }
 
     /// What assistive technology calls the first button when its words alone do not say enough.
@@ -188,7 +196,7 @@ impl RenderOnce for ConfirmAction {
             if let Some(name) = self.name {
                 button = button.name(name);
             }
-            return div().flex().gap(px(8.0)).child(button).into_any_element();
+            return div().flex().gap(self.gap).child(button).into_any_element();
         }
         let quiet = matches!(self.variant, ButtonVariant::Secondary | ButtonVariant::Soft | ButtonVariant::Ghost | ButtonVariant::Link);
         let cancel_variant = if quiet { self.variant } else { ButtonVariant::Secondary };
@@ -198,7 +206,7 @@ impl RenderOnce for ConfirmAction {
         let escaped = answer;
         div()
             .flex()
-            .gap(px(8.0))
+            .gap(self.gap)
             .on_key_down(move |event, _, cx| {
                 if event.keystroke.key == "escape" {
                     cx.stop_propagation();

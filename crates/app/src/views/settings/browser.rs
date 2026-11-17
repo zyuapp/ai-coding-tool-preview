@@ -225,7 +225,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, marks: &Marks, window: &m
                 .items_center()
                 .gap(px(10.0))
                 .when(!armed.get(), |action| action.child(div().text_color(t.quiet_strong).text_size(px(12.0)).whitespace_nowrap().child(allowed)))
-                .child(ConfirmAction::new("browser-clear", "Clear browser data", "Sign out of everything", |_, cx| dispatch(AppCommand::BrowserClearData, cx)).variant(ButtonVariant::Danger).armed_into(&armed)),
+                .child(ConfirmAction::new("browser-clear", "Clear browser data", "Sign out of everything", |_, cx| dispatch(AppCommand::BrowserClearData, cx)).variant(ButtonVariant::Danger).armed_into(&armed).gap(px(10.0))),
         );
     if origins.is_empty() {
         session = session.row(empty("The agent has to ask before it opens any site.", &t));

@@ -56,6 +56,7 @@ pub fn render(state: &WorkspaceState, marks: &Marks, window: &mut Window, cx: &m
                 .variant(ButtonVariant::Danger)
                 .name(format!("Remove {name}"))
                 .armed_into(&armed)
+                .gap(px(12.0))
                 .disabled(row.host.as_ref().is_some_and(|host| host.offline)),
         );
         line = line.action(actions);

@@ -42,9 +42,8 @@ fn usage_window(window: &UsageWindow, zone: &str, (strut, lift): (f32, f32), t: 
         .overflow_hidden()
         .rounded(px(4.0))
         .bg(t.meter_track)
-        .border_1()
-        .border_color(t.line_strong)
-        .child(div().h_full().rounded(px(4.0)).w(relative((share / 100.0) as f32)).bg(if high { t.accent } else { t.info }));
+        .child(div().absolute().inset_0().rounded(px(4.0)).border_1().border_color(t.line_strong))
+        .child(div().relative().h_full().rounded(px(4.0)).w(relative((share / 100.0) as f32)).bg(if high { t.accent } else { t.info }));
     div()
         .flex()
         .flex_col()

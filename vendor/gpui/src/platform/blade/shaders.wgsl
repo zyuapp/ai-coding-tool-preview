@@ -400,6 +400,10 @@ fn prepare_gradient_color(tag: u32, color_space: u32,
     if (tag == 0u || tag == 2u) {
         result.solid = hsla_to_rgba(solid);
     } else if (tag == 1u || tag == 3u) {
+        // A linear gradient's solid is the colour under it; a radial one's holds its ellipse.
+        if (tag == 1u) {
+            result.solid = hsla_to_rgba(solid);
+        }
         // The hsla_to_rgba is returns a linear sRGB color
         result.color0 = hsla_to_rgba(colors[0].color);
         result.color1 = hsla_to_rgba(colors[1].color);
@@ -472,6 +476,9 @@ fn gradient_color(background: Background, position: vec2<f32>, bounds: Bounds,
                     let oklab_color = mix(color0, color1, t);
                     background_color = oklab_to_linear_srgb(oklab_color);
                 }
+            }
+            if (solid_color.a > 0.0) {
+                background_color = over(solid_color, background_color);
             }
         }
         case 3u: {
@@ -970,6 +977,8 @@ struct Shadow {
     element_bounds: Bounds,
     element_corner_radii: Corners,
     fade: FadeMask,
+    inset: u32,
+    pad: u32,
 }
 var<storage, read> b_shadows: array<Shadow>;
 
@@ -992,6 +1001,10 @@ fn vs_shadow(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) ins
     // spread radius to achieve the spreading effect
     shadow.bounds.origin -= vec2<f32>(margin);
     shadow.bounds.size += 2.0 * vec2<f32>(margin);
+    // An inset shadow is drawn over its box alone.
+    if (shadow.inset != 0u) {
+        shadow.bounds = shadow.element_bounds;
+    }
 
     var out = ShadowVarying();
     out.position = to_device_position(unit_vertex, shadow.bounds);
@@ -1032,8 +1045,14 @@ fn fs_shadow(input: ShadowVarying) -> @location(0) vec4<f32> {
         y += step;
     }
 
-    // An outer shadow stops at the edge of the box casting it.
-    alpha *= saturate(0.5 + quad_sdf(input.position.xy, shadow.element_bounds, shadow.element_corner_radii));
+    let element_distance = quad_sdf(input.position.xy, shadow.element_bounds, shadow.element_corner_radii);
+    if (shadow.inset != 0u) {
+        // An inset shadow is what its blurred box leaves uncovered, inside the box it lights.
+        alpha = (1.0 - alpha) * saturate(0.5 - element_distance);
+    } else {
+        // An outer shadow stops at the edge of the box casting it.
+        alpha *= saturate(0.5 + element_distance);
+    }
     return blend_color(input.color, alpha * fade_alpha(shadow.fade, input.position.xy));
 }
 

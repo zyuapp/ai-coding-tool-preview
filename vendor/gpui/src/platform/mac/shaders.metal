@@ -508,6 +508,10 @@ vertex ShadowVertexOutput shadow_vertex(
   bounds.origin.y -= margin;
   bounds.size.width += 2. * margin;
   bounds.size.height += 2. * margin;
+  // An inset shadow is drawn over its box alone.
+  if (shadow.inset != 0) {
+    bounds = shadow.element_bounds;
+  }
 
   float4 device_position =
       to_device_position(unit_vertex, bounds, viewport_size);
@@ -570,8 +574,14 @@ fragment float4 shadow_fragment(ShadowFragmentInput input [[stage_in]],
     }
   }
 
-  // An outer shadow stops at the edge of the box casting it.
-  alpha *= saturate(0.5 + quad_sdf(input.position.xy, shadow.element_bounds, shadow.element_corner_radii));
+  float element_distance = quad_sdf(input.position.xy, shadow.element_bounds, shadow.element_corner_radii);
+  if (shadow.inset != 0) {
+    // An inset shadow is what its blurred box leaves uncovered, inside the box it lights.
+    alpha = (1. - alpha) * saturate(0.5 - element_distance);
+  } else {
+    // An outer shadow stops at the edge of the box casting it.
+    alpha *= saturate(0.5 + element_distance);
+  }
   alpha *= fade_alpha(shadow.fade, input.position.xy);
   return input.color * float4(1., 1., 1., alpha);
 }
@@ -1220,6 +1230,8 @@ GradientColor prepare_fill_color(uint tag, uint color_space, Hsla solid,
   if (tag == 0 || tag == 2) {
     out.solid = to_display(hsla_to_rgba(solid), display_lut);
   } else if (tag == 1 || tag == 3) {
+    // A linear gradient's solid is the colour under it; a radial one's holds its ellipse.
+    out.solid = tag == 1 ? to_display(hsla_to_rgba(solid), display_lut) : float4(0.0);
     out.color0 = to_display(hsla_to_rgba(color0), display_lut);
     out.color1 = to_display(hsla_to_rgba(color1), display_lut);
 
@@ -1295,6 +1307,9 @@ float4 fill_color(Background background,
           color = oklab_to_srgb(oklab_color);
           break;
         }
+      }
+      if (solid_color.a > 0.0) {
+        color = over(solid_color, color);
       }
       break;
     }

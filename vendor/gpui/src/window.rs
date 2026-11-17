@@ -3635,6 +3635,39 @@ impl Window {
                 color: shadow.color.opacity(opacity),
                 element_bounds: self.transformed(bounds).scale(scale_factor),
                 element_corner_radii: corner_radii.scale(scale_factor),
+                inset: 0,
+                pad: 0,
+            });
+        }
+    }
+
+    /// Paint inset shadows, as CSS `box-shadow: inset ...`: each darkens or lights the inside of
+    /// `bounds` from the edge of its own box, which the offset moves and the spread shrinks.
+    ///
+    /// This method should only be called as part of the paint phase of element drawing.
+    pub fn paint_inset_shadows(&mut self, bounds: Bounds<Pixels>, corner_radii: Corners<Pixels>, shadows: &[BoxShadow]) {
+        self.invalidator.debug_assert_paint();
+
+        let scale_factor = self.scale_factor();
+        let content_mask = self.content_mask();
+        let opacity = self.element_opacity();
+        let zoom = self.paint_transform.scale;
+        let corner_radii = corner_radii.map(|radius| *radius * zoom);
+        for shadow in shadows {
+            let spread = shadow.spread_radius * zoom;
+            let shadow_bounds = self.transformed((bounds + shadow.offset).dilate(-shadow.spread_radius));
+            self.next_frame.scene.insert_primitive(Shadow {
+                order: 0,
+                blur_radius: (shadow.blur_radius * zoom / 2.0).scale(scale_factor),
+                bounds: shadow_bounds.scale(scale_factor),
+                content_mask: content_mask.scale(scale_factor),
+                fade: self.fade_mask().scale(scale_factor),
+                corner_radii: corner_radii.map(|radius| (*radius - spread).max(Pixels::ZERO)).scale(scale_factor),
+                color: shadow.color.opacity(opacity),
+                element_bounds: self.transformed(bounds).scale(scale_factor),
+                element_corner_radii: corner_radii.scale(scale_factor),
+                inset: 1,
+                pad: 0,
             });
         }
     }

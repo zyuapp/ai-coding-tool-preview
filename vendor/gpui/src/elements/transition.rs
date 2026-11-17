@@ -300,6 +300,9 @@ fn blend_fill(from: Option<&Fill>, to: Option<&Fill>, amount: f32) -> Option<Fil
         if background.tag == BackgroundTag::Solid { (background.solid, index as f32) } else { (background.colors[index].color, background.colors[index].percentage) }
     };
     let mut blended = if gradient(to.tag) { to } else { from };
+    if blended.tag == BackgroundTag::LinearGradient {
+        blended.solid = mix(from.base_color(), to.base_color(), amount);
+    }
     for index in 0..2 {
         let ((from_color, from_at), (to_color, to_at)) = (stops(&from, index), stops(&to, index));
         blended.colors[index].color = mix(from_color, to_color, amount);
@@ -368,6 +371,14 @@ mod tests {
         let mut drawn = Style::default();
         assert!(!apply(&mut state, &mut drawn, None, None, Hsla::default(), start + Duration::from_millis(150)));
         assert_eq!(drawn.opacity, None);
+    }
+
+    #[test]
+    fn a_gradient_over_a_colour_fades_in_with_its_colour() {
+        let red = Hsla::from(Rgba { r: 1.0, g: 0.0, b: 0.0, a: 1.0 });
+        let sheened = crate::linear_gradient(180.0, crate::linear_color_stop(crate::white(), 0.0), crate::linear_color_stop(crate::white(), 1.0)).over_color(red);
+        let Some(Fill::Color(halfway)) = blend_fill(None, Some(&Fill::Color(sheened)), 0.5) else { panic!("no fill") };
+        assert!((halfway.solid.a - 0.5).abs() < 0.01);
     }
 
     #[test]

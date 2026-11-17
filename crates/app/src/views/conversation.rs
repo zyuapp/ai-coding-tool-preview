@@ -1204,7 +1204,7 @@ pub(super) fn approval_card(approval: &ApprovalView, probe: &BoundsCell, state: 
                 .child(Button::new("approval-allow", "Allow once").variant(ButtonVariant::Primary).tip(binding_tip(state, "Allow once", "run.allow")).on_click(decide(true))),
         );
     let tint = with_alpha(t.accent, 0.2);
-    let lit = gpui::linear_gradient(180.0, gpui::linear_color_stop(act_ui::color::over(with_alpha(gpui::white().into(), 0.18), tint), 0.0), gpui::linear_color_stop(act_ui::color::over(with_alpha(gpui::white().into(), 0.02), tint), 1.0));
+    let lit = gpui::linear_gradient(180.0, gpui::linear_color_stop(with_alpha(gpui::white().into(), 0.18), 0.0), gpui::linear_color_stop(with_alpha(gpui::white().into(), 0.02), 1.0)).over_color(tint);
     let glow = |color: gpui::Rgba, blur: f32, spread: f32| gpui::BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(blur), spread_radius: px(spread) };
     glass(div(), t, GlassKind::Float, Some(14.0), None)
         .relative()

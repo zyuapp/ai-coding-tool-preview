@@ -746,6 +746,24 @@ impl Background {
         }
         self
     }
+
+    /// Paints `color` under a linear gradient, as CSS paints `background-color` under
+    /// `background-image`. Each is blended in the display's colour space on its own, so a translucent
+    /// gradient over a translucent colour reads as Chromium draws the two layers.
+    pub fn over_color(mut self, color: impl Into<Hsla>) -> Self {
+        if self.tag == BackgroundTag::LinearGradient {
+            self.solid = color.into();
+        }
+        self
+    }
+
+    /// The colour under a linear gradient (`over_color`); a solid fill holds its colour in itself.
+    pub(crate) fn base_color(&self) -> Hsla {
+        match self.tag {
+            BackgroundTag::LinearGradient => self.solid,
+            _ => Hsla::transparent_black(),
+        }
+    }
 }
 
 /// Creates a hash pattern background
@@ -867,7 +885,8 @@ impl Background {
     pub fn is_transparent(&self) -> bool {
         match self.tag {
             BackgroundTag::Solid => self.solid.is_transparent(),
-            BackgroundTag::LinearGradient | BackgroundTag::RadialGradient => self.colors.iter().all(|c| c.color.is_transparent()),
+            BackgroundTag::LinearGradient => self.solid.is_transparent() && self.colors.iter().all(|c| c.color.is_transparent()),
+            BackgroundTag::RadialGradient => self.colors.iter().all(|c| c.color.is_transparent()),
             BackgroundTag::PatternSlash => self.solid.is_transparent(),
         }
     }

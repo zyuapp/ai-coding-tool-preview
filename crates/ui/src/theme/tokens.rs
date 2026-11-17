@@ -85,9 +85,7 @@ impl Pane {
         if !self.sheen {
             return gpui::solid_background(self.fill);
         }
-        let top = over(alpha(WHITE, 0.08), self.fill);
-        let bottom = over(alpha(WHITE, 0.02), self.fill);
-        gpui::linear_gradient(180.0, gpui::linear_color_stop(top, 0.0), gpui::linear_color_stop(bottom, 1.0))
+        gpui::linear_gradient(180.0, gpui::linear_color_stop(alpha(WHITE, 0.08), 0.0), gpui::linear_color_stop(alpha(WHITE, 0.02), 1.0)).over_color(self.fill)
     }
 
     /// The colour the pane reads as at its middle, for anything that needs one flat colour.
@@ -399,6 +397,8 @@ pub struct Tokens {
     pub glass_rim: Rim,
     /// The float rim's dark hairline outside the edge.
     pub glass_float_outline: Rgba,
+    /// The float rim's glow inside the edge.
+    pub glass_float_glow: Rgba,
     pub glass_control: Pane,
     pub glass_control_hover: Pane,
     pub glass_pick: Pane,
@@ -412,6 +412,8 @@ pub struct Tokens {
     pub shadow_float: Elevation,
     pub shadow_float_lift: Elevation,
     pub shadow_overlay: Elevation,
+    /// A pressed topbar key's drop under its glass.
+    pub shadow_key: ShadowLayer,
     pub shadow_page: Elevation,
     pub shadow_sidebar: Elevation,
     pub shadow_thumb: Elevation,
@@ -819,6 +821,7 @@ impl Tokens {
                 bottom: alpha(WHITE, light_dark(0.1, 0.03)),
             },
             glass_float_outline: alpha(crate::color::BLACK, light_dark(0.12, 0.35)),
+            glass_float_glow: alpha(WHITE, light_dark(0.07, 0.015)),
             glass_control: Pane::sheened(wash),
             glass_control_hover: Pane::sheened(surface_hover),
             glass_pick: Pane::sheened(alpha(accent, 0.26)),
@@ -831,6 +834,7 @@ impl Tokens {
             shadow_float: elevation(&[(1.0, 2.0, 0.16), (6.0, 16.0, 0.22)]),
             shadow_float_lift: elevation(&[(1.0, 3.0, 0.2), (10.0, 26.0, 0.28)]),
             shadow_overlay: elevation(&[(4.0, 14.0, 0.22), (30.0, 80.0, 0.5)]),
+            shadow_key: ShadowLayer { x: 0.0, y: 1.0, blur: 2.0, spread: 0.0, color: shade(0.12) },
             shadow_page: page_shadow,
             shadow_sidebar: Elevation {
                 glint: false,

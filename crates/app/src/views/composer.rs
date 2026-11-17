@@ -18,7 +18,6 @@ use act_ui::components::scrollbar::{model_gutter, Scrollbar};
 use act_ui::input::{self as text_input, Autosize, InputEvent, TextInput};
 use act_ui::overlay::{bounds_cell, bounds_probe, BoundsCell};
 use act_ui::style::{Corners, Raised};
-use act_ui::style::Backdrop;
 use act_ui::theme::ActiveTheme;
 use act_ui::tooltip::Tippable;
 use act_ui::IconName;
@@ -820,9 +819,8 @@ pub fn panel(root: &mut Root, state: &WorkspaceState, start: Option<gpui::AnyEle
         .w_full()
         .max_w(px(860.0))
         .rounded(px(radius))
-        .glass_backdrop(t)
         .shadow(shadows)
-        .glass_pane(t.glass, t.glass_rim, t.shadow_composer.glint.then_some(t.glint), Corners::Radius(radius))
+        .glass_pane(t.glass, t, t.shadow_composer.glint.then_some(t.glint), Corners::Radius(radius))
         .child(bounds_probe(&pane_probe))
         .child(super::common::seen_by_backdrops());
     if let Some(reason) = unopenable {

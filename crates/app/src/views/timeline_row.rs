@@ -486,7 +486,7 @@ fn copy_tile(tile: CopyTile, show: CopyShow, window: &mut Window, cx: &mut App) 
         .when_some(ground, |pane, ground| pane.child(layer().bg(ground)))
         .child(layer().bg(t.glass_clear.background()))
         // CSS draws the inset rim inside the 1px border.
-        .child(div().absolute().inset(px(1.0)).rounded(px(7.0)).rim(t.glass_rim, Corners::Radius(7.0)));
+        .child(div().absolute().inset(px(1.0)).rounded(px(7.0)).float_rim(&t, Corners::Radius(7.0)));
     let pane = match &group {
         Some(group) if !lifted => pane.opacity(0.0).group_hover(group.clone(), |style| style.opacity(1.0)),
         _ => pane,

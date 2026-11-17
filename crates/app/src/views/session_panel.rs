@@ -11,7 +11,6 @@ use act_core::AppCommand;
 use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
 use act_ui::overlay::{bounds_cell, bounds_probe, Align, BoundsCell, Placement};
 use act_ui::style::{Corners, PaneFill, Raised};
-use act_ui::style::Backdrop;
 use act_ui::theme::ActiveTheme;
 use act_ui::tooltip::Tippable;
 use act_ui::IconName;
@@ -276,13 +275,10 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .flex()
         .flex_col()
         .rounded(px(12.0))
-        .pane(t.glass)
-        .glass_backdrop(&t)
         .elevation(&t.shadow_composer)
+        .glass_pane(t.glass, &t, t.shadow_composer.glint.then_some(t.glint), Corners::Radius(12.0))
         .accessible(gpui::AccessInfo::new(gpui::AccessRole::Complementary, "Session panel"))
         .child(div().id("session-panel").max_h(px(600.0)).overflow_y_scroll().rounded(px(12.0)).child(card))
-        .edge(Corners::Radius(12.0))
-        .rim(t.glass_rim, Corners::Radius(12.0))
         .child(super::common::seen_by_backdrops())
 }
 

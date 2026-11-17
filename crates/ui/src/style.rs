@@ -25,18 +25,44 @@ fn overlay(corners: Corners) -> Div {
     corners.apply(div().absolute().top_0().left_0().size_full())
 }
 
+/// Inset shadows drawn over the element's padding box, listed as CSS lists them, top first.
+fn inset_layer(mut shadows: Vec<gpui::BoxShadow>, corners: Corners) -> impl IntoElement {
+    shadows.reverse();
+    gpui::canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let radius = match corners {
+                Corners::Radius(radius) => px(radius),
+                Corners::Full => bounds.size.width.min(bounds.size.height) / 2.0,
+            };
+            window.paint_inset_shadows(bounds, gpui::Corners::all(radius), &shadows);
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+fn inset(color: Rgba, y: f32, blur: f32, spread: f32) -> gpui::BoxShadow {
+    gpui::BoxShadow { color: color.into(), offset: gpui::point(px(0.0), px(y)), blur_radius: px(blur), spread_radius: px(spread) }
+}
+
 /// `--glass-rim`: a hairline of light all round, caught along the top and faintly along the bottom.
-/// Drawn over the fill and under whatever follows it. The CSS draws these as soft inset shadows less
-/// than a pixel deep; each is spread over the rows it lights, at the share of light Chromium gives them.
-pub fn rim_layers(rim: Rim, corners: Corners) -> [Div; 5] {
-    let share = |color: Rgba, share: f32| Rgba { a: color.a * share, ..color };
-    [
-        overlay(corners).border(px(1.0)).border_color(share(rim.hairline, 0.6)),
-        overlay(corners).border_t(px(1.0)).border_color(share(rim.top, 0.45)),
-        overlay(corners).border_t(px(2.0)).border_color(share(rim.top, 0.15)),
-        overlay(corners).border_b(px(1.0)).border_color(share(rim.bottom, 0.45)),
-        overlay(corners).border_b(px(2.0)).border_color(share(rim.bottom, 0.15)),
-    ]
+fn rim_shadows(rim: Rim) -> Vec<gpui::BoxShadow> {
+    vec![inset(rim.hairline, 0.0, 0.0, 0.5), inset(rim.top, 1.5, 1.0, -1.0), inset(rim.bottom, -1.5, 1.0, -1.0)]
+}
+
+/// The rim, drawn over the fill and under whatever follows it.
+pub fn rim_layer(rim: Rim, corners: Corners) -> impl IntoElement {
+    inset_layer(rim_shadows(rim), corners)
+}
+
+/// `--glass-float-rim` inside the edge: the rim over the glow of the glass's thickness.
+pub fn float_rim_layer(tokens: &Tokens, corners: Corners) -> impl IntoElement {
+    let mut shadows = rim_shadows(tokens.glass_rim);
+    shadows.push(inset(tokens.glass_float_glow, 0.0, 14.0, 0.0));
+    inset_layer(shadows, corners)
 }
 
 /// `--glint`: the 1px of light along a raised thing's top edge.
@@ -47,7 +73,13 @@ pub fn glint_layer(color: Rgba, corners: Corners) -> Div {
 /// Draws the rim and glint layers an element's CSS gives it. The element must be `relative`.
 pub trait Raised: ParentElement + Sized {
     fn rim(self, rim: Rim, corners: Corners) -> Self {
-        self.children(rim_layers(rim, corners))
+        self.child(rim_layer(rim, corners))
+    }
+
+    /// `--glass-float-rim`: the rim over the glow of the glass's thickness. The dark hairline
+    /// outside it is the element's shadow.
+    fn float_rim(self, tokens: &Tokens, corners: Corners) -> Self {
+        self.child(float_rim_layer(tokens, corners))
     }
 
     fn glint(self, tokens: &Tokens, corners: Corners) -> Self {
@@ -59,9 +91,9 @@ pub trait Raised: ParentElement + Sized {
         self.child(glass_edge(corners, EdgeOrigin::BorderBox))
     }
 
-    /// A glass pane's edge with its rim inside it, as the pane's inset shadows sit within its border.
-    /// `glint` is a `--glass-pane-shadow` glint, drawn there under the rim.
-    fn edged_rim(self, rim: Rim, glint: Option<Rgba>, corners: Corners) -> Self {
+    /// A glass pane's edge with its float rim inside it, as the pane's inset shadows sit within its
+    /// border. `glint` is a `--glass-pane-shadow` glint, drawn there under the rim.
+    fn edged_rim(self, tokens: &Tokens, glint: Option<Rgba>, corners: Corners) -> Self {
         let inner = match corners {
             Corners::Radius(radius) => Corners::Radius((radius - 1.0).max(0.0)),
             Corners::Full => Corners::Full,
@@ -69,14 +101,16 @@ pub trait Raised: ParentElement + Sized {
         let inside = inner
             .apply(div().absolute().top(px(1.0)).left(px(1.0)).right(px(1.0)).bottom(px(1.0)))
             .children(glint.map(|color| glint_layer(color, inner)))
-            .children(rim_layers(rim, inner));
+            .float_rim(tokens, inner);
         self.edge(corners).child(inside)
     }
 
-    /// `.glass-pane`: the pane as a layer under the element's content, edged and rimmed. `glint` is
-    /// the element's own shadow's glint, which the pane's glass covers.
-    fn glass_pane(self, pane: Pane, rim: Rim, glint: Option<Rgba>, corners: Corners) -> Self {
-        self.children(glint.map(|color| glint_layer(color, corners))).child(overlay(corners).pane(pane)).edged_rim(rim, None, corners)
+    /// `.glass-pane`: the pane as a frosted layer under the element's content, edged and rimmed.
+    /// `glint` is the element's own shadow's glint, which the pane's glass frosts and covers.
+    fn glass_pane(self, pane: Pane, tokens: &Tokens, glint: Option<Rgba>, corners: Corners) -> Self {
+        self.children(glint.map(|color| glint_layer(color, corners)))
+            .child(overlay(corners).glass_backdrop(tokens).pane(pane))
+            .edged_rim(tokens, None, corners)
     }
 
     /// An elevation's glint, if it has one.
@@ -352,7 +386,13 @@ pub fn glass(element: Div, tokens: &Tokens, kind: GlassKind, radius: Option<f32>
     } else if tone.is_some() {
         element = element.border_1().border_color(tone.map(|tone| tone.line).unwrap_or(tokens.line_glass));
     }
-    if kind != GlassKind::Strip {
+    if floats {
+        let inner = match corners {
+            Corners::Radius(radius) => Corners::Radius((radius - 1.0).max(0.0)),
+            Corners::Full => Corners::Full,
+        };
+        element = element.float_rim(tokens, inner);
+    } else if kind != GlassKind::Strip {
         element = element.rim(tokens.glass_rim, corners);
     }
     element

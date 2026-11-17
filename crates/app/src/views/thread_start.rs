@@ -409,7 +409,7 @@ fn tray(content: gpui::Div, cx: &mut Context<Root>) -> AnyElement {
             shadows.push(act_ui::theme::ShadowLayer { x: 0.0, y: 0.0, blur: 0.0, spread: 0.5, color: t.glass_float_outline }.box_shadow());
             shadows
         })
-        .edged_rim(t.glass_rim, t.shadow_float.glint.then_some(t.glint), Corners::Radius(17.0))
+        .edged_rim(&t, t.shadow_float.glint.then_some(t.glint), Corners::Radius(17.0))
         .child(content)
         .into_any_element()
 }

@@ -835,7 +835,7 @@ fn scoped_popover(root: &mut Root, state: &WorkspaceState, anchor: Option<gpui::
     let mut card = glass(div(), t, GlassKind::Popover, Some(13.0), None);
     if t.glass_blur {
         // `.model-library` is a thicker pane than other menus, so the composer under it barely shows.
-        card = act_ui::style::PaneFill::pane(card, act_ui::theme::Pane { fill: act_ui::color::alpha(t.glass_menu.fill, 0.9 + 0.06 * t.glass_tint), sheen: true });
+        card = card.bg(act_ui::theme::Pane { fill: act_ui::color::alpha(t.glass_menu.fill, 0.9 + 0.06 * t.glass_tint), sheen: true }.background().tiled_from_padding_box());
     }
     let card = card
         .id("model-library")

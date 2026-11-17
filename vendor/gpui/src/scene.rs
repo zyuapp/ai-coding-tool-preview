@@ -81,6 +81,7 @@ impl Scene {
         // A shadow paints 3 sigma of blur and a pixel of antialiasing beyond its bounds
         // (shaders.metal), so whatever is drawn later over that must order above it.
         let painted_bounds = match &primitive {
+            Primitive::Shadow(shadow) if shadow.inset != 0 => shadow.element_bounds,
             Primitive::Shadow(shadow) => shadow.bounds.dilate(shadow.blur_radius * 3.0 + ScaledPixels(1.0)),
             _ => *primitive.bounds(),
         };
@@ -699,6 +700,9 @@ pub(crate) struct Shadow {
     pub element_bounds: Bounds<ScaledPixels>,
     pub element_corner_radii: Corners<ScaledPixels>,
     pub fade: FadeMask,
+    /// 1 for an inset shadow: drawn only inside the box, where `bounds` does not cover it.
+    pub inset: u32,
+    pub pad: u32,
 }
 
 impl From<Shadow> for Primitive {
@@ -1069,6 +1073,8 @@ mod tests {
             element_bounds: casting,
             element_corner_radii: Corners::default(),
             fade: FadeMask::default(),
+            inset: 0,
+            pad: 0,
         });
         scene.insert_primitive(Quad {
             order: 0,

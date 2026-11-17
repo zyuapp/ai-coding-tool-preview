@@ -546,22 +546,36 @@ fn sender_thread(origin: Option<&MessageOrigin>) -> Option<String> {
 }
 
 /// A link chip naming a thread, with the arrow that says it opens it.
-fn open_thread_chip(id: SharedString, label: String, thread_id: String, cx: &App) -> impl IntoElement {
+/// `room` caps its width in pixels, as a percentage of the shrink-to-fit stack is not resolved
+/// when its text is measured, so a wrapped label would be short.
+fn open_thread_chip(id: SharedString, label: String, thread_id: String, room: Option<f32>, cx: &App) -> impl IntoElement {
     let t = cx.theme().tokens.clone();
+    let (fill, color) = (t.glass_control_hover, t.accent_soft);
+    // A column holding the label, so a wrapped label is measured at the chip's width; the arrow
+    // hangs in the right padding, centred.
     div()
         .id(id)
+        .relative()
         .flex()
-        .items_center()
-        .gap(px(3.0))
+        .flex_col()
+        .justify_center()
+        .max_w_full()
+        .when_some(room, |chip, room| chip.max_w(px(room)))
         .min_h(px(28.0))
-        .px(px(8.0))
+        .pl(px(7.0))
+        .pr(px(22.0))
+        .py(px(2.0))
         .rounded(px(7.0))
-        .text_color(t.link)
+        .line_height(gpui::line_height_normal())
+        .pane(t.glass_control)
+        .rim(t.glass_rim, Corners::Radius(7.0))
+        .text_color(t.accent_text)
         .text_size(px(cx.theme().metrics.text_meta))
         .cursor_pointer()
-        .hover(|style| style.bg(t.surface_hover).text_color(t.link_hover))
-        .child(label)
-        .child(ink_icon(IconName::ArrowUpRight, 12.0))
+        .transition(gpui::Transition::ease(120))
+        .hover(move |style| style.bg(fill.background()).text_color(color))
+        .child(div().text_center().child(label))
+        .child(div().absolute().top_0().bottom_0().right(px(7.0)).flex().items_center().opacity(0.8).child(ink_icon(IconName::ArrowUpRight, 12.0)))
         .tip("Open thread")
         .on_click(move |_, _, cx| dispatch(AppCommand::TaskSelect { task_id: thread_id.clone() }, cx))
 }
@@ -607,7 +621,7 @@ fn user_message(model: &RowModel, message: &ConversationMessage, newest: bool, r
     }
     if let Some(label) = message_label(message.origin.as_ref(), message.detail.as_deref()) {
         match sender_thread(message.origin.as_ref()) {
-            Some(sender) => stack = stack.child(open_thread_chip(SharedString::from(format!("origin-{}", message.id)), label, sender, cx)),
+            Some(sender) => stack = stack.child(open_thread_chip(SharedString::from(format!("origin-{}", message.id)), label, sender, stack_width(model), cx)),
             None => stack = stack.child(div().text_color(t.quiet_strong).text_size(px(m.text_meta)).child(label)),
         }
     }
@@ -645,6 +659,12 @@ fn user_message(model: &RowModel, message: &ConversationMessage, newest: bool, r
         .into_any_element()
 }
 
+/// The width of a sent message's column: 72% of the conversation's (capped at 680), or 92% in a dock.
+fn stack_width(model: &RowModel) -> Option<f32> {
+    let column = (model.width - model.inset * 2.0 - model.side).min(860.0);
+    (model.width > 0.0).then(|| if model.docked { column * 0.92 } else { (column * 0.72).min(680.0) })
+}
+
 /// The bubble's width limit in a narrow window: 85% of its stack, which is as wide as its natural
 /// width or the column's 72% (capped at 680), whichever is less. Given in pixels because a percentage of
 /// the shrink-to-fit stack is not resolved when the text is measured, so its height would be short.
@@ -652,8 +672,7 @@ fn bubble_cap(model: &RowModel, message: &ConversationMessage, window: &mut Wind
     if model.docked || model.width <= 0.0 {
         return None;
     }
-    let column = (model.width - model.inset * 2.0 - model.side).min(860.0);
-    let stack = (column * 0.72).min(680.0);
+    let stack = stack_width(model)?;
     // Its natural width is its widest line, as `pre-wrap` text sizes to fit; a line as wide as the
     // stack settles it.
     let theme = cx.theme();
@@ -1120,7 +1139,7 @@ fn thread_message(model: &RowModel, index: usize, message: &ConversationMessage,
             .child(selectable_area(&text));
         body = body.child(paragraphs);
         if let Some(sender) = sender_thread(message.origin.as_ref()) {
-            body = body.child(open_thread_chip(SharedString::from(format!("open-sender-{}", message.id)), "Open thread".into(), sender, cx));
+            body = body.child(open_thread_chip(SharedString::from(format!("open-sender-{}", message.id)), "Open thread".into(), sender, None, cx));
         }
         card = card.child(body);
     }

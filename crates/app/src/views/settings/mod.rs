@@ -344,8 +344,9 @@ pub(super) fn with_code(parts: &[(&str, bool)], cx: &App) -> AnyElement {
             .enumerate()
             .map(|(index, (text, code))| {
                 if *code {
-                    // Flex aligns bottom edges; this lifts the chip's baseline onto the words' (5.3px above a 20.3px line's bottom).
-                    return Inline::Element(div().relative().top(px(-1.3)).px(px(5.0)).py(px(1.0)).rounded(px(5.0)).bg(t.wash).text_color(t.ink_dim).font_family(mono.clone()).text_size(px(12.6)).line_height(gpui::line_height_normal()).child(text.to_string()).into_any_element());
+                    // Flex aligns bottom edges; this lifts the chip's baseline onto the words' (5.3px above a
+                    // 20.3px line's bottom), in Chromium's 1/64px layout units so its edges round as there.
+                    return Inline::Element(div().relative().top(px(-1.296875)).px(px(5.0)).py(px(1.0)).rounded(px(5.0)).bg(t.wash).text_color(t.ink_dim).font_family(mono.clone()).text_size(px(12.6)).line_height(gpui::line_height_normal()).child(text.to_string()).into_any_element());
                 }
                 let after_code = index > 0 && parts[index - 1].1 && !text.starts_with([',', '.', ';', ':']);
                 let before_code = parts.get(index + 1).is_some_and(|next| next.1);

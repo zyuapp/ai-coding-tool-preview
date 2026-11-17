@@ -15,6 +15,7 @@ use act_core::AppCommand;
 use act_ui::components::button::{IconButton, IconButtonSize};
 use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
 use act_ui::overlay::{bounds_cell, bounds_probe, Align, BoundsCell, Placement};
+use act_ui::style::{Corners, Raised};
 use act_ui::theme::{ActiveTheme, Tokens};
 use act_ui::tooltip::Tippable;
 use act_ui::IconName;
@@ -32,6 +33,8 @@ use crate::workspace::dispatch;
 const MIN_DOCK_WIDTH: f32 = 320.0;
 pub const ADD_TAB_MENU: &str = "dock-add";
 const TABS_MENU: &str = "dock:tabs";
+/// The gap between a head button and the menu it opens, 40px from the button's 34px top.
+const MENU_GAP: f32 = 6.0;
 
 /// What a drag on the dock's edge carries.
 struct DockEdge;
@@ -534,7 +537,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     item.into()
                 })
                 .collect();
-            let menu = Menu::build(entries, Placement::Anchor { anchor, align: Align::End }, window, cx, |menu| menu.named("Open tabs").checkable(true).min_width(px(184.0)).max_width(px(280.0)).highlighted(Some(start)).exempt(&probe));
+            let menu = Menu::build(entries, Placement::Below { anchor, align: Align::End, gap: px(MENU_GAP) }, window, cx, |menu| menu.named("Open tabs").checkable(true).min_width(px(184.0)).max_width(px(280.0)).highlighted(Some(start)).exempt(&probe));
             root.menus.show(TABS_MENU, menu, cx);
         }))
     });
@@ -567,7 +570,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 item.into()
             })
             .collect();
-        let menu = Menu::build(entries, Placement::Anchor { anchor, align: Align::End }, window, cx, |menu| menu.width(px(236.0)).highlighted(first).exempt(&probe));
+        let menu = Menu::build(entries, Placement::Below { anchor, align: Align::End, gap: px(MENU_GAP) }, window, cx, |menu| menu.width(px(236.0)).highlighted(first).exempt(&probe));
         root.menus.show(ADD_TAB_MENU, menu, cx);
     }));
     let head_height = if sheet { m.chrome_head - m.frame_gap } else { m.chrome_head };
@@ -908,6 +911,7 @@ fn picker(root: &mut Root, state: &WorkspaceState, active: &str, window: &Window
                 .rounded(px(12.0))
                 .border_1()
                 .map(|button| if disabled { button.border_dashed().border_color(t.line_strong) } else { button.border_color(t.line).bg(t.control_soft).cursor_pointer().hover(|style| style.border_color(t.info_line).bg(t.surface_hover)) })
+                .rim(t.glass_rim, Corners::Radius(12.0))
                 .child(div().w(px(38.0)).flex_none().flex().justify_center().child(icon(launcher.glyph, 18.0, if disabled { t.quiet } else { t.link })))
                 .child(
                     div()

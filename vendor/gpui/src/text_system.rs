@@ -43,12 +43,18 @@ pub struct FontFamilyId(pub usize);
 
 pub(crate) const SUBPIXEL_VARIANTS_X: u8 = 4;
 
-pub(crate) const SUBPIXEL_VARIANTS_Y: u8 =
-    if cfg!(target_os = "windows") || cfg!(target_os = "linux") {
-        1
-    } else {
-        SUBPIXEL_VARIANTS_X
-    };
+/// Glyphs sit on whole device pixels vertically, as Chromium draws horizontal text.
+pub(crate) const SUBPIXEL_VARIANTS_Y: u8 = 1;
+
+/// How far below a line box's top its baseline sits, as Chromium places it: the ascent plus half
+/// the leading it and the descent leave, ascent and descent rounded and the half leading floored to
+/// device pixels at `scale_factor`.
+pub fn line_baseline(line_height: Pixels, ascent: Pixels, descent: Pixels, scale_factor: f32) -> Pixels {
+    let ascent = (ascent.0.abs() * scale_factor).round();
+    let descent = (descent.0.abs() * scale_factor).round();
+    let half_leading = ((line_height.0 * scale_factor - ascent - descent) / 2.).floor();
+    Pixels((half_leading + ascent) / scale_factor)
+}
 
 /// The GPUI text rendering sub system.
 pub struct TextSystem {
@@ -943,5 +949,20 @@ pub(crate) fn font_name_with_fallbacks<'a>(name: &'a str, system: &'a str) -> &'
         ".ZedSans" | "Zed Plex Sans" => "IBM Plex Sans",
         ".ZedMono" | "Zed Plex Mono" => "Lilex",
         _ => name,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn baseline_floors_half_leading_in_device_pixels() {
+        // 17px system UI on a 25.5px line: ascent 16, descent 4, half leading 2.75 floored.
+        assert_eq!(line_baseline(px(25.5), px(16.436), px(3.586), 1.0), px(18.0));
+        // 12px on a 14.390625px line: leading is negative, and its half floors to -1.
+        assert_eq!(line_baseline(px(14.390625), px(11.602), px(2.531), 1.0), px(11.0));
+        // At 2x the ascent rounds to 23 device pixels.
+        assert_eq!(line_baseline(px(14.0), px(11.602), px(2.531), 2.0), px(11.5));
     }
 }

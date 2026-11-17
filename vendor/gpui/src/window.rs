@@ -4091,7 +4091,8 @@ impl Window {
                 })?
                 .expect("Callback above only errors or returns Some");
             let bounds = Bounds {
-                origin: glyph_origin.map(|px| px.floor()) + raster_bounds.origin.map(Into::into),
+                origin: point(glyph_origin.x.floor(), glyph_origin.y.round())
+                    + raster_bounds.origin.map(Into::into),
                 size: tile.bounds.size.map(Into::into),
             };
             let content_mask = self.content_mask().scale(scale_factor);
@@ -4149,7 +4150,8 @@ impl Window {
                 .expect("Callback above only errors or returns Some");
 
             let bounds = Bounds {
-                origin: glyph_origin.map(|px| px.floor()) + raster_bounds.origin.map(Into::into),
+                origin: point(glyph_origin.x.floor(), glyph_origin.y.round())
+                    + raster_bounds.origin.map(Into::into),
                 size: tile.bounds.size.map(Into::into),
             };
             let content_mask = self.content_mask().scale(scale_factor);

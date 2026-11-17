@@ -820,7 +820,7 @@ impl Element for RichText {
         let ascent = system.ascent(strut_id, self.spec.size);
         let descent = system.descent(strut_id, self.spec.size).abs();
         let line_height = self.spec.line_height;
-        let half_leading = (line_height - ascent - descent) / 2.;
+        let baseline_offset = gpui::line_baseline(line_height, ascent, descent, window.scale_factor());
         let mask = window.layout_content_mask();
         let first_visible = painted.line_at(mask.origin.y);
         let last_visible = painted.line_at(mask.origin.y + mask.size.height);
@@ -831,7 +831,7 @@ impl Element for RichText {
             }
             let top = bounds.origin.y + line_height * line_index as f32;
             let left = bounds.origin.x + painted.offsets[line_index];
-            let baseline = top + half_leading + ascent;
+            let baseline = top + baseline_offset;
 
             if let Some(background) = self.paint.code_background {
                 for (start_box, end_box) in &code_pairs {

@@ -1,7 +1,7 @@
 use crate::{
     App, Bounds, Half, Hsla, LineLayout, Pixels, Point, Result, SharedString, StrikethroughStyle,
-    TextAlign, UnderlineStyle, Window, WrapBoundary, WrappedLineLayout, black, fill, point, px,
-    size,
+    TextAlign, UnderlineStyle, Window, WrapBoundary, WrappedLineLayout, black, fill, line_baseline,
+    point, px, size,
 };
 use derive_more::{Deref, DerefMut};
 use smallvec::SmallVec;
@@ -209,8 +209,10 @@ fn paint_line(
         ),
     );
     window.paint_layer(line_bounds, |window| {
-        let padding_top = (line_height - layout.ascent - layout.descent) / 2.;
-        let baseline_offset = point(px(0.), padding_top + layout.ascent);
+        let baseline_offset = point(
+            px(0.),
+            line_baseline(line_height, layout.ascent, layout.descent, window.scale_factor()),
+        );
         let mut decoration_runs = decoration_runs.iter();
         let mut wraps = wrap_boundaries.iter().peekable();
         let mut run_end = 0;

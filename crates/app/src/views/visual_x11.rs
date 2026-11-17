@@ -199,7 +199,7 @@ impl ClipView {
         }
         if let Some(frame) = frame {
             window.with_content_mask(Some(gpui::ContentMask { bounds: visible }), |window| {
-                let _ = window.paint_image(page, gpui::Corners::default(), frame, 0, false);
+                let _ = window.paint_image(page, page, gpui::Corners::default(), frame, 0, false);
             });
         }
         let scale = f64::from(gpui::page_zoom()) * f64::from(window.scale_factor());

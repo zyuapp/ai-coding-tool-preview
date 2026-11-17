@@ -182,7 +182,9 @@ impl LineWrapper {
             shaped_len -= 1;
         }
         let layout = self.shape(&line[..shaped_len]);
-        if shaped_len == line.len() && layout.width.floor() <= truncate_width {
+        // A text box is as wide as its line at Chromium's LayoutUnit (1/64px), and the line is cut
+        // only when that is wider than the room.
+        if shaped_len == line.len() && px((layout.width.0 * 64.0).ceil() / 64.0) <= truncate_width {
             return line;
         }
         let suffix_width = if truncation_suffix.is_empty() {

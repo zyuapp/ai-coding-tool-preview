@@ -920,7 +920,7 @@ fn tool_step(model: &RowModel, index: usize, step: &TimedStep, named: bool, nest
 /// A run of tool calls: the newest stays visible, the rest hide behind a +N counter.
 fn tool_run(model: &RowModel, index: usize, id: &str, steps: &[TimedStep], in_settled: bool, window: &mut Window, cx: &mut App) -> AnyElement {
     if steps.len() == 1 {
-        return tool_step(model, index, &steps[0], true, false, window, cx);
+        return tool_step(model, index, &steps[0], true, in_settled, window, cx);
     }
     let t = cx.theme().tokens.clone();
     let newest = steps.last().unwrap();
@@ -940,9 +940,10 @@ fn tool_run(model: &RowModel, index: usize, id: &str, steps: &[TimedStep], in_se
     let count = div().accessible(gpui::AccessInfo::new(gpui::AccessRole::Image, format!("{hidden} earlier tool {}", if hidden == 1 { "call" } else { "calls" }))).child(count);
     head = head.child(div().flex_none().flex().items_center().gap(px(9.0)).ml_auto().child(count).child(elapsed(steps[0].message.at, newest.ends_at, model.now, &words, window, cx)));
     let head = summary(model, &fold, holds, index, open, head, &words, cx).tip(tip_of(&call));
-    let mut run = div().flex().flex_col();
+    // In a settled fold a run keeps its rim but not its fill.
+    let mut run = rimmed(div().flex().flex_col(), &t, 10.0);
     if !in_settled {
-        run = rimmed(run, &t, 10.0).pane(t.glass_control);
+        run = run.pane(t.glass_control);
     }
     run = run.child(head);
     if open {

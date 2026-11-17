@@ -59,9 +59,9 @@ fn probe(slot: &mut Option<BoundsCell>) -> BoundsCell {
     slot.get_or_insert_with(bounds_cell).clone()
 }
 
-/// The theme a tile stands for, drawn in its own tokens.
+/// The theme a tile stands for, drawn in its own opaque tokens: the window's material does not reach it.
 fn tile_tokens<'a>(cache: &'a mut HashMap<&'static str, Tokens>, id: &'static str) -> &'a Tokens {
-    cache.entry(id).or_insert_with(|| Tokens::derive(&palette_for(id), &crate::theme_bridge::environment()))
+    cache.entry(id).or_insert_with(|| Tokens::derive(&palette_for(id), &act_ui::theme::Environment::default()))
 }
 
 /// Its accent and three ansi slots on its own canvas.

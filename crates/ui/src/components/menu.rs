@@ -359,9 +359,16 @@ pub struct Menu {
     /// The pointer washes its own row and leaves the keyboard's where it is.
     caret_holds: bool,
     pointer_row: Option<usize>,
+    /// The pointer has rested on a row, which takes the keyboard from what opened the menu.
+    pointer_entered: bool,
 }
 
 impl EventEmitter<DismissEvent> for Menu {}
+
+/// Emitted the first time the pointer rests on one of the menu's rows.
+pub struct MenuPointerEntered;
+
+impl EventEmitter<MenuPointerEntered> for Menu {}
 
 impl Focusable for Menu {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -419,6 +426,7 @@ impl Menu {
             top_level: false,
             caret_holds: false,
             pointer_row: None,
+            pointer_entered: false,
         }
     }
 
@@ -648,6 +656,11 @@ impl Menu {
             self.placement = Some(placement);
             cx.notify();
         }
+    }
+
+    /// Whether the pointer has rested on a row since the menu opened.
+    pub fn pointer_entered(&self) -> bool {
+        self.pointer_entered
     }
 
     /// The search field's text.
@@ -923,6 +936,10 @@ impl Menu {
                 cx.notify();
             }
             return;
+        }
+        if !self.pointer_entered {
+            self.pointer_entered = true;
+            cx.emit(MenuPointerEntered);
         }
         let other_open = self.submenu.as_ref().is_some_and(|open| open.index != index);
         let apply = move |menu: &mut Menu, window: &mut Window, cx: &mut Context<Menu>| {

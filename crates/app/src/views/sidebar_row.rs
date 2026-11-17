@@ -16,7 +16,7 @@ use act_core::state::WorkspaceState;
 use act_core::view::sidebar::ThreadHost;
 use act_core::workspace::coordination::row_headline;
 use act_core::AppCommand;
-use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
+use act_ui::components::menu::{Menu, MenuEntry, MenuItem, MenuPointerEntered};
 use act_ui::overlay::Placement;
 use act_ui::theme::ActiveTheme;
 use act_ui::tooltip::Tippable;
@@ -290,10 +290,12 @@ pub fn row(root: &mut Root, context: &RowContext, thread: &Thread, dismiss: bool
     let more_focus = _window.use_keyed_state(SharedString::from(format!("{}-more-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let dismiss_focus = _window.use_keyed_state(SharedString::from(format!("{}-dismiss-focus", thread.id)), cx, |_, cx| cx.focus_handle().tab_stop(true)).read(cx).clone();
     let actions_focused = more_focus.is_focused(_window) || dismiss_focus.is_focused(_window);
-    let menu_target = root.menus.is_open(&format!("task:{}", thread.id));
+    let open_menu = root.menus.entity(&format!("task:{}", thread.id));
+    let menu_target = open_menu.is_some();
     // The row its menu acts on stays ringed while the menu is open, unless the menu was opened
-    // from the row itself while focus is quiet, as `:focus` without `:focus-visible` hides it.
-    let menu_ring = menu_target && (!root.sidebar.menu_from_row || act_ui::focus::keyboard_focus_visible(cx));
+    // from the row itself while focus is quiet and the pointer has not yet taken it to a menu row,
+    // as `:focus` without `:focus-visible` hides it.
+    let menu_ring = open_menu.is_some_and(|menu| !root.sidebar.menu_from_row || act_ui::focus::keyboard_focus_visible(cx) || menu.read(cx).pointer_entered());
     let menu_open = menu_target || focus_ring || actions_focused;
     // Layout never sees hover styles, so the rail widens from the hovered row held in state.
     let revealed = menu_open || root.sidebar.hovered_row.as_deref() == Some(thread.id.as_str());
@@ -693,6 +695,7 @@ impl Root {
         }
         self.sidebar.menu_from_row = from_row;
         let menu = Menu::build(entries, Placement::At { position }, window, cx, |menu| menu.from_frame());
+        cx.subscribe(&menu, |_, _, _: &MenuPointerEntered, cx| cx.notify()).detach();
         self.menus.show(&format!("task:{thread_id}"), menu, cx);
     }
 }

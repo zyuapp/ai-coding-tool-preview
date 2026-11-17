@@ -16,7 +16,7 @@ use gpui::{
 };
 
 use crate::components::kbd::Kbd;
-use crate::overlay::{placed, Placement};
+use crate::overlay::{placed, BoundsCell, Placement};
 use crate::style::{glass, GlassKind};
 use crate::theme::ActiveTheme;
 
@@ -51,6 +51,8 @@ pub struct Tooltips {
     shown_in: Option<(gpui::Size<Pixels>, bool)>,
     /// The text the hovered control's tip last showed, or was asked to.
     entered: Option<SharedString>,
+    /// The hovered control's hitbox and bounds, so a control holding it leaves the tip to it.
+    hovered_zone: Option<(HitboxId, Bounds<Pixels>)>,
 }
 
 impl Global for Tooltips {}
@@ -82,6 +84,7 @@ impl Tooltips {
         let handle = window.window_handle();
         let state = cx.global_mut::<Tooltips>();
         state.hovered = Some(tip.key);
+        state.hovered_zone = Some((tip.hitbox, tip.anchor));
         state.entered = Some(tip.text.clone());
         state.linger = None;
         if state.shown.as_ref().is_some_and(|shown| shown.key == tip.key) {
@@ -163,6 +166,8 @@ struct TipZone {
     /// The control's border, which the zone (laid out inside it) reaches out over: a tip is placed
     /// against the control's border box.
     border: Edges<Pixels>,
+    /// Where the text an overflow tip repeats is drawn, when that is not the whole control.
+    text_box: Option<BoundsCell>,
 }
 
 impl IntoElement for TipZone {
@@ -218,7 +223,7 @@ impl Element for TipZone {
             // Focus reached by keyboard explains itself; a click already said what the control does.
             let focused = window.prepainting_in_focused()
                 && crate::focus::keyboard_focus_visible(cx)
-                && text_style.as_ref().is_none_or(|style| cut_short(&self.text, style, bounds.size.width, window));
+                && text_style.as_ref().is_none_or(|style| cut_short(&self.text, style, text_width(&self.text_box, bounds), window));
             let focus = window.focused(cx).map(|focus| focus.downgrade());
             let handle = window.window_handle();
             let shown_in = (window.viewport_size(), window.is_window_active());
@@ -239,6 +244,9 @@ impl Element for TipZone {
                 }
             }
             let state = cx.global_mut::<Tooltips>();
+            if state.hovered == Some(key) {
+                state.hovered_zone = Some((hitbox.id, outer));
+            }
             if let Some(shown) = state.shown.as_mut().filter(|shown| shown.key == key) {
                 shown.anchor = outer;
                 shown.text = self.text.clone();
@@ -275,6 +283,7 @@ impl Element for TipZone {
         let text = self.text.clone();
         let hoverable = self.hoverable;
         let style = text_style.take();
+        let width = text_width(&self.text_box, bounds);
         let outer = bounds.extend(self.border);
         window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
             if phase != DispatchPhase::Bubble {
@@ -282,7 +291,12 @@ impl Element for TipZone {
             }
             let hovered = hitbox.is_hovered(window);
             let current = cx.try_global::<Tooltips>().is_some_and(|state| state.hovered == Some(key));
-            if hovered && !current && style.as_ref().is_some_and(|style| !cut_short(&text, style, bounds.size.width, window)) {
+            if hovered && !current && style.as_ref().is_some_and(|style| !cut_short(&text, style, width, window)) {
+                return;
+            }
+            // A control inside this one, under the pointer too, keeps its own tip.
+            let inner = cx.try_global::<Tooltips>().and_then(|state| state.hovered.and(state.hovered_zone)).is_some_and(|(other, bounds)| other != hitbox.id && bounds.is_contained_within(&outer) && other.is_hovered(window));
+            if hovered && !current && inner {
                 return;
             }
             if hovered && !current {
@@ -307,6 +321,10 @@ impl Element for TipZone {
     }
 }
 
+fn text_width(text_box: &Option<BoundsCell>, bounds: Bounds<Pixels>) -> Pixels {
+    text_box.as_ref().and_then(|cell| cell.get()).map_or(bounds.size.width, |text| text.size.width)
+}
+
 /// Whether `text`, set in `style`, is wider than `width`.
 fn cut_short(text: &SharedString, style: &gpui::TextStyle, width: Pixels, window: &mut Window) -> bool {
     let font_size = style.font_size.to_pixels(window.rem_size());
@@ -321,26 +339,32 @@ pub trait Tippable: ParentElement + InteractiveElement + Styled + Sized {
     fn tip(mut self, text: impl Into<SharedString>) -> Self {
         let text = text.into();
         let border = border_of(&mut self);
-        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: false, border })
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: false, border, text_box: None })
     }
 
     /// Like `tip`, and shown again when a press changes `text` while the pointer stays.
     fn tip_again(mut self, text: impl Into<SharedString>) -> Self {
         let text = text.into();
         let border = border_of(&mut self);
-        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: true, border })
+        self.accessible_name(spoken(&text)).child(TipZone { text, hoverable: false, overflow: false, again: true, border, text_box: None })
     }
 
     /// Shows `text`, the control's own text, only while it is cut short.
     fn tip_overflow(mut self, text: impl Into<SharedString>) -> Self {
         let border = border_of(&mut self);
-        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border })
+        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border, text_box: None })
+    }
+
+    /// Like `tip_overflow`, for a control whose text is drawn in the box `text_box` records.
+    fn tip_overflow_of(mut self, text: impl Into<SharedString>, text_box: &BoundsCell) -> Self {
+        let border = border_of(&mut self);
+        self.child(TipZone { text: text.into(), hoverable: false, overflow: true, again: false, border, text_box: Some(text_box.clone()) })
     }
 
     /// The reason a disabled control cannot act: shown at once, and on a press, and readable.
     fn tip_reason(mut self, text: impl Into<SharedString>) -> Self {
         let border = border_of(&mut self);
-        self.child(TipZone { text: text.into(), hoverable: true, overflow: false, again: false, border })
+        self.child(TipZone { text: text.into(), hoverable: true, overflow: false, again: false, border, text_box: None })
     }
 }
 

@@ -196,6 +196,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                 window.focus(&focus);
             }
             let pencil_lit = focus.is_focused(window) && act_ui::focus::keyboard_focus_visible(cx);
+            let title_box = act_ui::overlay::bounds_cell();
             title_line = title_line.child(no_drag_shrink(
                 div()
                     .id("heading-thread")
@@ -215,8 +216,9 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
                     .cursor_text()
                     .transition(gpui::Transition::ease(120).only(&[gpui::TransitionProperty::Background, gpui::TransitionProperty::Color]))
                     .hover(|style| style.bg(t.surface_hover))
-                    .child(div().id("heading-thread-title").min_w_0().ellipsis().child(thread.title.clone()).tip_overflow(thread.title.clone()))
+                    .child(div().id("heading-thread-title").min_w_0().ellipsis().child(thread.title.clone()).child(act_ui::overlay::bounds_probe(&title_box)))
                     .when(width > 480.0, |title| title.child(div().id("heading-thread-pencil").flex_none().transition(gpui::Transition::ease(120)).text_color(if pencil_lit { t.muted_strong } else { t.quiet_soft }).group_hover("heading-thread", |style| style.text_color(t.muted_strong)).child(act_ui::Icon::new(IconName::Pencil).size(px(14.0))).tip("Rename")))
+                    .tip_overflow_of(thread.title.clone(), &title_box)
                     .on_click(cx.listener(move |root, _, _, cx| {
                         root.renaming_heading = Some(id.clone());
                         root.start_rename(&id, cx);

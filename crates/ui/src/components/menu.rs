@@ -1247,7 +1247,8 @@ fn group_label_with(icon: Option<IconName>, label: SharedString, first: bool, t:
         .flex_none()
         .px(px(8.0))
         .pt(px(if first { 3.0 } else { 8.0 }))
-        .pb(px(4.0))
+        // An icon set in the label's line (an inline-flex box on its baseline) deepens the line by 1.5px.
+        .pb(px(if icon.is_some() { 5.5 } else { 4.0 }))
         .text_color(t.quiet)
         .text_size(px(m.text_meta))
         .font_weight(FontWeight::MEDIUM)

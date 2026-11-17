@@ -21,6 +21,7 @@ use act_core::AppCommand;
 use act_markdown::highlight::{highlight_lines, language_for_path, SyntaxRole};
 use act_ui::components::button::{Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, ToggleTone};
 use act_ui::components::confirm_action::ConfirmAction;
+use act_ui::components::field::Checkbox;
 use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
 use act_ui::components::meter::{Meter, MeterSize};
 use act_ui::components::notice::{Notice, NoticeTone};
@@ -46,6 +47,14 @@ const COMPARE_MENU: &str = "diff:compare";
 const BASE_MENU: &str = "diff:base";
 /// Rows coloured before a file first draws, about two screens of a tall window.
 const OPENING_ROWS: usize = 200;
+/// What an unwrapped row is counted at until the list measures it.
+const ROW_HEIGHT: f32 = 20.0;
+const FILE_ROW_HEIGHT: f32 = 39.0;
+const HUNK_ROW_HEIGHT: f32 = 24.0;
+/// The room a unified line's numbers, marker and padding take beside its code.
+const UNIFIED_CODE_INSET: f32 = 122.0;
+/// The same for one side of a split row.
+const SPLIT_CODE_INSET: f32 = 62.0;
 const NO_PROJECT: &str = "Open a project to review changes";
 
 /// A file's patch as the host last read it.
@@ -872,7 +881,11 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
             hasher.finish()
         })
         .collect();
-    sync_list(&mut root.dock.diff, signatures);
+    let text_system = window.text_system();
+    let ch = text_system.ch_width(text_system.resolve_font(&gpui::font(mono.clone())), px(m.text_meta)).map(f32::from).unwrap_or(m.text_meta * 0.6);
+    let list_width = panel_width - root.dock.diff.gutter;
+    let estimates: Vec<f32> = rows.iter().map(|row| row_estimate(row, &drawn, list_width, ch)).collect();
+    sync_list(&mut root.dock.diff, signatures, &estimates);
     let mut stop_order = Vec::new();
     for (at, row) in rows.iter().enumerate() {
         let picked = |path: &str, key: &str| -> bool {
@@ -921,8 +934,6 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
     let pinned = rows.get(top).map(|row| row.path().to_string());
     PINNED.with(|cell| *cell.borrow_mut() = pinned.clone());
 
-    let text_system = window.text_system();
-    let ch = text_system.ch_width(text_system.resolve_font(&gpui::font(mono.clone())), px(m.text_meta)).map(f32::from).unwrap_or(m.text_meta * 0.6);
     let model = Rc::new(DiffModel {
         ch,
         rows,
@@ -1062,7 +1073,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         .pr(px(gutter))
         .child(list(root.dock.diff.list.clone(), move |index, window, cx| render_row(&item_model, index, window, cx)).size_full());
     let pinned_row = pinned.as_ref().and_then(|path| model.files.get(path)).map(|file| {
-        div().absolute().top_0().left_0().right(px(gutter)).occlude().bg(model.tokens.frame).child(div().bg(model.tokens.glass_strip).child(file_header(&model, file, true, window, cx)))
+        div().absolute().top_0().left_0().right_0().occlude().child(act_ui::style::glass(div(), &model.tokens, act_ui::style::GlassKind::Strip, None, None).child(file_header(&model, file, true, window, cx)))
     });
     let drag_weak = weak.clone();
     let up_weak = weak.clone();
@@ -1076,7 +1087,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         .text_size(px(m.text_meta))
         .line_height(px(20.0))
         .when(count > 0, |scroll| {
-            scroll.child(files_list).children(pinned_row).child(act_ui::components::scrollbar::Scrollbar::list("diff-scrollbar", &root.dock.diff.list))
+            // The pinned row is drawn over the scrollbar too, which shows frosted under it.
+            scroll.child(files_list).child(act_ui::components::scrollbar::Scrollbar::list("diff-scrollbar", &root.dock.diff.list)).children(pinned_row)
         })
         .on_key_down(cx.listener(|root, event: &gpui::KeyDownEvent, window, cx| root.review_key(event, window, cx)))
         .on_mouse_up(MouseButton::Left, move |_, _, cx| {
@@ -1119,15 +1131,43 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         .into_any_element()
 }
 
-fn sync_list(cache: &mut DiffCache, signatures: Vec<u64>) {
+fn sync_list(cache: &mut DiffCache, signatures: Vec<u64>, estimates: &[f32]) {
     let old = &cache.signatures;
     if old.len() != signatures.len() || old != &signatures {
         let first = old.iter().zip(&signatures).position(|(a, b)| a != b).unwrap_or(old.len().min(signatures.len()));
         let last_old = old.len();
         let last_new = signatures.len();
         let tail = old.iter().rev().zip(signatures.iter().rev()).take_while(|(a, b)| a == b).count().min(last_old - first).min(last_new - first);
-        cache.list.splice(first..last_old - tail, last_new - tail - first);
+        cache.list.splice_estimated(first..last_old - tail, estimates[first..last_new - tail].iter().map(|height| px(*height)));
         cache.signatures = signatures;
+    }
+}
+
+/// What a row is counted at until the list measures it: its code wrapped at the width it will
+/// have, so the scrollbar reckons with the whole review before it is drawn.
+fn row_estimate(row: &PanelRow, drawn: &HashMap<String, Rc<DrawnFile>>, width: f32, ch: f32) -> f32 {
+    // Wrapped lines hang by two columns.
+    let wrapped = |text: &str, room: f32| {
+        let cols = ((room / ch).floor() as usize).max(4);
+        let len: usize = text.chars().map(|ch| if ch == '\t' { 8 } else { 1 }).sum();
+        let lines = if len <= cols { 1 } else { 1 + (len - cols).div_ceil(cols - 2) };
+        lines as f32 * ROW_HEIGHT
+    };
+    match row {
+        PanelRow::File(_) => FILE_ROW_HEIGHT,
+        PanelRow::Line(path, index) => match drawn.get(path).and_then(|drawing| drawing.rows.get(*index)) {
+            Some(row) if row.kind == DiffLineKind::Hunk => HUNK_ROW_HEIGHT,
+            Some(row) => wrapped(&row.text, width - UNIFIED_CODE_INSET),
+            None => ROW_HEIGHT,
+        },
+        PanelRow::Pair(path, index) => match drawn.get(path).and_then(|drawing| drawing.pairs.get(*index)) {
+            Some(SplitRow::Hunk { .. }) => HUNK_ROW_HEIGHT,
+            Some(SplitRow::Pair { left, right, .. }) => {
+                [left, right].into_iter().flatten().map(|row| wrapped(&row.text, width / 2.0 - SPLIT_CODE_INSET)).fold(ROW_HEIGHT, f32::max)
+            }
+            None => ROW_HEIGHT,
+        },
+        PanelRow::Note(..) | PanelRow::Composer(_) => ROW_HEIGHT,
     }
 }
 
@@ -1519,7 +1559,7 @@ fn file_header(model: &Rc<DiffModel>, file: &DiffFileSummary, echo: bool, window
         let root = model.root.clone();
         let path = file.path.clone();
         let searching = model.searching;
-        move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
+        move |_: &bool, _: &mut Window, cx: &mut App| {
             let path = path.clone();
             let _ = root.update(cx, |root, cx| {
                 if !viewed && !searching {
@@ -1553,8 +1593,8 @@ fn file_header(model: &Rc<DiffModel>, file: &DiffFileSummary, echo: bool, window
         .border_t_1()
         .border_color(t.line)
         .when(!echo, |row| row.bg(t.dock_sunken))
-        .when(echo, |row| row.border_b_1())
-        .hover(|style| style.bg(t.surface_hover))
+        // A frosted echo keeps its glass under the pointer.
+        .when(!(echo && t.page.a == 0.0 && t.glass_blur), |row| row.hover(|style| style.bg(t.surface_hover)))
         .child(
             div()
                 .id(SharedString::from(format!("file-open-{id_base}")))
@@ -1571,6 +1611,8 @@ fn file_header(model: &Rc<DiffModel>, file: &DiffFileSummary, echo: bool, window
                 .cursor_pointer()
                 .text_color(name_ink)
                 .text_size(px(model.text_meta))
+                // The pinned echo sits outside the list's 20px lines, so its name sets no taller than its icon.
+                .when(echo, |row| row.line_height(px(16.0)))
                 .child(div().id(SharedString::from(format!("file-caret-{id_base}"))).flex_none().child(icon(if open { IconName::ChevronDown } else { IconName::ChevronRight }, 14.0, t.quiet_strong)).tip(if open { "Fold" } else { "Unfold" }))
                 .child(div().id(SharedString::from(format!("file-icon-{id_base}"))).flex_none().child(icon(glyph, 16.0, t.quiet_strong)).tip(tip))
                 .child(
@@ -1605,23 +1647,12 @@ fn file_header(model: &Rc<DiffModel>, file: &DiffFileSummary, echo: bool, window
             ),
         )
         .child(
-            div()
-                .id(SharedString::from(format!("file-viewed-{id_base}")))
-                .flex_none()
-                .size(px(16.0))
-                .ml(px(6.0))
-                .rounded(px(4.0))
-                .border_1()
-                .border_color(if viewed { t.accent } else { t.line_strong })
-                .when(viewed, |tick| tick.bg(t.accent))
-                .flex()
-                .items_center()
-                .justify_center()
-                .cursor_pointer()
-                .when(viewed, |tick| tick.child(icon(IconName::Check, 12.0, t.accent_ink)))
-                .accessible(gpui::AccessInfo::new(gpui::AccessRole::CheckBox, format!("Mark {} viewed", file.path)).toggled(viewed))
-                .tip(if viewed { "Mark unviewed" } else { "Mark viewed" })
-                .on_click(tick),
+            div().flex_none().child(
+                Checkbox::new(SharedString::from(format!("file-viewed-{id_base}")), viewed)
+                    .name(format!("Mark {} viewed", file.path))
+                    .tip(if viewed { "Mark unviewed" } else { "Mark viewed" })
+                    .on_change(tick),
+            ),
         )
 }
 

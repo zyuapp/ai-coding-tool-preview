@@ -410,6 +410,7 @@ pub struct Checkbox {
     checked: bool,
     label: Option<SharedString>,
     tip: Option<SharedString>,
+    name: Option<SharedString>,
     disabled: bool,
     focus: Option<FocusHandle>,
     on_change: Option<ToggleHandler>,
@@ -419,7 +420,13 @@ pub struct Checkbox {
 
 impl Checkbox {
     pub fn new(id: impl Into<ElementId>, checked: bool) -> Self {
-        Self { id: id.into(), checked, label: None, tip: None, disabled: false, focus: None, on_change: None, accent: false, mixed: false }
+        Self { id: id.into(), checked, label: None, tip: None, name: None, disabled: false, focus: None, on_change: None, accent: false, mixed: false }
+    }
+
+    /// What assistive technology calls the box, as `aria-label`, when neither label nor tip says it.
+    pub fn name(mut self, name: impl Into<SharedString>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 
     /// Half ticked, as a native box with `indeterminate` set: some of what it stands for is ticked.
@@ -485,9 +492,13 @@ impl RenderOnce for Checkbox {
         if focused {
             tick = tick.relative().border_color(t.focus_ring).child(halo_ring(4.0, t));
         }
-        let tick = tick.child(Icon::new(if self.mixed && !checked { IconName::Minus } else { IconName::Check }).size(px(12.0)));
         let group: SharedString = format!("checkbox-{:?}", self.id).into();
-        let name = self.label.clone().or_else(|| self.tip.clone()).unwrap_or_default();
+        if !filled && !self.disabled && !focused {
+            let hover = t.quiet_strong;
+            tick = tick.group_hover(group.clone(), move |style| style.border_color(hover).text_color(hover));
+        }
+        let tick = tick.child(Icon::new(if self.mixed && !checked { IconName::Minus } else { IconName::Check }).size(px(12.0)));
+        let name = self.name.clone().or_else(|| self.label.clone()).or_else(|| self.tip.clone()).unwrap_or_default();
         let mut checkbox = div()
             .id(self.id)
             .accessible(gpui::AccessInfo::new(gpui::AccessRole::CheckBox, name).toggled(checked).disabled(self.disabled))
@@ -501,14 +512,7 @@ impl RenderOnce for Checkbox {
             .px(px(6.0))
             .text_color(t.ink_soft)
             .text_size(px(theme.metrics.text_control));
-        if !filled && !self.disabled {
-            let hover = t.quiet_strong;
-            checkbox = checkbox.child(
-                div().group_hover(group, move |style| style.border_color(hover).text_color(hover)).child(tick),
-            );
-        } else {
-            checkbox = checkbox.child(tick);
-        }
+        checkbox = checkbox.child(tick);
         if let Some(focus) = &self.focus {
             checkbox = checkbox.track_focus(focus);
         }

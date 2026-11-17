@@ -72,7 +72,29 @@ fn control(id: &'static str, glyph: IconName, label: impl Into<SharedString>, ti
 fn lifted(key: gpui::Stateful<gpui::Div>, t: &act_ui::theme::Tokens) -> gpui::Stateful<gpui::Div> {
     let outline = gpui::BoxShadow { color: t.glass_float_outline.into(), offset: gpui::point(px(0.0), px(0.0)), blur_radius: px(0.0), spread_radius: px(0.5) };
     let drop = gpui::BoxShadow { color: act_ui::color::alpha(gpui::black().into(), 0.12).into(), offset: gpui::point(px(0.0), px(1.0)), blur_radius: px(2.0), spread_radius: px(0.0) };
-    key.border_1().border_color(t.glass_edge).bg(t.glass_clear.background().tiled_from_padding_box()).glass_backdrop(t).shadow(vec![outline, drop]).rim(t.glass_rim, Corners::Full)
+    // `--glass-edge` is a conic gradient, brightest at the top left and again at the bottom right:
+    // a faint edge with arcs of light cut from a ring by boxes in those corners.
+    let arc = |left: f32, top: f32, size: f32, strength: f32| {
+        div().absolute().left(px(left - 1.0)).top(px(top - 1.0)).size(px(size)).overflow_hidden().child(
+            div()
+                .absolute()
+                .left(px(-left))
+                .top(px(-top))
+                .size(px(34.0))
+                .rounded_full()
+                .border_1()
+                .border_color(act_ui::color::alpha(act_ui::color::WHITE, strength)),
+        )
+    };
+    key.border_1()
+        .border_color(act_ui::color::alpha(act_ui::color::WHITE, 0.02))
+        .bg(t.glass_clear.background().tiled_from_padding_box())
+        .glass_backdrop(t)
+        .shadow(vec![outline, drop])
+        .rim(t.glass_rim, Corners::Full)
+        .child(arc(0.0, 0.0, 17.0, 0.02))
+        .child(arc(0.0, 0.0, 7.0, 0.13))
+        .child(arc(24.0, 24.0, 10.0, 0.05))
 }
 
 pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: &mut Context<Root>) -> gpui::AnyElement {

@@ -13,7 +13,7 @@ use crate::focus::keyboard_focus_visible;
 use crate::icon::{Icon, IconName};
 use crate::input::TextInput;
 use crate::style::{Corners, Raised};
-use crate::theme::{ActiveTheme, Tokens};
+use crate::theme::{ActiveTheme, ThemeVariant, Tokens};
 use crate::tooltip::Tippable;
 
 /// The halo as a ring outside the edge, as CSS draws a box shadow: never under a translucent fill.
@@ -79,9 +79,11 @@ impl SearchField {
     }
 }
 
-/// The native search cancel glyph (`::-webkit-search-cancel-button`): a bold cross in white at
-/// 40% opacity, 75% under the pointer, that empties the field. Chromium sizes it with the field's font.
-fn native_cancel(input: Entity<TextInput>, font: f32) -> impl IntoElement {
+/// The native search cancel glyph (`::-webkit-search-cancel-button`): a bold cross at 40% opacity,
+/// 75% under the pointer, that empties the field. Chromium sizes it with the field's font and draws
+/// it white on a dark colour scheme, and on a light one in a blue that deepens towards its foot.
+fn native_cancel(input: Entity<TextInput>, font: f32, dark: bool) -> impl IntoElement {
+    let (top, foot) = if dark { (gpui::rgb(0xffffff), gpui::rgb(0xffffff)) } else { (gpui::rgb(0x2c64aa), gpui::rgb(0x1f4475)) };
     let target = input.clone();
     let scale = font / 14.0;
     div()
@@ -114,7 +116,8 @@ fn native_cancel(input: Entity<TextInput>, font: f32) -> impl IntoElement {
                     }
                     path.close();
                     if let Ok(path) = path.build() {
-                        window.paint_path(path, gpui::Rgba { r: 1.0, g: 1.0, b: 1.0, a: alpha });
+                        let stop = |color: gpui::Rgba, at| gpui::linear_color_stop(gpui::Rgba { a: alpha, ..color }, at);
+                        window.paint_path(path, gpui::linear_gradient(180.0, stop(top, 0.0), stop(foot, 1.0)));
                     }
                 },
             )
@@ -160,7 +163,7 @@ impl RenderOnce for SearchField {
                     .text_color(t.ink)
                     .text_size(px(font))
                     .when(self.variant == SearchVariant::Field, |this| this.py(px(8.0)))
-                    .when(cancel, |this| this.flex().items_center().child(div().flex_1().min_w_0().child(self.input.clone())).child(native_cancel(self.input.clone(), font)))
+                    .when(cancel, |this| this.flex().items_center().child(div().flex_1().min_w_0().child(self.input.clone())).child(native_cancel(self.input.clone(), font, theme.variant() == ThemeVariant::Dark)))
                     .when(!cancel, |this| this.child(self.input.clone())),
             );
         let mut field = div().id(self.id).flex().items_center().min_w_0().text_color(t.quiet);

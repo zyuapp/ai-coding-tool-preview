@@ -111,9 +111,15 @@ impl Marks {
                 let chip = t.accent_chip;
                 element
                     .rounded(px(8.0))
-                    .with_animation(SharedString::from(format!("found-{id}-{visit}")), Animation::new(Duration::from_millis(2200)).with_easing(gpui::ease_out_quint()), move |element, delta| {
-                        let alpha = if delta < 0.6 { 1.0 } else { 1.0 - (delta - 0.6) / 0.4 };
-                        element.bg(Rgba { a: chip.a * alpha, ..chip })
+                    // Held for the first 60%, then eased out over the rest, as CSS eases each keyframe span.
+                    .with_animation(SharedString::from(format!("found-{id}-{visit}")), Animation::new(Duration::from_millis(2200)), move |element, delta| {
+                        let alpha = if delta < 0.6 { 1.0 } else { 1.0 - act_ui::theme::tokens::cubic_bezier([0.0, 0.0, 0.58, 1.0], (delta - 0.6) / 0.4) };
+                        // A finished flash leaves the row's own fill.
+                        if alpha > 0.0 {
+                            element.bg(Rgba { a: chip.a * alpha, ..chip })
+                        } else {
+                            element
+                        }
                     })
                     .into_any_element()
             }

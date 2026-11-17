@@ -78,9 +78,13 @@ impl Scene {
 
     pub fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
         let mut primitive = primitive.into();
-        let clipped_bounds = primitive
-            .bounds()
-            .intersect(&primitive.content_mask().bounds);
+        // A shadow paints 3 sigma of blur and a pixel of antialiasing beyond its bounds
+        // (shaders.metal), so whatever is drawn later over that must order above it.
+        let painted_bounds = match &primitive {
+            Primitive::Shadow(shadow) => shadow.bounds.dilate(shadow.blur_radius * 3.0 + ScaledPixels(1.0)),
+            _ => *primitive.bounds(),
+        };
+        let clipped_bounds = painted_bounds.intersect(&primitive.content_mask().bounds);
 
         if clipped_bounds.is_empty() {
             return;
@@ -1038,5 +1042,45 @@ impl PathVertex<Pixels> {
             st_position: self.st_position,
             content_mask: self.content_mask.scale(factor),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{point, size, solid_background};
+
+    fn rect(x: f32, y: f32, width: f32, height: f32) -> Bounds<ScaledPixels> {
+        Bounds::new(point(ScaledPixels(x), ScaledPixels(y)), size(ScaledPixels(width), ScaledPixels(height)))
+    }
+
+    #[test]
+    fn a_quad_drawn_over_a_shadows_blur_orders_above_it() {
+        let mut scene = Scene::default();
+        let content_mask = ContentMask { bounds: rect(0., 0., 1000., 1000.) };
+        let casting = rect(0., 0., 100., 100.);
+        scene.insert_primitive(Shadow {
+            order: 0,
+            blur_radius: ScaledPixels(10.),
+            bounds: casting,
+            corner_radii: Corners::default(),
+            content_mask: content_mask.clone(),
+            color: Hsla::default(),
+            element_bounds: casting,
+            element_corner_radii: Corners::default(),
+            fade: FadeMask::default(),
+        });
+        scene.insert_primitive(Quad {
+            order: 0,
+            border_style: BorderStyle::default(),
+            bounds: rect(110., 0., 50., 50.),
+            content_mask,
+            background: solid_background(crate::Rgba { r: 1., g: 1., b: 1., a: 1. }),
+            border_color: Hsla::default(),
+            corner_radii: Corners::default(),
+            border_widths: Edges::default(),
+            fade: FadeMask::default(),
+        });
+        assert!(scene.quads[0].order > scene.shadows[0].order);
     }
 }

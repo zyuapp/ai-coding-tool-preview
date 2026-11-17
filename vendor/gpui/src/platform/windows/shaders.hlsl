@@ -843,7 +843,8 @@ ShadowVertexOutput shadow_vertex(uint vertex_id: SV_VertexID, uint shadow_id: SV
     float2 unit_vertex = float2(float(vertex_id & 1u), 0.5 * float(vertex_id & 2u));
     Shadow shadow = shadows[shadow_id];
 
-    float margin = 3.0 * shadow.blur_radius;
+    // A device pixel more for the antialiased edge, which a sharp shadow's own bounds cut off.
+    float margin = 3.0 * shadow.blur_radius + 1.0;
     Bounds bounds = shadow.bounds;
     bounds.origin -= margin;
     bounds.size += 2.0 * margin;

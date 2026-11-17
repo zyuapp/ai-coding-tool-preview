@@ -986,7 +986,8 @@ fn vs_shadow(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) ins
     let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
     var shadow = b_shadows[instance_id];
 
-    let margin = 3.0 * shadow.blur_radius;
+    // A device pixel more for the antialiased edge, which a sharp shadow's own bounds cut off.
+    let margin = 3.0 * shadow.blur_radius + 1.0;
     // Set the bounds of the shadow and adjust its size based on the shadow's
     // spread radius to achieve the spreading effect
     shadow.bounds.origin -= vec2<f32>(margin);

@@ -499,7 +499,8 @@ vertex ShadowVertexOutput shadow_vertex(
   float2 unit_vertex = unit_vertices[unit_vertex_id];
   Shadow shadow = shadows[shadow_id];
 
-  float margin = 3. * shadow.blur_radius;
+  // A device pixel more for the antialiased edge, which a sharp shadow's own bounds cut off.
+  float margin = 3. * shadow.blur_radius + 1.;
   // Set the bounds of the shadow and adjust its size based on the shadow's
   // spread radius to achieve the spreading effect
   Bounds_ScaledPixels bounds = shadow.bounds;

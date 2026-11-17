@@ -451,6 +451,9 @@ impl Render for Root {
         if !dock_open || state.settings_shown() {
             self.dock.hidden(cx);
         }
+        if !dock_open {
+            self.dock.hold_review(&shown, cx);
+        }
         let drafting = shown.current_thread().is_none();
         let session_open = state.session_panel_open && !dock_open && !state.zen;
 

@@ -61,6 +61,8 @@ pub struct DockState {
     /// Each tab's own keyboard stop; only the selected one is reached by Tab, the arrows walk the rest.
     tab_focus: HashMap<String, FocusHandle>,
     resizer_focus: Option<FocusHandle>,
+    /// The thread whose review the dock last held, while it holds one.
+    diff_mounted: Option<String>,
     /// A tab was closed from the keyboard, so the strip takes the keyboard back once it redraws.
     refocus_tabs: bool,
     bodies: HashMap<String, FocusHandle>,
@@ -90,6 +92,7 @@ impl Default for DockState {
             track: 0.0,
             tab_focus: HashMap::new(),
             resizer_focus: None,
+            diff_mounted: None,
             refocus_tabs: false,
             bodies: HashMap::new(),
             picker_focus: Vec::new(),
@@ -133,6 +136,16 @@ impl DockState {
     fn nudge_width(&mut self, wider: f32) {
         let (_, workspace) = self.workspace;
         self.width = Some((self.track + wider).max(MIN_DOCK_WIDTH).min(workspace - MIN_DOCK_WIDTH));
+    }
+
+    /// Follows which thread's review the dock holds, open or closed; another thread's opens anew.
+    pub fn hold_review(&mut self, state: &WorkspaceState, cx: &mut App) {
+        let (owner, _) = front_dock(state);
+        let key = tabs(state, &owner).iter().any(|tab| tab.id == DIFF_PANEL).then(|| dock_subject(state, &owner, DIFF_PANEL).unwrap_or(owner));
+        if key.is_some() && key != self.diff_mounted {
+            self.diff.remount(cx);
+        }
+        self.diff_mounted = key;
     }
 
     /// The dock is off screen: its page leaves the window and its device stops streaming.
@@ -363,6 +376,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     let shown_terminal = (dock.open && !state.settings_shown()).then_some(active.as_str()).filter(|tab| dock.terminals.iter().any(|terminal| terminal.id == *tab));
     root.dock.terminals.retain(&alive, shown_terminal);
     root.dock.agents.sync(state);
+
+    root.dock.hold_review(state, cx);
 
     if root.dock.shown_tab != active {
         root.dock.shown_tab = active.clone();

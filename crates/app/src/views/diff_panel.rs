@@ -369,6 +369,21 @@ impl Default for DiffCache {
     }
 }
 
+impl DiffCache {
+    /// The review opens anew for another thread: at the top, with nothing picked or half-written.
+    pub fn remount(&mut self, cx: &mut App) {
+        // An empty list has no top to hold, and one set there would ride below rows spliced in later.
+        if self.list.item_count() > 0 {
+            self.list.scroll_to(ListOffset { item_ix: 0, offset_in_item: px(0.0) });
+        }
+        self.selection = None;
+        self.editing = None;
+        if let Some(note) = &self.note {
+            note.input.update(cx, |input, cx| input.reset("", cx));
+        }
+    }
+}
+
 fn version_key(workspace_id: &str, range: &DiffRange, ignore_whitespace: bool, file: &DiffFileSummary) -> String {
     format!("{workspace_id}|{}|{ignore_whitespace}|{}|{}", range_key(range), file.path, file_fingerprint(file))
 }
@@ -970,20 +985,9 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         Some(DiffSummaryResult::Available { files, additions, deletions, .. }) if !files.is_empty() => {
             let done = files.iter().filter(|file| diff.viewed.contains_key(&file.path)).count();
             let lead = if done < files.len() {
-                rimmed(div(), &t, 7.0)
-                    .id("diff-next-unviewed")
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(24.0))
-                    .px(px(9.0))
-                    .bg(t.control)
-                    .text_color(t.ink_dim)
-                    .font_weight(FontWeight(520.0))
-                    .cursor_pointer()
-                    .transition(act_ui::style::touch())
-                    .hover(|style| style.bg(t.control_hover).text_color(t.ink))
-                    .child(format!("{done} of {} viewed", files.len()))
+                Button::new("diff-next-unviewed", format!("{done} of {} viewed", files.len()))
+                    .variant(ButtonVariant::Soft)
+                    .size(ButtonSize::Sm)
                     .child(ink_icon(IconName::ArrowDown, 12.0))
                     .tip(shortcut_tip("Next unviewed file", "N"))
                     .on_click(cx.listener(|root, _, _, cx| root.next_unviewed(cx)))
@@ -1275,7 +1279,7 @@ fn toolbar(root: &mut Root, diff: &DiffState, has_workspace: bool, current_branc
             .into_iter()
             .map(|(value, label, description)| MenuItem::new(label).description(description).checked(DiffStateMode::from(value) == mode).on_select(move |_, cx| dispatch(AppCommand::DiffSetMode { mode: value }, cx)).into())
             .collect();
-        let menu = Menu::build(entries, Placement::Anchor { anchor, align: Align::Start }, window, cx, |menu| menu.top_level().checkable(true).min_width(px(230.0)).exempt(&mode_probe));
+        let menu = Menu::build(entries, Placement::Anchor { anchor, align: Align::Start }, window, cx, |menu| menu.top_level().checkable(true).width(px(230.0).max(anchor.size.width)).exempt(&mode_probe));
         root.menus.show(DIFF_MODE_MENU, menu, cx);
     }));
     let mut lead = div().flex().items_center().gap(px(6.0)).min_w_0().child(mode_trigger);
@@ -1322,9 +1326,10 @@ fn toolbar(root: &mut Root, diff: &DiffState, has_workspace: bool, current_branc
                 _ => ("HEAD".to_string(), String::new()),
             },
         };
-        let from = side_picker(root, COMPARE_MENU, "Compare", "From", head.clone(), ("Working tree", ""), current_branch.clone(), workspace_id.clone(), base.clone(), head.clone(), true, cx);
+        let mut from = side_picker(root, COMPARE_MENU, "Compare", "From", head.clone(), ("Working tree", ""), current_branch.clone(), workspace_id.clone(), base.clone(), head.clone(), true, cx);
         let into = side_picker(root, BASE_MENU, "Target branch", "Into", base.clone(), ("HEAD", "HEAD"), None, workspace_id.clone(), base.clone(), head.clone(), false, cx);
-        div().flex().items_center().gap(px(5.0)).min_w_0().child(from.flex_shrink().min_w_0()).child(div().flex_none().child(icon(IconName::ArrowRight, 14.0, t.muted))).child(into.flex_none())
+        from.style().flex_shrink = Some(4.0);
+        div().flex().items_center().gap(px(5.0)).min_w_0().child(from.min_w_0()).child(div().flex_none().child(icon(IconName::ArrowRight, 14.0, t.muted))).child(into.flex_shrink().min_w_0())
     });
     let _ = task_id;
     let header = div().flex().flex_none().flex_col().gap(px(5.0)).px(px(10.0)).pt(px(7.0)).pb(px(8.0));
@@ -1928,7 +1933,7 @@ fn gutter(model: &DiffModel, path: &str, row: &DiffRow, numbers: Vec<Option<i64>
         .when(commented && !picked, |gutter| gutter.child(div().absolute().left_0().top_0().bottom_0().w(px(2.0)).bg(t.info_line)))
         .text_color(ink)
         .cursor_pointer()
-        .hover(|style| if picked { style } else { style.text_color(t.ink_dim) })
+        .when(!picked && !commented && !changed, |gutter| gutter.hover(|style| style.text_color(t.ink_dim)))
         .children(numbers.into_iter().map(|number| div().w(px(width)).pr(px(pad)).flex().justify_end().child(number.map(|number| number.to_string()).unwrap_or_default())))
         .when(!commented, |gutter| {
             gutter.child(
@@ -2163,7 +2168,7 @@ fn comment_editor(model: &DiffModel, cx: &mut App) -> AnyElement {
                     let _ = clear_root.update(cx, |root, cx| root.clear_comment(cx));
                 })),
         )
-        .child(div().px(px(12.0)).pt(px(6.0)).pb(px(2.0)).text_color(t.ink).text_size(px(model.text_control)).line_height(relative(1.5)).child(model.note.clone()))
+        .child(div().min_h(px(34.0)).px(px(12.0)).pt(px(6.0)).pb(px(2.0)).text_color(t.ink).text_size(px(model.text_control)).line_height(relative(1.5)).child(model.note.clone()))
         .child(
             div()
                 .flex()

@@ -48,9 +48,15 @@ fn first_line(text: &str) -> Option<String> {
 fn readable(error: &crate::process::RunError) -> String {
     let stderr = String::from_utf8_lossy(error.stderr()).trim().to_string();
     let text = if stderr.is_empty() { first_line(&error.to_string()) } else { first_line(&stderr) }.unwrap_or_else(|| error.to_string());
-    let text = text.trim();
-    let stripped = if text.len() >= 6 && text[..6].eq_ignore_ascii_case("error:") { text[6..].trim_start() } else { text };
+    let stripped = without_error_prefix(text.trim());
     if stripped.is_empty() { "Tailscale could not be reached.".into() } else { stripped.to_string() }
+}
+
+fn without_error_prefix(text: &str) -> &str {
+    match text.get(..6) {
+        Some(head) if head.eq_ignore_ascii_case("error:") => text[6..].trim_start(),
+        _ => text,
+    }
 }
 
 fn serve_failure(error: &crate::process::RunError) -> String {
@@ -266,5 +272,11 @@ mod tests {
         assert!(!serves_port(&config, 7738));
         assert_eq!(served_ports(&config), vec![7737]);
         assert_eq!(parse_tailscale_json("failed to connect to local tailscaled\n").unwrap_err(), "failed to connect to local tailscaled");
+    }
+
+    #[test]
+    fn strips_the_error_prefix_from_any_text() {
+        assert_eq!(without_error_prefix("Error: not logged in"), "not logged in");
+        assert_eq!(without_error_prefix("tОшибка сети"), "tОшибка сети");
     }
 }

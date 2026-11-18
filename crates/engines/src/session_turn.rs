@@ -1,12 +1,18 @@
-//! The one turn a session answers at a time, and what every engine's turn shares.
+//! The turn lifecycle every engine's session shares: one turn answered at a time, its abort watch,
+//! its steering, and how it settles. An engine supplies only how it opens, starts and interrupts one.
 
+use std::any::Any;
 use std::future::Future;
+use std::sync::{Arc, MutexGuard};
 use std::time::Duration;
 
+use futures::future::{BoxFuture, FutureExt};
 use tokio::sync::oneshot;
 use tokio::task::AbortHandle;
 
-use crate::provider::{ProviderEvent, ProviderResult, RunInput};
+use crate::provider::{Emit, ProviderEvent, ProviderResult, RunInput};
+use crate::session_pool::PooledSession;
+use crate::steer::SteerChannel;
 use crate::types::{Continuation, RunOperation};
 
 /// How long an interrupted turn has to come back with a result before the session is given up on.
@@ -27,6 +33,7 @@ pub struct TurnSlot<T> {
     current: Option<SlotTurn<T>>,
     announced: bool,
     next_id: u64,
+    released: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl<T> Default for TurnSlot<T> {
@@ -35,6 +42,7 @@ impl<T> Default for TurnSlot<T> {
             current: None,
             announced: false,
             next_id: 1,
+            released: None,
         }
     }
 }
@@ -47,6 +55,14 @@ pub struct Taken {
 }
 
 impl<T> TurnSlot<T> {
+    /// A slot that calls `released` whenever a turn settles, under the session's lock.
+    pub fn releasing(released: impl Fn() + Send + Sync + 'static) -> Self {
+        TurnSlot {
+            released: Some(Box::new(released)),
+            ..Self::default()
+        }
+    }
+
     /// A turn is in flight, so the session owes an answer before it can take another.
     pub fn answering(&self) -> bool {
         self.current.is_some()
@@ -124,7 +140,20 @@ impl<T> TurnSlot<T> {
         if let Some(answer) = turn.answer.take() {
             let _ = answer.send(result);
         }
+        if let Some(released) = &self.released {
+            released();
+        }
         Some(turn)
+    }
+
+    /// Fails the turn in flight, saying first that its continuation is gone when `failure` lost it.
+    pub fn fail(&mut self, failure: OpenFailure) -> Option<SlotTurn<T>> {
+        if failure.lost {
+            if let Some(turn) = &self.current {
+                turn.input.emit(ProviderEvent::ContinuationLost);
+            }
+        }
+        self.settle(ProviderResult::failed(failure.message))
     }
 
     pub fn settle_if(&mut self, id: u64, result: ProviderResult) -> Option<SlotTurn<T>> {
@@ -144,6 +173,160 @@ impl<T> TurnSlot<T> {
             self.announced = true;
             turn.input.emit(ProviderEvent::Continuation(continuation));
         }
+    }
+}
+
+/// What every session keeps of its lifecycle, whichever engine runs it.
+pub struct SessionCore<T> {
+    pub turns: TurnSlot<T>,
+    pub ended: bool,
+    /// What a run is answered with once the session has ended.
+    pub outcome: Option<ProviderResult>,
+}
+
+impl<T> Default for SessionCore<T> {
+    fn default() -> Self {
+        SessionCore::with_turns(TurnSlot::default())
+    }
+}
+
+impl<T> SessionCore<T> {
+    pub fn with_turns(turns: TurnSlot<T>) -> Self {
+        SessionCore {
+            turns,
+            ended: false,
+            outcome: None,
+        }
+    }
+}
+
+/// One engine's live session as the shared turn lifecycle drives it. The engine says how a turn
+/// starts and how it is interrupted; taking it, watching its cancellation and settling it are shared.
+pub(crate) trait TurnSession: Send + Sync + Sized + 'static {
+    /// What the engine keeps for one turn.
+    type Turn: Send + 'static;
+    type State: Send + 'static;
+    /// What a run is told when the session ended before it could start.
+    const ENDED: &'static str;
+
+    /// Everything the session was built with. A run that disagrees needs a session of its own.
+    fn key(&self) -> &str;
+    fn state(&self) -> MutexGuard<'_, Self::State>;
+    fn core(state: &mut Self::State) -> &mut SessionCore<Self::Turn>;
+    /// The engine's own handle on the thread, which a later run continues.
+    fn handle(state: &Self::State) -> Option<&str>;
+    /// Anything closing the session would cut short.
+    fn busy(state: &Self::State) -> bool;
+    /// What the run's turn starts with, taken under the session's lock.
+    fn open_turn(&self, state: &mut Self::State, input: &RunInput) -> Self::Turn;
+    /// Starts the turn the run took: opens the session if it must, sends the prompt, feeds steering.
+    fn begin(self: Arc<Self>, id: u64, input: RunInput) -> BoxFuture<'static, ()>;
+    /// Asks the engine to stop the turn. Its own answer still ends it.
+    fn interrupt(&self, id: u64);
+    /// Idempotent. Settles what is in flight and starts closing at once; the future settles once
+    /// the process has exited.
+    fn close(&self) -> BoxFuture<'static, ()>;
+}
+
+/// Takes the run's turn and answers with the result the engine settles on. A cancelled run
+/// interrupts the engine; an interrupt unanswered for the grace period gives the session up.
+pub(crate) fn run_turn<S: TurnSession>(
+    session: Arc<S>,
+    input: RunInput,
+) -> BoxFuture<'static, ProviderResult> {
+    let mut state = session.state();
+    let core = S::core(&mut state);
+    if core.ended {
+        let outcome = core
+            .outcome
+            .clone()
+            .unwrap_or_else(|| ProviderResult::failed(S::ENDED));
+        return async move { outcome }.boxed();
+    }
+    let turn = session.open_turn(&mut state, &input);
+    let (taken, _) = S::core(&mut state).turns.take(input.clone(), turn);
+    if taken.begin {
+        let id = taken.id;
+        let interrupt = Arc::downgrade(&session);
+        let give_up = Arc::downgrade(&session);
+        let watcher = spawn_abort_watch(
+            &input,
+            move || {
+                if let Some(session) = interrupt.upgrade() {
+                    session.interrupt(id);
+                }
+            },
+            move || {
+                if let Some(session) = give_up.upgrade() {
+                    let settled = S::core(&mut session.state())
+                        .turns
+                        .settle_if(id, ProviderResult::cancelled())
+                        .is_some();
+                    if settled {
+                        tokio::spawn(session.close());
+                    }
+                }
+            },
+        );
+        S::core(&mut state).turns.watch(id, watcher);
+        drop(state);
+        tokio::spawn(session.begin(id, input));
+    }
+    answer_of(taken.answer).boxed()
+}
+
+/// Waits on the session's opening for turn `id`. One that cannot open fails the turn, saying so
+/// when the continuation itself is gone, and closes the session.
+pub(crate) async fn opened<S: TurnSession>(
+    session: &Arc<S>,
+    id: u64,
+    opening: impl Future<Output = Result<(), OpenFailure>>,
+) -> bool {
+    let Err(failure) = opening.await else {
+        return true;
+    };
+    {
+        let mut state = session.state();
+        let turns = &mut S::core(&mut state).turns;
+        if turns.is_current(id) {
+            turns.fail(failure);
+        }
+    }
+    tokio::spawn(session.close());
+    false
+}
+
+impl<S: TurnSession> PooledSession for S {
+    fn key(&self) -> String {
+        TurnSession::key(self).to_string()
+    }
+
+    fn live(&self) -> bool {
+        !S::core(&mut self.state()).ended
+    }
+
+    fn busy(&self) -> bool {
+        S::busy(&self.state())
+    }
+
+    fn answering(&self) -> bool {
+        S::core(&mut self.state()).turns.answering()
+    }
+
+    fn continues(&self, continuation: Option<&str>) -> bool {
+        continuation.is_none_or(|value| S::handle(&self.state()) == Some(value))
+    }
+
+    fn run(self: Arc<Self>, input: RunInput) -> BoxFuture<'static, ProviderResult> {
+        run_turn(self, input)
+    }
+
+    fn close(&self) -> BoxFuture<'static, ()> {
+        TurnSession::close(self)
+    }
+
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 
@@ -169,10 +352,11 @@ pub async fn answer_of(answer: oneshot::Receiver<ProviderResult>) -> ProviderRes
     answer.await.unwrap_or_else(|_| ProviderResult::cancelled())
 }
 
-/// Feeds a run's steered messages into its turn for as long as `target` finds the turn going. One the
+/// Feeds a turn's steered messages into it for as long as `target` finds the turn going. One the
 /// engine refuses stays queued on the thread, which sends it as the next turn once the run settles.
 pub async fn drain_steering<C, F, Fut>(
-    input: &RunInput,
+    steering: &SteerChannel,
+    emit: &Emit,
     target: impl Fn() -> Option<C>,
     steer: F,
     reason: impl Fn(&anyhow::Error) -> String,
@@ -180,17 +364,17 @@ pub async fn drain_steering<C, F, Fut>(
     F: Fn(C, String) -> Fut,
     Fut: Future<Output = anyhow::Result<()>>,
 {
-    while let Some(next) = input.steering.next().await {
+    while let Some(next) = steering.next().await {
         let Some(into) = target() else { return };
         match steer(into, next.prompt).await {
-            Ok(()) => input.emit(ProviderEvent::Steered {
+            Ok(()) => emit(ProviderEvent::Steered {
                 message_id: next.message_id,
             }),
             Err(error) => {
                 if target().is_none() {
                     return;
                 }
-                input.emit(ProviderEvent::SteerFailed {
+                emit(ProviderEvent::SteerFailed {
                     message_id: next.message_id,
                     message: format!(
                         "Could not steer: {}. Your message is still queued for the next turn.",
@@ -225,11 +409,16 @@ impl Compacting {
                 _ => last_tokens,
             });
         }
+        self.say(&input.hooks.emit, compacting, error);
+    }
+
+    /// Says whether the turn is compacting. A repeat says nothing unless it carries an error.
+    pub fn say(&mut self, emit: &Emit, compacting: bool, error: Option<String>) {
         if self.compacting == Some(compacting) && error.is_none() {
             return;
         }
         self.compacting = Some(compacting);
-        input.emit(ProviderEvent::CompactionStatus { compacting, error });
+        emit(ProviderEvent::CompactionStatus { compacting, error });
     }
 }
 
@@ -244,7 +433,7 @@ pub fn reason_of(error: &anyhow::Error) -> String {
 }
 
 /// Why a session could not open, worded for the run that asked. `lost` says the continuation itself is gone.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[error("{message}")]
 pub struct OpenFailure {
     pub message: String,

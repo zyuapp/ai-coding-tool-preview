@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use futures::future::{join_all, BoxFuture, FutureExt, Shared};
+use futures::future::{join_all, BoxFuture, FutureExt};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
 
@@ -518,58 +518,6 @@ impl SessionPool {
         }
         released
     }
-}
-
-/// What every engine's provider shares: the pool, and the filings that hold a thread while it is
-/// archived or restored so an archive and a restore land in the order given and a run waits for both.
-#[derive(Clone, Default)]
-pub struct Filings {
-    filings: Arc<Mutex<HashMap<String, (u64, Shared<BoxFuture<'static, ()>>)>>>,
-    next: Arc<AtomicU64>,
-}
-
-impl Filings {
-    /// What a run on the thread waits for first.
-    pub fn pending(&self, task_id: &str) -> Option<Shared<BoxFuture<'static, ()>>> {
-        self.filings
-            .lock()
-            .unwrap()
-            .get(task_id)
-            .map(|(_, filing)| filing.clone())
-    }
-
-    /// Files the thread after its last filing has landed. A filing that fails changes nothing.
-    pub fn file(&self, task_id: &str, filing: BoxFuture<'static, anyhow::Result<()>>) {
-        let id = self.next.fetch_add(1, Ordering::Relaxed);
-        let previous = self.pending(task_id);
-        let filings = self.filings.clone();
-        let task = task_id.to_string();
-        let queued: Shared<BoxFuture<'static, ()>> = async move {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-            let _ = filing.await;
-            let mut filings = filings.lock().unwrap();
-            if filings
-                .get(&task)
-                .is_some_and(|(current, _)| *current == id)
-            {
-                filings.remove(&task);
-            }
-        }
-        .boxed()
-        .shared();
-        self.filings
-            .lock()
-            .unwrap()
-            .insert(task_id.to_string(), (id, queued.clone()));
-        tokio::spawn(queued);
-    }
-}
-
-/// The thread's live session when `S` opened it.
-pub fn session_of<S: PooledSession>(pool: &SessionPool, task_id: &str) -> Option<Arc<S>> {
-    pool.live_session(task_id)?.as_any().downcast::<S>().ok()
 }
 
 #[cfg(test)]

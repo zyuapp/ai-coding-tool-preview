@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use act_engines::brief::RunToolkit;
@@ -169,6 +169,38 @@ impl Turn {
             hooks,
         }
     }
+}
+
+/// Puts stand-in `claude` and `codex` commands (`fake_engine.py`, needs python3) first on PATH, with
+/// empty Codex homes. Once per test process.
+pub fn fake_engines() {
+    static READY: OnceLock<()> = OnceLock::new();
+    READY.get_or_init(|| {
+        let dir = std::env::temp_dir().join("act-fake-engines");
+        let _ = std::fs::remove_dir_all(&dir);
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fake_engine.py");
+        for name in ["claude", "codex"] {
+            let path = bin.join(name);
+            std::fs::write(
+                &path,
+                format!("#!/bin/sh\nFAKE_ENGINE={name} exec python3 -I {script} \"$@\"\n"),
+            )
+            .unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        std::env::set_var("PATH", path);
+        std::env::set_var("CODEX_HOME", dir.join("codex"));
+        std::env::set_var("AICODINGTOOL_CODEX_HOME", dir.join("private"));
+        std::fs::create_dir_all(dir.join("codex")).unwrap();
+    });
 }
 
 /// A scratch git repository under /tmp holding `seed.txt`, and its canonical path.

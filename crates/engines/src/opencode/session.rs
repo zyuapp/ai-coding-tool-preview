@@ -1,10 +1,9 @@
 //! One OpenCode session, kept across turns on a server of its own. The server belongs to the session
 //! because the app's tools and the run's instructions are given to it as it starts.
 
-use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures::future::{BoxFuture, FutureExt, Shared};
 use serde_json::{json, Map, Value};
@@ -16,9 +15,9 @@ use crate::brief::{
 };
 use crate::markdown::{end_markdown, stream_markdown, MarkdownBuffer};
 use crate::provider::{ProviderEvent, ProviderResult, RunInput};
-use crate::session_pool::{PooledSession, SessionHooks};
+use crate::session_pool::SessionHooks;
 use crate::session_turn::{
-    answer_of, drain_steering, first_line, spawn_abort_watch, Compacting, TurnSlot,
+    drain_steering, first_line, opened, Compacting, OpenFailure, SessionCore, TurnSession,
 };
 use crate::tools::{ServedTools, ToolHost};
 use crate::types::{
@@ -183,7 +182,7 @@ pub fn form_answer(form: &Value, answers: &QuestionAnswers) -> Value {
 }
 
 #[derive(Default)]
-struct TurnData {
+pub(crate) struct TurnData {
     compacting: Compacting,
     /// Messages this turn put in the session's inbox that it has yet to take, and those it has taken.
     waiting: HashSet<String>,
@@ -206,16 +205,14 @@ struct Settings {
 }
 
 type Slashes = Shared<BoxFuture<'static, (HashSet<String>, HashSet<String>)>>;
-type Opening = Shared<BoxFuture<'static, Result<(), (String, bool)>>>;
+type Opening = Shared<BoxFuture<'static, Result<(), OpenFailure>>>;
 
-struct State {
+pub(crate) struct State {
     client: Option<OpenCodeServer>,
     served: Option<ServedTools>,
     opening: Option<Opening>,
-    turns: TurnSlot<TurnData>,
-    ended: bool,
+    core: SessionCore<TurnData>,
     closed: Option<Shared<BoxFuture<'static, ()>>>,
-    outcome: Option<ProviderResult>,
     brief_file: Option<PathBuf>,
     windows: HashMap<String, u64>,
     variants: HashMap<String, HashSet<String>>,
@@ -257,10 +254,8 @@ impl OpenCodeSession {
                 client: None,
                 served: None,
                 opening: None,
-                turns: TurnSlot::default(),
-                ended: false,
+                core: SessionCore::default(),
                 closed: None,
-                outcome: None,
                 brief_file: None,
                 windows: HashMap::new(),
                 variants: HashMap::new(),
@@ -280,76 +275,18 @@ impl OpenCodeSession {
     }
 
     fn settle_if(&self, id: u64, result: ProviderResult) {
-        self.state.lock().unwrap().turns.settle_if(id, result);
+        self.state.lock().unwrap().core.turns.settle_if(id, result);
     }
 
-    fn run_turn(self: Arc<Self>, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        let mut state = self.state.lock().unwrap();
-        if state.ended {
-            let outcome = state
-                .outcome
-                .clone()
-                .unwrap_or_else(|| ProviderResult::failed(ENDED));
-            return async move { outcome }.boxed();
-        }
-        let (taken, _) = state.turns.take(input.clone(), TurnData::default());
-        if taken.begin {
-            let id = taken.id;
-            let interrupt = self.me.clone();
-            let give_up = self.me.clone();
-            let watcher = spawn_abort_watch(
-                &input,
-                move || {
-                    if let Some(session) = interrupt.upgrade() {
-                        session.interrupt(id);
-                    }
-                },
-                move || {
-                    if let Some(session) = give_up.upgrade() {
-                        let settled = session
-                            .state
-                            .lock()
-                            .unwrap()
-                            .turns
-                            .settle_if(id, ProviderResult::cancelled())
-                            .is_some();
-                        if settled {
-                            tokio::spawn(session.close_now());
-                        }
-                    }
-                },
-            );
-            state.turns.watch(id, watcher);
-            drop(state);
-            let session = self.clone();
-            tokio::spawn(async move { session.begin(id, input).await });
-        }
-        answer_of(taken.answer).boxed()
-    }
-
-    async fn begin(self: Arc<Self>, id: u64, input: RunInput) {
+    async fn begin_turn(self: Arc<Self>, id: u64, input: RunInput) {
         let opening = {
             let mut state = self.state.lock().unwrap();
-            match &state.opening {
-                Some(opening) => opening.clone(),
-                None => {
-                    let opening = self.clone().open(input.clone()).boxed().shared();
-                    state.opening = Some(opening.clone());
-                    opening
-                }
-            }
+            state
+                .opening
+                .get_or_insert_with(|| self.clone().open(input.clone()).boxed().shared())
+                .clone()
         };
-        if let Err((message, lost)) = opening.await {
-            {
-                let mut state = self.state.lock().unwrap();
-                if state.turns.is_current(id) {
-                    if lost {
-                        input.emit(ProviderEvent::ContinuationLost);
-                    }
-                    state.turns.settle(ProviderResult::failed(message));
-                }
-            }
-            tokio::spawn(self.close_now());
+        if !opened(&self, id, opening).await {
             return;
         }
         let (client, session_id) = {
@@ -358,10 +295,11 @@ impl OpenCodeSession {
             else {
                 return;
             };
-            if !state.turns.is_current(id) {
+            if !state.core.turns.is_current(id) {
                 return;
             }
             state
+                .core
                 .turns
                 .announce(Continuation::new(AgentEngine::Opencode, &session_id));
             (client, session_id)
@@ -370,7 +308,7 @@ impl OpenCodeSession {
             self.apply(&client, &session_id, &input).await?;
             {
                 let mut state = self.state.lock().unwrap();
-                let Some(turn) = state.turns.turn_mut().filter(|turn| turn.id == id) else {
+                let Some(turn) = state.core.turns.turn_mut().filter(|turn| turn.id == id) else {
                     return Ok(false);
                 };
                 turn.data.started = true;
@@ -406,12 +344,13 @@ impl OpenCodeSession {
                     .state
                     .lock()
                     .unwrap()
+                    .core
                     .turns
                     .turn()
                     .filter(|turn| turn.id == id)
                     .map(|turn| turn.data.interrupt_wanted);
                 match wanted {
-                    Some(true) => self.interrupt(id),
+                    Some(true) => self.interrupt_turn(id),
                     Some(false) => self.drain(id, &input).await,
                     None => {}
                 }
@@ -482,7 +421,7 @@ impl OpenCodeSession {
     fn await_delivery(&self, id: u64, inbox_id: Option<&str>) {
         let Some(inbox_id) = inbox_id else { return };
         let mut state = self.state.lock().unwrap();
-        if let Some(turn) = state.turns.turn_mut().filter(|turn| turn.id == id) {
+        if let Some(turn) = state.core.turns.turn_mut().filter(|turn| turn.id == id) {
             if !turn.data.delivered.contains(inbox_id) {
                 turn.data.waiting.insert(inbox_id.to_string());
             }
@@ -573,8 +512,8 @@ impl OpenCodeSession {
     }
 
     /// Starts the server with the app's tools and instructions, and puts the run's session on it.
-    async fn open(self: Arc<Self>, seed: RunInput) -> Result<(), (String, bool)> {
-        let fail = |message: String| (message, false);
+    async fn open(self: Arc<Self>, seed: RunInput) -> Result<(), OpenFailure> {
+        let fail = OpenFailure::new;
         let failed =
             |error: anyhow::Error| fail(format!("OpenCode could not start: {}", reason(&error)));
         let brief = open_code_brief(&seed);
@@ -591,7 +530,7 @@ impl OpenCodeSession {
             };
             let served = host.serve(tools).await.map_err(failed)?;
             let mut state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 drop(state);
                 served.release();
                 return Err(fail(ENDED.into()));
@@ -625,7 +564,7 @@ impl OpenCodeSession {
         })
         .await
         .map_err(failed)?;
-        if self.state.lock().unwrap().ended {
+        if self.state.lock().unwrap().core.ended {
             client.close().await;
             return Err(fail(ENDED.into()));
         }
@@ -725,7 +664,7 @@ impl OpenCodeSession {
                 let held = match client.request("GET", &format!("/api/session/{held_id}"), None, None).await {
                     Ok(held) => held,
                     Err(error) => match error.downcast_ref::<OpenCodeError>() {
-                        Some(refusal) if refusal.status == 404 => return Err((format!("OpenCode could not continue this session ({}). Start a new thread to keep going.", refusal.message), true)),
+                        Some(refusal) if refusal.status == 404 => return Err(OpenFailure::lost(format!("OpenCode could not continue this session ({}). Start a new thread to keep going.", refusal.message))),
                         _ => return Err(failed(error)),
                     },
                 };
@@ -784,10 +723,10 @@ impl OpenCodeSession {
         Ok(())
     }
 
-    fn interrupt(&self, id: u64) {
+    fn interrupt_turn(&self, id: u64) {
         let (client, session_id) = {
             let mut state = self.state.lock().unwrap();
-            let Some(turn) = state.turns.turn_mut().filter(|turn| turn.id == id) else {
+            let Some(turn) = state.core.turns.turn_mut().filter(|turn| turn.id == id) else {
                 return;
             };
             if !turn.data.started {
@@ -814,12 +753,13 @@ impl OpenCodeSession {
     async fn drain(self: &Arc<Self>, id: u64, input: &RunInput) {
         let target = || {
             let state = self.state.lock().unwrap();
-            state.turns.turn().filter(|turn| turn.id == id)?;
+            state.core.turns.turn().filter(|turn| turn.id == id)?;
             Some((state.client.clone()?, state.session_id.clone()?))
         };
         let session = self.clone();
         drain_steering(
-            input,
+            &input.steering,
+            &input.hooks.emit,
             target,
             |(client, session_id): (OpenCodeServer, String), prompt: String| {
                 let session = session.clone();
@@ -863,12 +803,12 @@ impl OpenCodeSession {
     fn lost(&self, message: String) {
         {
             let mut state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 return;
             }
             let outcome = ProviderResult::failed(message);
-            state.outcome = Some(outcome.clone());
-            state.turns.settle(outcome);
+            state.core.outcome = Some(outcome.clone());
+            state.core.turns.settle(outcome);
         }
         tokio::spawn(self.close_now());
     }
@@ -917,7 +857,7 @@ impl OpenCodeSession {
                 return;
             }
             let last_tokens = state.last_tokens;
-            let Some(turn) = state.turns.turn_mut() else {
+            let Some(turn) = state.core.turns.turn_mut() else {
                 return;
             };
             let text_key = || {
@@ -1020,7 +960,7 @@ impl OpenCodeSession {
                         .compacting
                         .report(&turn.input, false, last_tokens, None);
                     if manual {
-                        state.turns.settle(ProviderResult::succeeded());
+                        state.core.turns.settle(ProviderResult::succeeded());
                     }
                 }
                 "session.compaction.failed" => {
@@ -1034,7 +974,7 @@ impl OpenCodeSession {
                         Some(format!("Could not compact context: {message}")),
                     );
                     if matches!(turn.input.operation, Some(RunOperation::Compact { .. })) {
-                        state.turns.settle(ProviderResult::failed_silently());
+                        state.core.turns.settle(ProviderResult::failed_silently());
                     }
                 }
                 "session.execution.failed" => {
@@ -1061,7 +1001,7 @@ impl OpenCodeSession {
 
     /// A turn ends with the execution that took its last message; one still waiting in the inbox runs next.
     fn finish(state: &mut State, result: ProviderResult) -> bool {
-        let Some(turn) = state.turns.turn_mut() else {
+        let Some(turn) = state.core.turns.turn_mut() else {
             return false;
         };
         if !turn.data.started || matches!(turn.input.operation, Some(RunOperation::Compact { .. }))
@@ -1083,14 +1023,14 @@ impl OpenCodeSession {
                 });
             }
         }
-        state.turns.settle(result);
+        state.core.turns.settle(result);
         true
     }
 
     fn set_compacting(&self, id: u64, compacting: bool, error: Option<String>) {
         let mut state = self.state.lock().unwrap();
         let last_tokens = state.last_tokens;
-        if let Some(turn) = state.turns.turn_mut().filter(|turn| turn.id == id) {
+        if let Some(turn) = state.core.turns.turn_mut().filter(|turn| turn.id == id) {
             turn.data
                 .compacting
                 .report(&turn.input, compacting, last_tokens, error);
@@ -1104,6 +1044,7 @@ impl OpenCodeSession {
             (
                 state.client.clone(),
                 state
+                    .core
                     .turns
                     .turn()
                     .map(|turn| (turn.input.clone(), turn.data.intents.clone())),
@@ -1173,7 +1114,7 @@ impl OpenCodeSession {
             let state = self.state.lock().unwrap();
             (
                 state.client.clone(),
-                state.turns.turn().map(|turn| turn.input.clone()),
+                state.core.turns.turn().map(|turn| turn.input.clone()),
             )
         };
         let Some(client) = client else { return };
@@ -1240,7 +1181,7 @@ impl OpenCodeSession {
     pub async fn file(&self, session_id: &str, archived: bool) -> anyhow::Result<bool> {
         let client = {
             let state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 return Ok(false);
             }
             state.client.clone()
@@ -1262,15 +1203,15 @@ impl OpenCodeSession {
     fn close_now(&self) -> BoxFuture<'static, ()> {
         let (client, served, subscription, brief_file) = {
             let mut state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 return state
                     .closed
                     .clone()
                     .map(|closed| closed.boxed())
                     .unwrap_or_else(|| async {}.boxed());
             }
-            state.ended = true;
-            state.turns.settle(ProviderResult::cancelled());
+            state.core.ended = true;
+            state.core.turns.settle(ProviderResult::cancelled());
             (
                 state.client.take(),
                 state.served.take(),
@@ -1335,38 +1276,45 @@ fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
     file.write_all(text.as_bytes())
 }
 
-impl PooledSession for OpenCodeSession {
-    fn key(&self) -> String {
-        self.key.clone()
+impl TurnSession for OpenCodeSession {
+    type Turn = TurnData;
+    type State = State;
+    const ENDED: &'static str = ENDED;
+
+    fn key(&self) -> &str {
+        &self.key
     }
 
-    fn live(&self) -> bool {
-        !self.state.lock().unwrap().ended
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap()
     }
 
-    fn busy(&self) -> bool {
-        self.state.lock().unwrap().turns.answering()
+    fn core(state: &mut State) -> &mut SessionCore<TurnData> {
+        &mut state.core
     }
 
-    fn answering(&self) -> bool {
-        self.state.lock().unwrap().turns.answering()
+    fn handle(state: &State) -> Option<&str> {
+        state.session_id.as_deref()
     }
 
-    fn continues(&self, continuation: Option<&str>) -> bool {
-        continuation
-            .is_none_or(|value| self.state.lock().unwrap().session_id.as_deref() == Some(value))
+    fn busy(state: &State) -> bool {
+        state.core.turns.answering()
     }
 
-    fn run(self: Arc<Self>, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        self.run_turn(input)
+    fn open_turn(&self, _state: &mut State, _input: &RunInput) -> TurnData {
+        TurnData::default()
+    }
+
+    fn begin(self: Arc<Self>, id: u64, input: RunInput) -> BoxFuture<'static, ()> {
+        self.begin_turn(id, input).boxed()
+    }
+
+    fn interrupt(&self, id: u64) {
+        self.interrupt_turn(id);
     }
 
     fn close(&self) -> BoxFuture<'static, ()> {
         self.close_now()
-    }
-
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
     }
 }
 

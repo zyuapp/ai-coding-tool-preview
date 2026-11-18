@@ -21,6 +21,7 @@ pub mod engines;
 pub mod markdown;
 pub mod mcp_http;
 pub mod opencode;
+pub mod pooled_provider;
 pub mod provider;
 pub mod running_totals;
 pub mod session_pool;

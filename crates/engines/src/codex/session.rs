@@ -2,9 +2,8 @@
 //! second turn neither pays for a new process nor resumes the thread from disk. Each turn ends on
 //! the server's own `turn/completed`.
 
-use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures::future::{join_all, BoxFuture, FutureExt, Shared};
 use serde_json::{json, Value};
@@ -16,9 +15,9 @@ use crate::brief::{
 use crate::catalog::context_window_limit;
 use crate::markdown::{end_markdown, stream_markdown, MarkdownBuffer};
 use crate::provider::{ProviderEvent, ProviderResult, RunInput, ToolDecision};
-use crate::session_pool::{PooledSession, SessionHooks};
+use crate::session_pool::SessionHooks;
 use crate::session_turn::{
-    answer_of, drain_steering, first_line, spawn_abort_watch, Compacting, TurnSlot,
+    drain_steering, first_line, opened, Compacting, OpenFailure, SessionCore, TurnSession, TurnSlot,
 };
 use crate::tools::{grants_tool, ServedTools, ToolHost, ToolReach};
 use crate::types::{
@@ -188,7 +187,7 @@ fn tool_named(message: &str) -> Option<String> {
 }
 
 #[derive(Default)]
-struct TurnData {
+pub(crate) struct TurnData {
     compacting: Compacting,
     /// Named by the server once turn/start returns; an interrupt asked for before then waits on it.
     turn_id: Option<String>,
@@ -202,17 +201,15 @@ struct TurnData {
     review_output: Option<String>,
 }
 
-type Opening = Shared<BoxFuture<'static, Result<(), (String, bool)>>>;
+type Opening = Shared<BoxFuture<'static, Result<(), OpenFailure>>>;
 
-struct State {
+pub(crate) struct State {
     client: Option<AppServerClient>,
     served: Option<ServedTools>,
     opening: Option<Opening>,
-    turns: TurnSlot<TurnData>,
+    core: SessionCore<TurnData>,
     subagents: Option<CodexSubagents>,
-    ended: bool,
     closed: Option<Shared<BoxFuture<'static, ()>>>,
-    outcome: Option<ProviderResult>,
     last_tokens: u64,
     goal_active: bool,
     report_goal: Arc<dyn Fn(GoalReport) + Send + Sync>,
@@ -249,6 +246,8 @@ impl CodexSession {
         read_origin: ReadOrigin,
         image_output: ImageOutput,
     ) -> Arc<Self> {
+        let questions = CodexQuestions::default();
+        let released = questions.clone();
         Arc::new_cyclic(|me: &Weak<CodexSession>| {
             let spend_target = me.clone();
             CodexSession {
@@ -257,7 +256,7 @@ impl CodexSession {
                 connect,
                 host,
                 image_output,
-                questions: CodexQuestions::default(),
+                questions,
                 record: CodexThreadRecord::new(read_origin),
                 spend: CodexSpend::new(Arc::new(move |event| {
                     if let Some(session) = spend_target.upgrade() {
@@ -269,11 +268,9 @@ impl CodexSession {
                     client: None,
                     served: None,
                     opening: None,
-                    turns: TurnSlot::default(),
+                    core: SessionCore::with_turns(TurnSlot::releasing(move || released.close())),
                     subagents: None,
-                    ended: false,
                     closed: None,
-                    outcome: None,
                     last_tokens: 0,
                     goal_active: false,
                     report_goal: Arc::new(|_| {}),
@@ -299,6 +296,7 @@ impl CodexSession {
             .state
             .lock()
             .unwrap()
+            .core
             .turns
             .turn()
             .map(|turn| turn.input.hooks.emit.clone());
@@ -308,7 +306,7 @@ impl CodexSession {
     }
 
     fn busy_of(state: &State) -> bool {
-        state.turns.answering()
+        state.core.turns.answering()
             || state
                 .subagents
                 .as_ref()
@@ -316,21 +314,12 @@ impl CodexSession {
             || state.background.running()
     }
 
-    fn settle(&self, state: &mut State, result: ProviderResult) {
-        if state.turns.settle(result).is_some() {
-            self.questions.close();
-        }
-    }
-
     fn settle_if(&self, id: u64, result: ProviderResult) {
-        let mut state = self.state.lock().unwrap();
-        if state.turns.is_current(id) {
-            self.settle(&mut state, result);
-        }
+        self.state.lock().unwrap().core.turns.settle_if(id, result);
     }
 
     fn current(&self, id: u64) -> bool {
-        self.state.lock().unwrap().turns.is_current(id)
+        self.state.lock().unwrap().core.turns.is_current(id)
     }
 
     fn with_turn<T>(
@@ -339,83 +328,21 @@ impl CodexSession {
         change: impl FnOnce(&mut TurnData, &RunInput) -> T,
     ) -> Option<T> {
         let mut state = self.state.lock().unwrap();
-        let turn = state.turns.turn_mut().filter(|turn| turn.id == id)?;
+        let turn = state.core.turns.turn_mut().filter(|turn| turn.id == id)?;
         let input = turn.input.clone();
         Some(change(&mut turn.data, &input))
     }
 
-    fn run_turn(self: Arc<Self>, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        let mut state = self.state.lock().unwrap();
-        if state.ended {
-            let outcome = state
-                .outcome
-                .clone()
-                .unwrap_or_else(|| ProviderResult::failed(ENDED));
-            return async move { outcome }.boxed();
-        }
-        let (taken, released) = state.turns.take(input.clone(), TurnData::default());
-        if released.is_some() {
-            self.questions.close();
-        }
-        if taken.begin {
-            let id = taken.id;
-            let interrupt = self.me.clone();
-            let give_up = self.me.clone();
-            let watcher = spawn_abort_watch(
-                &input,
-                move || {
-                    if let Some(session) = interrupt.upgrade() {
-                        session.interrupt(id);
-                    }
-                },
-                move || {
-                    if let Some(session) = give_up.upgrade() {
-                        let settled = {
-                            let mut state = session.state.lock().unwrap();
-                            let current = state.turns.is_current(id);
-                            if current {
-                                session.settle(&mut state, ProviderResult::cancelled());
-                            }
-                            current
-                        };
-                        if settled {
-                            tokio::spawn(session.close_now());
-                        }
-                    }
-                },
-            );
-            state.turns.watch(id, watcher);
-            drop(state);
-            self.record.label(&input.title);
-            let session = self.clone();
-            tokio::spawn(async move { session.begin(id, input).await });
-        }
-        answer_of(taken.answer).boxed()
-    }
-
-    async fn begin(self: Arc<Self>, id: u64, input: RunInput) {
+    async fn begin_turn(self: Arc<Self>, id: u64, input: RunInput) {
+        self.record.label(&input.title);
         let opening = {
             let mut state = self.state.lock().unwrap();
-            match &state.opening {
-                Some(opening) => opening.clone(),
-                None => {
-                    let opening = self.clone().open(input.clone()).boxed().shared();
-                    state.opening = Some(opening.clone());
-                    opening
-                }
-            }
+            state
+                .opening
+                .get_or_insert_with(|| self.clone().open(input.clone()).boxed().shared())
+                .clone()
         };
-        if let Err((message, lost)) = opening.await {
-            {
-                let mut state = self.state.lock().unwrap();
-                if state.turns.is_current(id) {
-                    if lost {
-                        input.emit(ProviderEvent::ContinuationLost);
-                    }
-                    self.settle(&mut state, ProviderResult::failed(message));
-                }
-            }
-            tokio::spawn(self.close_now());
+        if !opened(&self, id, opening).await {
             return;
         }
         let (client, thread_id, skills) = {
@@ -427,10 +354,11 @@ impl CodexSession {
             ) else {
                 return;
             };
-            if !state.turns.is_current(id) {
+            if !state.core.turns.is_current(id) {
                 return;
             }
             state
+                .core
                 .turns
                 .announce(Continuation::new(AgentEngine::Codex, &thread_id));
             (client, thread_id, skills)
@@ -497,7 +425,7 @@ impl CodexSession {
         self.record.began();
         match interrupt_wanted {
             None => {}
-            Some(true) => self.interrupt(id),
+            Some(true) => self.interrupt_turn(id),
             Some(false) => self.drain(id, input).await,
         }
     }
@@ -617,7 +545,7 @@ impl CodexSession {
     }
 
     /// Spawns the server and puts the thread on it: a new one, the one the run continues, or a fork.
-    async fn open(self: Arc<Self>, seed: RunInput) -> Result<(), (String, bool)> {
+    async fn open(self: Arc<Self>, seed: RunInput) -> Result<(), OpenFailure> {
         {
             let mut state = self.state.lock().unwrap();
             state
@@ -626,7 +554,7 @@ impl CodexSession {
             state.report_goal = seed.hooks.report_goal.clone();
         }
         (seed.hooks.report_goal)(GoalReport::Changed { goal: None });
-        let fail = |message: String| (message, false);
+        let fail = OpenFailure::new;
         let brief = codex_brief(&seed);
         let tools: Vec<_> = brief
             .tools
@@ -646,7 +574,7 @@ impl CodexSession {
                 ))
             })?;
             let mut state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 drop(state);
                 served.release();
                 return Err(fail(ENDED.into()));
@@ -680,7 +608,7 @@ impl CodexSession {
                 first_line(&error.to_string())
             ))
         })?;
-        if self.state.lock().unwrap().ended {
+        if self.state.lock().unwrap().core.ended {
             return Err(fail(ENDED.into()));
         }
         let client = (self.connect)(command);
@@ -691,7 +619,7 @@ impl CodexSession {
             seed.hooks.report_subagent.clone(),
             Arc::new(move |busy| {
                 if let Some(session) = rested.upgrade() {
-                    if !busy && !session.state.lock().unwrap().turns.answering() {
+                    if !busy && !session.state.lock().unwrap().core.turns.answering() {
                         (session.hooks.rested)();
                     }
                 }
@@ -767,16 +695,25 @@ impl CodexSession {
         });
         let continuation = seed.continuation_value().map(String::from);
         let started = match &continuation {
-            None => client.request("thread/start", settings).await.map_err(describe)?,
+            None => client
+                .request("thread/start", settings)
+                .await
+                .map_err(describe)?,
             Some(thread) if seed.fork_continuation => {
                 let mut params = settings;
                 params["threadId"] = json!(thread);
                 params["excludeTurns"] = json!(true);
-                client.request("thread/fork", params).await.map_err(describe)?
+                client
+                    .request("thread/fork", params)
+                    .await
+                    .map_err(describe)?
             }
             Some(thread) => match resume_thread(&client, thread, &settings).await {
                 Ok(resumed) => resumed,
-                Err(error @ AppServerError::Rpc { .. }) => return Err((format!("Codex could not continue this thread ({}). Start a new thread to keep going.", error.reason()), true)),
+                Err(error @ AppServerError::Rpc { .. }) => return Err(OpenFailure::lost(format!(
+                    "Codex could not continue this thread ({}). Start a new thread to keep going.",
+                    error.reason()
+                ))),
                 Err(error) => return Err(describe(error)),
             },
         };
@@ -851,7 +788,7 @@ impl CodexSession {
                 } else if session.is_thread(&params) {
                     let mut state = session.state.lock().unwrap();
                     let goal_active = state.goal_active;
-                    if let Some(turn) = state.turns.turn_mut() {
+                    if let Some(turn) = state.core.turns.turn_mut() {
                         let compacting = turn.data.turn_id.is_none()
                             && matches!(turn.input.operation, Some(RunOperation::Compact { .. }));
                         if goal_active || compacting {
@@ -952,7 +889,7 @@ impl CodexSession {
                     return;
                 }
                 let mut state = session.state.lock().unwrap();
-                let Some(turn) = state.turns.turn_mut() else {
+                let Some(turn) = state.core.turns.turn_mut() else {
                     return;
                 };
                 if params["willRetry"] == true {
@@ -997,10 +934,10 @@ impl CodexSession {
         }
     }
 
-    fn interrupt(&self, id: u64) {
+    fn interrupt_turn(&self, id: u64) {
         let (client, thread_id, turn_id, children) = {
             let mut state = self.state.lock().unwrap();
-            let Some(turn) = state.turns.turn_mut().filter(|turn| turn.id == id) else {
+            let Some(turn) = state.core.turns.turn_mut().filter(|turn| turn.id == id) else {
                 return;
             };
             let Some(turn_id) = turn.data.turn_id.clone() else {
@@ -1040,7 +977,7 @@ impl CodexSession {
     async fn drain(self: &Arc<Self>, id: u64, input: &RunInput) {
         let target = || {
             let state = self.state.lock().unwrap();
-            let turn = state.turns.turn().filter(|turn| turn.id == id)?;
+            let turn = state.core.turns.turn().filter(|turn| turn.id == id)?;
             Some((
                 state.client.clone()?,
                 state.thread_id.clone()?,
@@ -1050,7 +987,8 @@ impl CodexSession {
         };
         let session = self.clone();
         drain_steering(
-            input,
+            &input.steering,
+            &input.hooks.emit,
             target,
             |(client, thread_id, turn_id, skills): (AppServerClient, String, String, CodexSkills), prompt: String| {
                 let session = session.clone();
@@ -1077,7 +1015,7 @@ impl CodexSession {
     async fn exited(self: Arc<Self>, exit: ExitStatus) {
         {
             let mut state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 return;
             }
             let outcome = ProviderResult::failed(if state.thread_id.is_some() {
@@ -1085,8 +1023,8 @@ impl CodexSession {
             } else {
                 start_failure(&exit)
             });
-            state.outcome = Some(outcome.clone());
-            self.settle(&mut state, outcome);
+            state.core.outcome = Some(outcome.clone());
+            state.core.turns.settle(outcome);
         }
         self.close_now().await;
     }
@@ -1094,7 +1032,7 @@ impl CodexSession {
     fn receive_started(&self, item: &Value) {
         let mut state = self.state.lock().unwrap();
         let last_tokens = state.last_tokens;
-        let Some(turn) = state.turns.turn_mut() else {
+        let Some(turn) = state.core.turns.turn_mut() else {
             return;
         };
         if item["type"] == "contextCompaction" {
@@ -1112,7 +1050,7 @@ impl CodexSession {
 
     fn receive_delta(&self, item_id: &str, delta: &str) {
         let mut state = self.state.lock().unwrap();
-        let Some(turn) = state.turns.turn_mut() else {
+        let Some(turn) = state.core.turns.turn_mut() else {
             return;
         };
         if turn.data.review_output.is_some() {
@@ -1128,7 +1066,7 @@ impl CodexSession {
         let mut state = self.state.lock().unwrap();
         let last_tokens = state.last_tokens;
         let (client, thread_id) = (state.client.clone(), state.thread_id.clone());
-        let Some(turn) = state.turns.turn_mut() else {
+        let Some(turn) = state.core.turns.turn_mut() else {
             return;
         };
         let id = item["id"].as_str().unwrap_or_default().to_string();
@@ -1151,6 +1089,7 @@ impl CodexSession {
                                         .state
                                         .lock()
                                         .unwrap()
+                                        .core
                                         .turns
                                         .turn()
                                         .filter(|turn| turn.id == turn_number)
@@ -1223,6 +1162,7 @@ impl CodexSession {
                     let emit = {
                         let state = session.state.lock().unwrap();
                         state
+                            .core
                             .turns
                             .turn()
                             .filter(|turn| turn.id == turn_number && !turn.input.is_cancelled())
@@ -1274,14 +1214,14 @@ impl CodexSession {
             }
         }
         if let Some(result) = settle {
-            self.settle(&mut state, result);
+            state.core.turns.settle(result);
         }
     }
 
     fn set_compacting(&self, id: u64, compacting: bool, error: Option<String>) {
         let mut state = self.state.lock().unwrap();
         let last_tokens = state.last_tokens;
-        if let Some(turn) = state.turns.turn_mut().filter(|turn| turn.id == id) {
+        if let Some(turn) = state.core.turns.turn_mut().filter(|turn| turn.id == id) {
             turn.data
                 .compacting
                 .report(&turn.input, compacting, last_tokens, error);
@@ -1291,11 +1231,11 @@ impl CodexSession {
     /// The window the server reports is the model's own; the catalogue's stands in while it reports none.
     fn receive_usage(&self, tokens: u64, context_window: Option<u64>) {
         let mut state = self.state.lock().unwrap();
-        if !state.turns.answering() {
+        if !state.core.turns.answering() {
             return;
         }
         state.last_tokens = tokens;
-        let turn = state.turns.turn().unwrap();
+        let turn = state.core.turns.turn().unwrap();
         let limit = context_window
             .unwrap_or_else(|| context_window_limit(AgentEngine::Codex, &turn.input.model));
         turn.input.emit(ProviderEvent::Usage {
@@ -1330,7 +1270,7 @@ impl CodexSession {
         }
         let id = {
             let state = self.state.lock().unwrap();
-            let Some(turn) = state.turns.turn() else {
+            let Some(turn) = state.core.turns.turn() else {
                 return;
             };
             if completed["id"]
@@ -1363,7 +1303,7 @@ impl CodexSession {
         self.clone().refresh_background_processes().await;
         let (failure, client) = {
             let state = self.state.lock().unwrap();
-            let Some(turn) = state.turns.turn().filter(|turn| turn.id == id) else {
+            let Some(turn) = state.core.turns.turn().filter(|turn| turn.id == id) else {
                 return;
             };
             let review = matches!(turn.input.operation, Some(RunOperation::Review { .. }));
@@ -1448,7 +1388,7 @@ impl CodexSession {
             else {
                 return;
             };
-            if state.ended {
+            if state.core.ended {
                 return;
             }
             state.background_read += 1;
@@ -1470,7 +1410,7 @@ impl CodexSession {
             {
                 let state = self.state.lock().unwrap();
                 if read != state.background_read
-                    || state.ended
+                    || state.core.ended
                     || state.thread_id.as_deref() != Some(thread_id.as_str())
                 {
                     return;
@@ -1512,7 +1452,7 @@ impl CodexSession {
     async fn allowed(&self, intent: ToolIntent, workspace: bool) -> bool {
         let (input, id) = {
             let state = self.state.lock().unwrap();
-            let Some(turn) = state.turns.turn() else {
+            let Some(turn) = state.core.turns.turn() else {
                 return false;
             };
             (turn.input.clone(), turn.id)
@@ -1534,7 +1474,7 @@ impl CodexSession {
     fn explain_denial(&self, id: u64, reason: &str) {
         let (client, thread_id, turn_id) = {
             let state = self.state.lock().unwrap();
-            let Some(turn) = state.turns.turn().filter(|turn| turn.id == id) else {
+            let Some(turn) = state.core.turns.turn().filter(|turn| turn.id == id) else {
                 return;
             };
             let (Some(client), Some(thread_id), Some(turn_id)) = (
@@ -1560,6 +1500,7 @@ impl CodexSession {
                 (
                     Some(
                         state
+                            .core
                             .turns
                             .turn()
                             .and_then(|turn| turn.data.items.get(item_id).cloned()),
@@ -1581,7 +1522,7 @@ impl CodexSession {
         let (own, subagents) = {
             let state = self.state.lock().unwrap();
             if state.thread_id.as_deref() == Some(thread_id) {
-                let found = state.turns.turn().and_then(|turn| {
+                let found = state.core.turns.turn().and_then(|turn| {
                     turn.data
                         .items
                         .values()
@@ -1690,6 +1631,7 @@ impl CodexSession {
                     let state = self.state.lock().unwrap();
                     let own = state.thread_id.as_deref() == params["threadId"].as_str();
                     state
+                        .core
                         .turns
                         .turn()
                         .filter(|turn| {
@@ -1800,17 +1742,17 @@ impl CodexSession {
     fn close_now(&self) -> BoxFuture<'static, ()> {
         let (client, served, subagents, report_goal) = {
             let mut state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 return state
                     .closed
                     .clone()
                     .map(|closed| closed.boxed())
                     .unwrap_or_else(|| async {}.boxed());
             }
-            state.ended = true;
+            state.core.ended = true;
             state.background_read += 1;
             state.background.clear();
-            self.settle(&mut state, ProviderResult::cancelled());
+            state.core.turns.settle(ProviderResult::cancelled());
             (
                 state.client.take(),
                 state.served.take(),
@@ -1843,38 +1785,45 @@ impl CodexSession {
     }
 }
 
-impl PooledSession for CodexSession {
-    fn key(&self) -> String {
-        self.key.clone()
+impl TurnSession for CodexSession {
+    type Turn = TurnData;
+    type State = State;
+    const ENDED: &'static str = ENDED;
+
+    fn key(&self) -> &str {
+        &self.key
     }
 
-    fn live(&self) -> bool {
-        !self.state.lock().unwrap().ended
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap()
     }
 
-    fn busy(&self) -> bool {
-        Self::busy_of(&self.state.lock().unwrap())
+    fn core(state: &mut State) -> &mut SessionCore<TurnData> {
+        &mut state.core
     }
 
-    fn answering(&self) -> bool {
-        self.state.lock().unwrap().turns.answering()
+    fn handle(state: &State) -> Option<&str> {
+        state.thread_id.as_deref()
     }
 
-    fn continues(&self, continuation: Option<&str>) -> bool {
-        continuation
-            .is_none_or(|value| self.state.lock().unwrap().thread_id.as_deref() == Some(value))
+    fn busy(state: &State) -> bool {
+        Self::busy_of(state)
     }
 
-    fn run(self: Arc<Self>, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        self.run_turn(input)
+    fn open_turn(&self, _state: &mut State, _input: &RunInput) -> TurnData {
+        TurnData::default()
+    }
+
+    fn begin(self: Arc<Self>, id: u64, input: RunInput) -> BoxFuture<'static, ()> {
+        self.begin_turn(id, input).boxed()
+    }
+
+    fn interrupt(&self, id: u64) {
+        self.interrupt_turn(id);
     }
 
     fn close(&self) -> BoxFuture<'static, ()> {
         self.close_now()
-    }
-
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
     }
 }
 

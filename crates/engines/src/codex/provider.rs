@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use futures::future::{BoxFuture, FutureExt};
+use futures::future::FutureExt;
 use serde_json::{json, Value};
 
-use crate::provider::{AgentProvider, ProviderResult, RunInput};
-use crate::session_pool::{session_of, Filings, SessionOpener, SessionPool};
+use crate::pooled_provider::{PooledProvider, SessionEngine};
+use crate::provider::RunInput;
+use crate::session_pool::{SessionHooks, SessionPool};
 use crate::tools::{grants_tool, ToolHost, ToolReach};
-use crate::types::{
-    handle_for, AgentEngine, ComputerUseRunConfig, Continuation, CoordinationRole, RunOperation,
-};
+use crate::types::{handle_for, AgentEngine, ComputerUseRunConfig, Continuation, RunOperation};
 
 use super::app_server::{connect_app_server, CodexConnect};
 use super::images::codex_image_output;
@@ -62,85 +61,53 @@ impl CodexProviderOptions {
     }
 }
 
-/// Runs threads on Codex app servers, one warm process per thread.
-#[derive(Clone)]
-pub struct CodexAgentProvider {
-    pool: SessionPool,
-    filings: Filings,
+/// How Codex opens a thread's session: one warm app server per thread.
+pub struct CodexSessions {
     options: CodexProviderOptions,
 }
 
-impl CodexAgentProvider {
-    pub fn new(pool: SessionPool, options: CodexProviderOptions) -> Self {
-        CodexAgentProvider {
-            pool,
-            filings: Filings::default(),
-            options,
-        }
-    }
+/// Runs threads on Codex app servers.
+pub type CodexAgentProvider = PooledProvider<CodexSessions>;
 
-    fn session(&self, task_id: &str) -> Option<Arc<CodexSession>> {
-        session_of::<CodexSession>(&self.pool, task_id)
+impl PooledProvider<CodexSessions> {
+    pub fn new(pool: SessionPool, options: CodexProviderOptions) -> Self {
+        PooledProvider::with_engine(pool, CodexSessions { options })
     }
 }
 
-impl AgentProvider for CodexAgentProvider {
-    fn execute(&self, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        let key = session_key(&input);
-        let pool = self.pool.clone();
-        let options = self.options.clone();
-        let filing = self.filings.pending(&input.task_id);
-        async move {
-            if let Some(filing) = filing {
-                filing.await;
-            }
-            let session_key = key.clone();
-            pool.execute(
-                input,
-                key,
-                SessionOpener {
-                    open: move |hooks| {
-                        CodexSession::new(
-                            session_key,
-                            options.connect.clone(),
-                            options.host.clone(),
-                            hooks,
-                            options.read_origin.clone(),
-                            options.image_output.clone(),
-                        )
-                    },
-                    start: |_: &Arc<CodexSession>| {},
-                },
-            )
-            .await
-        }
-        .boxed()
+impl SessionEngine for CodexSessions {
+    type Session = CodexSession;
+
+    fn session_key(&self, input: &RunInput) -> String {
+        session_key(input)
     }
 
-    fn stop_process(&self, task_id: &str, process_id: &str) -> bool {
-        match self.session(task_id) {
-            Some(session) => {
-                session.stop_process(process_id);
-                true
-            }
-            None => false,
-        }
+    fn open(&self, key: String, hooks: SessionHooks) -> Arc<CodexSession> {
+        let options = &self.options;
+        CodexSession::new(
+            key,
+            options.connect.clone(),
+            options.host.clone(),
+            hooks,
+            options.read_origin.clone(),
+            options.image_output.clone(),
+        )
     }
 
-    fn label_thread(&self, task_id: &str, title: &str) -> bool {
-        match self.session(task_id) {
-            Some(session) => {
-                session.label(title);
-                true
-            }
-            None => false,
-        }
+    fn stop_process(session: &Arc<CodexSession>, process_id: &str) -> bool {
+        session.stop_process(process_id);
+        true
+    }
+
+    fn label(session: &Arc<CodexSession>, title: &str) -> bool {
+        session.label(title);
+        true
     }
 
     /// Files the thread away in Codex's own history too, or brings it back. Archiving waits out the
     /// thread's session, which holds the thread open until its cancelled turn has answered.
     fn archive_thread(
-        &self,
+        provider: &CodexAgentProvider,
         task_id: &str,
         continuation: Option<Continuation>,
         archived: bool,
@@ -149,13 +116,13 @@ impl AgentProvider for CodexAgentProvider {
         if continuation.is_some() && handle.is_none() {
             return false;
         }
-        let session = self.session(task_id);
+        let session = provider.session(task_id);
         if handle.is_none() && !(archived && session.is_some()) {
             return false;
         }
-        let pool = self.pool.clone();
+        let pool = provider.pool().clone();
         let task = task_id.to_string();
-        self.filings.file(
+        provider.file(
             task_id,
             async move {
                 if archived {
@@ -171,13 +138,5 @@ impl AgentProvider for CodexAgentProvider {
             .boxed(),
         );
         true
-    }
-
-    fn retire_out_of_role(&self, task_id: &str, role: Option<CoordinationRole>) {
-        tokio::spawn(self.pool.retire_out_of_role(task_id, role));
-    }
-
-    fn close_all(&self) {
-        self.pool.close_all();
     }
 }

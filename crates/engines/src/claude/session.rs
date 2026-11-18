@@ -2,9 +2,8 @@
 //! running in the background belong to the session, so a second turn neither pays for a new process
 //! nor replays the transcript. The input stays open between turns; each turn ends on its own result.
 
-use std::any::Any;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
@@ -17,8 +16,10 @@ use crate::catalog::{claude_effort, context_window_limit, model_takes_effort};
 use crate::markdown::{append_complete_markdown, MarkdownBuffer};
 use crate::provider::{AgentTurn, Emit, ProviderEvent, ProviderResult, RunInput, ToolDecision};
 use crate::running_totals::RunningTotals;
-use crate::session_pool::{PooledSession, SessionHooks};
-use crate::session_turn::{answer_of, spawn_abort_watch, TurnSlot};
+use crate::session_pool::SessionHooks;
+use crate::session_turn::{
+    drain_steering, first_line, reason_of, Compacting, OpenFailure, SessionCore, TurnSession,
+};
 use crate::steer::SteerChannel;
 use crate::tools::{grants_tool, tool_reach, ApprovalScope, ServedToolSet};
 use crate::types::{
@@ -35,6 +36,8 @@ use super::query::{CanUseTool, ClaudeOptions, ClaudeQuery, HookCallback, QueryOu
 const SYNTHETIC_MODEL: &str = "<synthetic>";
 /// Claude Code's own command for summarizing the session so far.
 const COMPACT_COMMAND: &str = "/compact";
+/// What Claude Code says when the session it was asked to resume is gone.
+const NO_CONVERSATION: &str = "No conversation found with session ID";
 const METADATA_LIMIT: usize = 1_000;
 
 fn number(value: &Value) -> i64 {
@@ -162,6 +165,7 @@ struct Stream {
     model: Option<String>,
     streamed_text: HashMap<String, MarkdownBuffer>,
     active_main_stream_id: Option<String>,
+    compacting: Compacting,
 }
 
 impl Stream {
@@ -171,6 +175,7 @@ impl Stream {
             model,
             streamed_text: HashMap::new(),
             active_main_stream_id: None,
+            compacting: Compacting::default(),
         }
     }
 
@@ -181,7 +186,7 @@ impl Stream {
 
 /// Whether a run is owed a turn past the one going: steered messages end the turn they interrupt and
 /// are answered together in the one after it.
-struct TurnData {
+pub(crate) struct TurnData {
     steered: bool,
     stream: Stream,
 }
@@ -234,12 +239,12 @@ impl<V> Bounded<V> {
     }
 }
 
-struct State {
+pub(crate) struct State {
     side_chat_boundary_pending: bool,
     query: Option<ClaudeQuery>,
-    turns: TurnSlot<TurnData>,
-    ended: bool,
-    outcome: Option<ProviderResult>,
+    core: SessionCore<TurnData>,
+    /// The process was started to resume a session, which Claude may no longer have.
+    resuming: bool,
     agent_turn: Option<OpenAgentTurn>,
     next_agent_turn: u64,
     begin_agent_turn: Arc<dyn Fn() -> Option<AgentTurn> + Send + Sync>,
@@ -291,9 +296,8 @@ impl ClaudeSession {
             state: Mutex::new(State {
                 side_chat_boundary_pending: false,
                 query: None,
-                turns: TurnSlot::default(),
-                ended: false,
-                outcome: None,
+                core: SessionCore::default(),
+                resuming: false,
                 agent_turn: None,
                 next_agent_turn: 1,
                 begin_agent_turn: Arc::new(|| None),
@@ -334,6 +338,7 @@ impl ClaudeSession {
         {
             let mut state = self.state.lock().unwrap();
             state.side_chat_boundary_pending = needs_side_chat_boundary(seed);
+            state.resuming = seed.continuation_value().is_some();
             state.model = Some(seed.model.clone());
             state.effort = Some(effort_flag(&seed.model, seed.effort));
             state.report_workflow = seed.hooks.report_workflow.clone();
@@ -379,7 +384,7 @@ impl ClaudeSession {
             Err(error) => {
                 {
                     let mut state = self.state.lock().unwrap();
-                    state.outcome = Some(ProviderResult::failed(error.to_string()));
+                    state.core.outcome = Some(ProviderResult::failed(error.to_string()));
                 }
                 self.close_now();
             }
@@ -396,64 +401,14 @@ impl ClaudeSession {
         }
     }
 
-    fn run_turn(self: Arc<Self>, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        let mut state = self.state.lock().unwrap();
-        let Some(query) = state.query.clone().filter(|_| !state.ended) else {
-            let outcome = state.outcome.clone().unwrap_or_else(|| {
-                ProviderResult::failed("The agent session ended before the run could start.")
-            });
-            return async move { outcome }.boxed();
+    async fn begin_turn(self: Arc<Self>, id: u64, input: RunInput) {
+        let Some(query) = self.state.lock().unwrap().query.clone() else {
+            return;
         };
-        Self::end_agent_turn(&mut state, ProviderResult::cancelled());
-        let emit = input.hooks.emit.clone();
-        let data = TurnData {
-            steered: false,
-            stream: Stream::new(emit, Some(input.model.clone())),
-        };
-        let (taken, _) = state.turns.take(input.clone(), data);
-        if taken.begin {
-            let id = taken.id;
-            let weak = self.me.clone();
-            let give_up = self.me.clone();
-            let interrupt_query = query.clone();
-            let watcher = spawn_abort_watch(
-                &input,
-                move || {
-                    tokio::spawn(async move {
-                        let _ = interrupt_query.interrupt().await;
-                    });
-                },
-                move || {
-                    if let Some(session) = give_up.upgrade() {
-                        let settled = session
-                            .state
-                            .lock()
-                            .unwrap()
-                            .turns
-                            .settle_if(id, ProviderResult::cancelled())
-                            .is_some();
-                        if settled {
-                            session.close_now();
-                        }
-                    }
-                },
-            );
-            state.turns.watch(id, watcher);
-            drop(state);
-            tokio::spawn(async move {
-                if let Some(session) = weak.upgrade() {
-                    session.begin(id, input, query).await;
-                }
-            });
-        }
-        answer_of(taken.answer).boxed()
-    }
-
-    async fn begin(self: Arc<Self>, id: u64, input: RunInput, query: ClaudeQuery) {
         self.retune(&input, &query).await;
         let prompt = {
             let mut state = self.state.lock().unwrap();
-            if !state.turns.is_current(id) {
+            if !state.core.turns.is_current(id) {
                 return;
             }
             if matches!(
@@ -476,13 +431,8 @@ impl ClaudeSession {
             prompt
         };
         query.send_user(&user_message(&prompt, false));
-        self.drain_steering(
-            input.steering.clone(),
-            input.hooks.emit.clone(),
-            Which::Run,
-            id,
-        )
-        .await;
+        self.drain_steering(&input.steering, &input.hooks.emit, Which::Run, id)
+            .await;
     }
 
     /// A live session takes its settings as changes rather than as a reason to start over.
@@ -513,33 +463,52 @@ impl ClaudeSession {
         }
     }
 
-    /// Feeds one run's steered messages into the session for as long as that run is the one going.
-    async fn drain_steering(&self, steering: SteerChannel, emit: Emit, which: Which, id: u64) {
-        while let Some(steer) = steering.next().await {
-            let query = {
-                let mut state = self.state.lock().unwrap();
-                let owed = match which {
-                    Which::Run => state
-                        .turns
-                        .turn_mut()
-                        .filter(|turn| turn.id == id)
-                        .map(|turn| &mut turn.data.steered),
-                    Which::Agent => state
-                        .agent_turn
-                        .as_mut()
-                        .filter(|turn| turn.id == id)
-                        .map(|turn| &mut turn.steered),
-                };
-                let Some(owed) = owed else { return };
-                *owed = true;
-                state.query.clone()
-            };
-            if query.is_some_and(|query| query.send_user(&user_message(&steer.prompt, true))) {
-                emit(ProviderEvent::Steered {
-                    message_id: steer.message_id,
-                });
-            }
+    /// Feeds one turn's steered messages into the session for as long as that turn is the one going.
+    async fn drain_steering(&self, steering: &SteerChannel, emit: &Emit, which: Which, id: u64) {
+        drain_steering(
+            steering,
+            emit,
+            || Self::owing(&mut self.state.lock().unwrap(), which, id).map(|_| ()),
+            |(), prompt| {
+                let steered = self.steer(which, id, &prompt);
+                async move { steered }
+            },
+            reason_of,
+        )
+        .await;
+    }
+
+    /// Whether `id` is the turn going, and whether it already owes a turn past this one.
+    fn owing(state: &mut State, which: Which, id: u64) -> Option<&mut bool> {
+        match which {
+            Which::Run => state
+                .core
+                .turns
+                .turn_mut()
+                .filter(|turn| turn.id == id)
+                .map(|turn| &mut turn.data.steered),
+            Which::Agent => state
+                .agent_turn
+                .as_mut()
+                .filter(|turn| turn.id == id)
+                .map(|turn| &mut turn.steered),
         }
+    }
+
+    /// Folds a steered message into the turn going, which then owes the turn after it.
+    fn steer(&self, which: Which, id: u64, prompt: &str) -> anyhow::Result<()> {
+        let mut state = self.state.lock().unwrap();
+        let query = state.query.clone();
+        let Some(owed) = Self::owing(&mut state, which, id) else {
+            anyhow::bail!("the turn is over");
+        };
+        let owed_before = *owed;
+        *owed = true;
+        if query.is_some_and(|query| query.send_user(&user_message(prompt, true))) {
+            return Ok(());
+        }
+        *owed = owed_before;
+        anyhow::bail!("Claude is no longer taking input")
     }
 
     async fn pump(self: Arc<Self>, mut output: mpsc::UnboundedReceiver<QueryOutput>) {
@@ -549,7 +518,7 @@ impl ClaudeSession {
                 QueryOutput::Message(message) => {
                     let after = {
                         let mut state = self.state.lock().unwrap();
-                        if state.ended {
+                        if state.core.ended {
                             break;
                         }
                         let mut after = After::default();
@@ -567,13 +536,14 @@ impl ClaudeSession {
         {
             let mut state = self.state.lock().unwrap();
             let result = match ended {
-                Ok(()) => ProviderResult::succeeded(),
-                Err(message) => ProviderResult::failed(message)
-                    .with_limit(usage_limit_of(state.rate_limit.as_ref())),
+                Ok(()) => {
+                    state.core.turns.settle(ProviderResult::succeeded());
+                    Self::end_agent_turn(&mut state, ProviderResult::succeeded());
+                    ProviderResult::succeeded()
+                }
+                Err(message) => Self::fail(&mut state, message),
             };
-            state.outcome = Some(result.clone());
-            state.turns.settle(result.clone());
-            Self::end_agent_turn(&mut state, result);
+            state.core.outcome = Some(result);
         }
         self.close_now();
     }
@@ -592,7 +562,7 @@ impl ClaudeSession {
     }
 
     fn busy_of(state: &State) -> bool {
-        state.turns.answering() || state.agent_turn.is_some() || state.background.running()
+        state.core.turns.answering() || state.agent_turn.is_some() || state.background.running()
     }
 
     /// Ends the session: settles what is in flight, reports what it held as stopped, and ends the
@@ -600,10 +570,10 @@ impl ClaudeSession {
     fn close_now(&self) {
         let (query, agent_turn, reports, workflow_reports, report_subagent, report_workflow) = {
             let mut state = self.state.lock().unwrap();
-            if state.ended {
+            if state.core.ended {
                 return;
             }
-            state.ended = true;
+            state.core.ended = true;
             state.background.clear();
             if state.has_goal {
                 (state.report_goal)(GoalReport::Changed { goal: None });
@@ -633,7 +603,7 @@ impl ClaudeSession {
                 })
                 .collect();
             state.workflows.clear();
-            state.turns.settle(ProviderResult::cancelled());
+            state.core.turns.settle(ProviderResult::cancelled());
             (
                 state.query.take(),
                 agent_turn,
@@ -666,16 +636,36 @@ impl ClaudeSession {
 
     /// Ends whichever turn is in flight: the one a run asked for, or the one the agent started itself.
     fn conclude(state: &mut State, result: ProviderResult) {
-        if state.turns.answering() {
-            state.turns.settle(result);
+        if state.core.turns.answering() {
+            state.core.turns.settle(result);
         } else {
             Self::end_agent_turn(state, result);
         }
     }
 
+    /// Ends whichever turn is in flight on a failure, and answers with it. Claude no longer having
+    /// the session the process resumed loses the thread's continuation.
+    fn fail(state: &mut State, text: String) -> ProviderResult {
+        if state.resuming && state.session_id.is_none() && text.contains(NO_CONVERSATION) {
+            let failure = OpenFailure::lost(format!(
+                "Claude could not continue this session ({}). Start a new thread to keep going.",
+                first_line(&text)
+            ));
+            let result = ProviderResult::failed(failure.message.clone());
+            if state.core.turns.fail(failure).is_none() {
+                Self::end_agent_turn(state, result.clone());
+            }
+            return result;
+        }
+        let result =
+            ProviderResult::failed(text).with_limit(usage_limit_of(state.rate_limit.as_ref()));
+        Self::conclude(state, result.clone());
+        result
+    }
+
     /// Whether this result ends a turn a steered message cut short rather than the run.
     fn absorbed_steering(state: &mut State) -> bool {
-        let owing = match state.turns.turn_mut() {
+        let owing = match state.core.turns.turn_mut() {
             Some(turn) => &mut turn.data.steered,
             None => match state.agent_turn.as_mut() {
                 Some(open) => &mut open.steered,
@@ -691,13 +681,17 @@ impl ClaudeSession {
 
     fn stream_mut(state: &mut State, which: Which) -> Option<&mut Stream> {
         match which {
-            Which::Run => state.turns.turn_mut().map(|turn| &mut turn.data.stream),
+            Which::Run => state
+                .core
+                .turns
+                .turn_mut()
+                .map(|turn| &mut turn.data.stream),
             Which::Agent => state.agent_turn.as_mut().map(|open| &mut open.stream),
         }
     }
 
     fn current_stream(state: &State) -> Option<Which> {
-        if state.turns.answering() {
+        if state.core.turns.answering() {
             Some(Which::Run)
         } else if state.agent_turn.is_some() {
             Some(Which::Agent)
@@ -717,7 +711,7 @@ impl ClaudeSession {
         if let Some(which) = Self::current_stream(state) {
             return Some(which);
         }
-        if state.ended || !streamed {
+        if state.core.ended || !streamed {
             return None;
         }
         self.open_agent_turn(state).then_some(Which::Agent)
@@ -744,7 +738,7 @@ impl ClaudeSession {
         tokio::spawn(async move {
             if let Some(session) = weak.upgrade() {
                 session
-                    .drain_steering(steering, emit, Which::Agent, id)
+                    .drain_steering(&steering, &emit, Which::Agent, id)
                     .await;
             }
         });
@@ -843,10 +837,9 @@ impl ClaudeSession {
                     .to_string()
             });
             if let Some(stream) = Self::stream_mut(state, which) {
-                stream.emit(ProviderEvent::CompactionStatus {
-                    compacting: message["status"] == "compacting",
-                    error,
-                });
+                stream
+                    .compacting
+                    .say(&stream.emit, message["status"] == "compacting", error);
             }
         } else if kind == "stream_event"
             && message["parent_tool_use_id"].is_null()
@@ -972,8 +965,7 @@ impl ClaudeSession {
                         })
                         .unwrap_or_default()
                 };
-                let limit = usage_limit_of(state.rate_limit.as_ref());
-                Self::conclude(state, ProviderResult::failed(text).with_limit(limit));
+                Self::fail(state, text);
                 after.close = true;
                 return;
             }
@@ -1072,7 +1064,7 @@ impl ClaudeSession {
         };
         let report = {
             let mut state = self.state.lock().unwrap();
-            if state.ended
+            if state.core.ended
                 || state
                     .subagent_efforts
                     .get(id)
@@ -1412,11 +1404,13 @@ impl ClaudeSession {
         let intent = normalize_tool_intent(&tool_name, &input, &tool_use_id);
         let authorize = {
             let mut state = self.state.lock().unwrap();
-            let scope: Option<ApprovalScope> = state.turns.turn().map(|turn| turn.input.scope());
+            let scope: Option<ApprovalScope> =
+                state.core.turns.turn().map(|turn| turn.input.scope());
             if grants_tool(tool_reach(&tool_name, &state.tool_sets), scope) {
                 return allow;
             }
             let run = state
+                .core
                 .turns
                 .turn()
                 .map(|turn| turn.input.hooks.authorize.clone());
@@ -1438,39 +1432,55 @@ impl ClaudeSession {
     }
 }
 
-impl PooledSession for ClaudeSession {
-    fn key(&self) -> String {
-        self.key.clone()
+impl TurnSession for ClaudeSession {
+    type Turn = TurnData;
+    type State = State;
+    const ENDED: &'static str = "The agent session ended before the run could start.";
+
+    fn key(&self) -> &str {
+        &self.key
     }
 
-    fn live(&self) -> bool {
-        !self.state.lock().unwrap().ended
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap()
     }
 
-    fn busy(&self) -> bool {
-        Self::busy_of(&self.state.lock().unwrap())
+    fn core(state: &mut State) -> &mut SessionCore<TurnData> {
+        &mut state.core
     }
 
-    fn answering(&self) -> bool {
-        self.state.lock().unwrap().turns.answering()
+    fn handle(state: &State) -> Option<&str> {
+        state.session_id.as_deref()
     }
 
-    fn continues(&self, continuation: Option<&str>) -> bool {
-        continuation
-            .is_none_or(|value| self.state.lock().unwrap().session_id.as_deref() == Some(value))
+    fn busy(state: &State) -> bool {
+        Self::busy_of(state)
     }
 
-    fn run(self: Arc<Self>, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        self.run_turn(input)
+    /// The run supersedes whatever the agent had going on its own, so that turn lets go of its run.
+    fn open_turn(&self, state: &mut State, input: &RunInput) -> TurnData {
+        Self::end_agent_turn(state, ProviderResult::cancelled());
+        TurnData {
+            steered: false,
+            stream: Stream::new(input.hooks.emit.clone(), Some(input.model.clone())),
+        }
+    }
+
+    fn begin(self: Arc<Self>, id: u64, input: RunInput) -> BoxFuture<'static, ()> {
+        self.begin_turn(id, input).boxed()
+    }
+
+    fn interrupt(&self, _id: u64) {
+        if let Some(query) = self.state.lock().unwrap().query.clone() {
+            tokio::spawn(async move {
+                let _ = query.interrupt().await;
+            });
+        }
     }
 
     fn close(&self) -> BoxFuture<'static, ()> {
         self.close_now();
         async {}.boxed()
-    }
-
-    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
     }
 }
 

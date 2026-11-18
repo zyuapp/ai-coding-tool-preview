@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use futures::future::{BoxFuture, FutureExt};
 use serde_json::{json, Map, Value};
 
 use crate::app_plugin::app_plugin_root;
 use crate::binary::{engine_binary_path, CLAUDE_BINARY};
 use crate::brief::{run_brief, BriefDialect, RunBrief};
 use crate::catalog::{claude_effort, model_takes_effort};
-use crate::provider::{AgentProvider, ProviderResult, RunInput};
-use crate::session_pool::{session_of, Filings, SessionOpener, SessionPool};
+use crate::pooled_provider::{PooledProvider, SessionEngine};
+use crate::provider::RunInput;
+use crate::session_pool::{SessionHooks, SessionPool};
 use crate::tools::{grants_tool, withheld_tools, ToolReach};
-use crate::types::{AgentEngine, ComputerUseRunConfig, Continuation, CoordinationRole};
+use crate::types::{AgentEngine, ComputerUseRunConfig, CoordinationRole};
 
 use super::query::{ClaudeOptions, SdkMcpServer, SystemPrompt};
 use super::session::{claude_permission_mode, ClaudeSession};
@@ -152,94 +152,46 @@ fn run_options(input: &RunInput, brief: &RunBrief) -> anyhow::Result<ClaudeOptio
     Ok(options)
 }
 
-/// Runs threads on Claude Code, one warm process per thread.
-#[derive(Clone)]
-pub struct ClaudeAgentProvider {
-    pool: SessionPool,
-    filings: Filings,
-}
+/// How Claude Code opens a thread's session: one warm process per thread.
+pub struct ClaudeSessions;
 
-impl ClaudeAgentProvider {
+/// Runs threads on Claude Code.
+pub type ClaudeAgentProvider = PooledProvider<ClaudeSessions>;
+
+impl PooledProvider<ClaudeSessions> {
     pub fn new(pool: SessionPool) -> Self {
-        ClaudeAgentProvider {
-            pool,
-            filings: Filings::default(),
-        }
-    }
-
-    fn session(&self, task_id: &str) -> Option<Arc<ClaudeSession>> {
-        session_of::<ClaudeSession>(&self.pool, task_id)
+        PooledProvider::with_engine(pool, ClaudeSessions)
     }
 }
 
-impl AgentProvider for ClaudeAgentProvider {
-    fn execute(&self, input: RunInput) -> BoxFuture<'static, ProviderResult> {
-        let brief = run_brief(&input, &CLAUDE_DIALECT);
-        let key = session_key(&input, &brief);
-        let pool = self.pool.clone();
-        let filing = self.filings.pending(&input.task_id);
-        async move {
-            if let Some(filing) = filing {
-                filing.await;
-            }
-            let seed = input.clone();
-            let session_key = key.clone();
-            pool.execute(
-                input,
-                key,
-                SessionOpener {
-                    open: move |hooks| ClaudeSession::new(session_key, hooks),
-                    start: move |session: &Arc<ClaudeSession>| {
-                        let tool_sets = brief.tools.clone();
-                        let options_input = seed.clone();
-                        session.open(
-                            &seed,
-                            tool_sets,
-                            Box::new(move |can_use_tool, hooks| {
-                                let mut options = run_options(&options_input, &brief)?;
-                                options.can_use_tool = Some(can_use_tool);
-                                options.hooks = hooks;
-                                Ok(options)
-                            }),
-                        );
-                    },
-                },
-            )
-            .await
-        }
-        .boxed()
+impl SessionEngine for ClaudeSessions {
+    type Session = ClaudeSession;
+
+    fn session_key(&self, input: &RunInput) -> String {
+        session_key(input, &run_brief(input, &CLAUDE_DIALECT))
     }
 
-    fn stop_process(&self, task_id: &str, process_id: &str) -> bool {
-        match self.session(task_id) {
-            Some(session) => {
-                session.stop_process(process_id);
-                true
-            }
-            None => false,
-        }
+    fn open(&self, key: String, hooks: SessionHooks) -> Arc<ClaudeSession> {
+        ClaudeSession::new(key, hooks)
     }
 
-    /// Claude keeps no record of its own to name, so the title stays the app's.
-    fn label_thread(&self, _task_id: &str, _title: &str) -> bool {
-        false
+    fn start(&self, session: &Arc<ClaudeSession>, seed: &RunInput) {
+        let brief = run_brief(seed, &CLAUDE_DIALECT);
+        let options_input = seed.clone();
+        session.open(
+            seed,
+            brief.tools.clone(),
+            Box::new(move |can_use_tool, hooks| {
+                let mut options = run_options(&options_input, &brief)?;
+                options.can_use_tool = Some(can_use_tool);
+                options.hooks = hooks;
+                Ok(options)
+            }),
+        );
     }
 
-    /// Claude keeps no archive of its own, so filing a thread away stays the app's.
-    fn archive_thread(
-        &self,
-        _task_id: &str,
-        _continuation: Option<Continuation>,
-        _archived: bool,
-    ) -> bool {
-        false
-    }
-
-    fn retire_out_of_role(&self, task_id: &str, role: Option<CoordinationRole>) {
-        tokio::spawn(self.pool.retire_out_of_role(task_id, role));
-    }
-
-    fn close_all(&self) {
-        self.pool.close_all();
+    fn stop_process(session: &Arc<ClaudeSession>, process_id: &str) -> bool {
+        session.stop_process(process_id);
+        true
     }
 }

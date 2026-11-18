@@ -17,16 +17,6 @@ use common::*;
 
 const TURNS: u64 = 60;
 
-fn fake_bin(dir: &std::path::Path) {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fake_engine.py");
-    for name in ["claude", "codex"] {
-        let path = dir.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\nexec python3 -I {script} \"$@\"\n")).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-}
-
 async fn turns(engine: AgentEngine, provider: &dyn AgentProvider, root: &str) {
     for seed in 1..=TURNS {
         std::env::set_var("FAKE_SEED", seed.to_string());
@@ -47,22 +37,13 @@ async fn malformed_engine_output_never_panics() {
         counted.fetch_add(1, Ordering::SeqCst);
         previous(info);
     }));
-    let bin = tempfile::tempdir().unwrap();
-    fake_bin(bin.path());
-    let home = tempfile::tempdir().unwrap();
-    let path = format!("{}:{}", bin.path().display(), std::env::var("PATH").unwrap_or_default());
-    std::env::set_var("PATH", path);
-    std::env::set_var("CODEX_HOME", home.path().join("codex"));
-    std::env::set_var("AICODINGTOOL_CODEX_HOME", home.path().join("private"));
-    std::fs::create_dir_all(home.path().join("codex")).unwrap();
+    fake_engines();
     let (_dir, root) = workspace("act-fuzz-");
 
-    std::env::set_var("FAKE_ENGINE", "claude");
     let claude = ClaudeAgentProvider::new(SessionPool::default());
     turns(AgentEngine::Claude, &claude, &root).await;
     claude.close_all();
 
-    std::env::set_var("FAKE_ENGINE", "codex");
     let codex = CodexAgentProvider::new(SessionPool::default(), CodexProviderOptions::new(None, None));
     turns(AgentEngine::Codex, &codex, &root).await;
     codex.close_all();

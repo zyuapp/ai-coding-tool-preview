@@ -1,6 +1,8 @@
 """A stand-in Claude Code or Codex app-server that answers the handshake and replies to each turn with
-seeded, mutated protocol messages. `FAKE_ENGINE` picks the dialect, `FAKE_SEED` the noise."""
-import json, os, random, sys
+seeded, mutated protocol messages. `FAKE_ENGINE` picks the dialect, `FAKE_SEED` the noise. A thread
+id starting `lost` is one the engine no longer has; a Claude prompt saying `close input` stops
+reading input mid-turn."""
+import json, os, random, sys, time
 
 dialect = os.environ.get("FAKE_ENGINE", "claude")
 if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-v", "version"):
@@ -89,8 +91,35 @@ def claude_result():
     return {"type": "result", "subtype": "success", "is_error": False, "result": "done", "session_id": "fake-session", "num_turns": 1, "duration_ms": 5, "total_cost_usd": 0.0, "usage": {"input_tokens": 1, "output_tokens": 1}, "modelUsage": {}}
 
 
+def claude_resumes():
+    for arg in sys.argv[1:]:
+        if arg.startswith("--resume="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def claude_lost(session):
+    reason = f"No conversation found with session ID: {session}"
+    sys.stderr.write(reason + "\n")
+    emit({"type": "result", "subtype": "error_during_execution", "is_error": True, "num_turns": 0, "session_id": session, "errors": [reason]})
+    sys.exit(1)
+
+
+def claude_closes_input():
+    session = "fake-session"
+    emit({"type": "system", "subtype": "init", "session_id": session, "model": "claude-haiku-5", "tools": [], "mcp_servers": [], "slash_commands": []})
+    emit({"type": "stream_event", "uuid": "c1", "session_id": session, "parent_tool_use_id": None, "event": {"type": "message_start", "message": {"id": "msg-closing", "model": "claude-haiku-5"}}})
+    emit({"type": "stream_event", "uuid": "c2", "session_id": session, "parent_tool_use_id": None, "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Working"}}})
+    os.close(0)
+    time.sleep(15)
+    sys.exit(0)
+
+
 def claude():
     seeds = claude_seeds()
+    resumes = claude_resumes()
+    if resumes and resumes.startswith("lost"):
+        claude_lost(resumes)
     for line in sys.stdin:
         try:
             message = json.loads(line)
@@ -104,6 +133,8 @@ def claude():
             if subtype == "interrupt":
                 emit(claude_result())
         elif kind == "user":
+            if "close input" in str(message.get("message", {}).get("content")):
+                claude_closes_input()
             noisy(seeds, 80)
             if rng.random() < 0.3:
                 emit(mutate(claude_result()))
@@ -162,7 +193,10 @@ def codex():
         method, ident = message.get("method"), message.get("id")
         if ident is None or method is None:
             continue
-        if method == "initialize":
+        params = message.get("params") or {}
+        if method in ("thread/resume", "thread/unarchive") and str(params.get("threadId", "")).startswith("lost"):
+            emit({"id": ident, "error": {"code": -32600, "message": f"no rollout found for thread id {params['threadId']}"}})
+        elif method == "initialize":
             emit({"id": ident, "result": {"userAgent": "codex/0.200.0", "codexHome": "/tmp"}})
         elif method in ("thread/start", "thread/resume", "thread/fork"):
             emit({"id": ident, "result": {"thread": {"id": thread, "preview": "", "path": "/tmp/x.jsonl", "cwd": "/tmp"}, "model": "gpt-6-luna", "reasoningEffort": "low"}})

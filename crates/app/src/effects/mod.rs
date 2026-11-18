@@ -85,7 +85,7 @@ impl Sink {
 
     /// An event written as the TS app's JSON, so host types convert by their shared wire shape.
     pub fn json(&self, value: serde_json::Value) {
-        match serde_json::from_value::<WorkspaceEvent>(value.clone()) {
+        match WorkspaceEvent::from_json(&value) {
             Ok(event) => self.event(event),
             Err(error) => eprintln!("dropped an unreadable event {}: {error}", value.get("type").and_then(|kind| kind.as_str()).unwrap_or("?")),
         }
@@ -377,6 +377,5 @@ impl Host {
 /// Effects whose capability this build does not have yet: browser, simulator input, dictation,
 /// paired computers and the phone bridge.
 fn unsupported(work: &EffectWork) {
-    let name = serde_json::to_value(work).ok().and_then(|value| value.get("type").and_then(|kind| kind.as_str()).map(String::from)).unwrap_or_default();
-    eprintln!("effect not available in this build: {name}");
+    eprintln!("effect not available in this build: {}", work.type_name());
 }

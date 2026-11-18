@@ -139,7 +139,7 @@ impl Persistence {
 }
 
 fn persisted_task(thread: &Thread) -> Option<act_core::persisted::PersistedTask> {
-    let mut value = serde_json::to_value(thread).ok()?;
+    let mut value = thread.to_json().ok()?;
     if let Value::Object(fields) = &mut value {
         fields.remove("messages");
         fields.remove("historySummary");

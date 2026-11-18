@@ -7,6 +7,7 @@ pub mod domain;
 pub mod effects;
 pub mod events;
 pub mod identity;
+mod json;
 pub mod persisted;
 pub mod reducer;
 pub mod shared;

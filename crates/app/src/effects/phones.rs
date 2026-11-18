@@ -31,7 +31,7 @@ fn no_thread(task_id: &str) -> String {
 }
 
 fn view(requests: &dyn RequestHost) -> Value {
-    with_state(requests, |state| serde_json::to_value(project_mobile_view(state, act_core::util::now())).unwrap_or(Value::Null))
+    with_state(requests, |state| project_mobile_view(state, act_core::util::now()).to_json().unwrap_or(Value::Null))
 }
 
 /// Answers one phone request: a snapshot, a query, or a command.
@@ -85,9 +85,9 @@ async fn answer_query(host: &Arc<Host>, query: Value) -> Result<Value, String> {
             let before = query.get("before").and_then(Value::as_u64).unwrap_or(0) as usize;
             let read = |state: &WorkspaceState| -> Option<Value> {
                 if kind == "thread" {
-                    mobile_thread_read(state, &task_id).and_then(|read| serde_json::to_value(read).ok())
+                    mobile_thread_read(state, &task_id).and_then(|read| read.to_json().ok())
                 } else {
-                    mobile_thread_history(state, &task_id, before).and_then(|read| serde_json::to_value(read).ok())
+                    mobile_thread_history(state, &task_id, before).and_then(|read| read.to_json().ok())
                 }
             };
             let remote = with_state(requests.as_ref(), |state| remote_member_holder(state, &task_id).map(|holder| holder.state.as_deref().map(read)));

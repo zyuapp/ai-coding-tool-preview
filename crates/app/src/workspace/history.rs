@@ -84,7 +84,7 @@ fn collect(state: &WorkspaceState, input: &WorkspaceInput, ids: &mut Vec<String>
         }
         return;
     }
-    let Ok(value) = serde_json::to_value(input) else { return };
+    let Ok(value) = input.to_json() else { return };
     let current = state.current_id.clone();
     let task_or_current = || text(&value, "taskId").or_else(|| current.clone());
     let kind = value.get("type").and_then(Value::as_str).unwrap_or("");

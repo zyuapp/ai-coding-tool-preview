@@ -160,7 +160,7 @@ pub async fn wait_for(host: &dyn RequestHost, pending: impl Fn(&WorkspaceState) 
 }
 
 pub(crate) fn input(value: Value) -> Result<WorkspaceInput, String> {
-    serde_json::from_value(value).map_err(|error| format!("Invalid request: {error}"))
+    WorkspaceInput::from_json(&value).map_err(|error| format!("Invalid request: {error}"))
 }
 
 pub(crate) fn result_message(result: &CommandResult) -> String {

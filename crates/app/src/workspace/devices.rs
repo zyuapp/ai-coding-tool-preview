@@ -113,7 +113,7 @@ impl Workspace {
     fn answer_browser(&mut self, request: Request, cx: &mut Context<Self>) {
         match request {
             Request::Execute { command, reply } => {
-                let command = match serde_json::from_value::<AppCommand>(command) {
+                let command = match AppCommand::from_json(&command) {
                     Ok(command) => command,
                     Err(error) => {
                         let _ = reply.send(Err(error.to_string()));

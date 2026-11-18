@@ -6,7 +6,6 @@ use act_core::domain::thread::{thread_last_output_at, Thread};
 use act_core::persisted::storage::{labelled_origin, readable_remote_thread};
 use act_core::state::ThreadDock;
 use act_core::WorkspaceState;
-use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::workspace_patches::{apply_workspace_patches, decode_sets, WorkspacePatch};
@@ -65,7 +64,7 @@ fn read_workspace(wire: &Value) -> Result<WorkspaceState, String> {
     }
     let mut state = wire.clone();
     decode_sets(&mut state);
-    let defaults = serde_json::to_value(WorkspaceState::default()).map_err(|error| error.to_string())?;
+    let defaults = WorkspaceState::default().to_json().map_err(|error| error.to_string())?;
     fill(&mut state, &defaults);
     fill_items(state.get_mut("threads"), &thread_defaults(), &["id", "engine"])?;
     fill_items(state.get_mut("projects"), &json!({}), &["id", "root"])?;
@@ -79,7 +78,7 @@ fn read_workspace(wire: &Value) -> Result<WorkspaceState, String> {
     if let Some(Value::Array(threads)) = state.get_mut("threads") {
         threads.iter_mut().for_each(with_legacy_origins);
     }
-    let mut read = match WorkspaceState::deserialize(&state) {
+    let mut read = match WorkspaceState::from_json(&state) {
         Ok(read) => read,
         Err(_) => salvaged(state)?,
     };
@@ -127,14 +126,14 @@ fn salvaged(mut state: Value) -> Result<WorkspaceState, String> {
         let read: Vec<Value> = std::mem::take(threads).into_iter().map(readable_remote_thread).filter_map(readable_thread).collect();
         *threads = read;
     }
-    let defaults = serde_json::to_value(WorkspaceState::default()).map_err(|error| error.to_string())?;
-    if WorkspaceState::deserialize(&state).is_err() {
+    let defaults = WorkspaceState::default().to_json().map_err(|error| error.to_string())?;
+    if WorkspaceState::from_json(&state).is_err() {
         if let (Value::Object(fields), Value::Object(empty)) = (&mut state, &defaults) {
             let keys: Vec<String> = fields.keys().cloned().collect();
             for key in keys {
                 let mut probe = defaults.clone();
                 probe[&key] = fields[&key].clone();
-                if WorkspaceState::deserialize(&probe).is_err() {
+                if WorkspaceState::from_json(&probe).is_err() {
                     match empty.get(&key) {
                         Some(fallback) => fields.insert(key, fallback.clone()),
                         None => fields.remove(&key),
@@ -143,12 +142,12 @@ fn salvaged(mut state: Value) -> Result<WorkspaceState, String> {
             }
         }
     }
-    WorkspaceState::deserialize(&state).map_err(|error| format!("Invalid remote workspace: {error}"))
+    WorkspaceState::from_json(&state).map_err(|error| format!("Invalid remote workspace: {error}"))
 }
 
 /// A thread with each field this build cannot read left out, or None when even its core cannot be read.
 fn readable_thread(mut thread: Value) -> Option<Value> {
-    if Thread::deserialize(&thread).is_ok() {
+    if Thread::from_json(&thread).is_ok() {
         return Some(thread);
     }
     const CORE: [&str; 9] = ["id", "title", "engine", "executionPolicy", "messages", "continuationStatus", "lastChangeSnapshot", "updatedAt", "rankedAt"];
@@ -160,18 +159,18 @@ fn readable_thread(mut thread: Value) -> Option<Value> {
         let readable = |value: &Value| {
             let mut tried = probe.clone();
             tried.insert(key.into(), value.clone());
-            Thread::deserialize(&Value::Object(tried)).is_ok()
+            Thread::from_json(&Value::Object(tried)).is_ok()
         };
         if core.get(key).is_some_and(|value| !readable(value)) {
             core.insert(key.into(), Value::from(fallback));
             fields.insert(key.into(), Value::from(fallback));
         }
     }
-    Thread::deserialize(&Value::Object(core.clone())).ok()?;
+    Thread::from_json(&Value::Object(core.clone())).ok()?;
     let readable = |key: &str, value: &Value| {
         let mut probe = core.clone();
         probe.insert(key.into(), value.clone());
-        Thread::deserialize(&Value::Object(probe)).is_ok()
+        Thread::from_json(&Value::Object(probe)).is_ok()
     };
     let optional: Vec<String> = fields.keys().filter(|key| !CORE.contains(&key.as_str())).cloned().collect();
     for key in optional {
@@ -186,7 +185,7 @@ fn readable_thread(mut thread: Value) -> Option<Value> {
             fields.insert(key, Value::Array(kept));
         }
     }
-    Thread::deserialize(&thread).is_ok().then_some(thread)
+    Thread::from_json(&thread).is_ok().then_some(thread)
 }
 
 /// A list item as this build can read it: as sent, else without the engine and effort only a newer build knows.

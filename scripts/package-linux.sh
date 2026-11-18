@@ -76,8 +76,8 @@ fi
 target_dir=${CARGO_TARGET_DIR:-$root/target}
 
 echo "Building the release binary and the dictation helper…"
-cargo build --release -p ai-coding-tool --manifest-path "$root/Cargo.toml"
-cargo build --release -p act_devices --features onnx --bin aic-dictation-onnx --manifest-path "$root/Cargo.toml"
+# One build, so both binaries share every crate.
+cargo build --release -p ai-coding-tool -p act_devices --features act_devices/onnx --manifest-path "$root/Cargo.toml"
 
 echo "Fetching ONNX Runtime $ort_version…"
 ort_dir=$target_dir/onnxruntime/$ort_version-$ort_arch

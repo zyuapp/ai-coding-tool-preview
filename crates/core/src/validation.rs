@@ -336,7 +336,7 @@ pub fn parse_command(value: &Value) -> Result<AppCommand, String> {
     if !fields_within_limits(value) {
         return Err(format!("{kind} carries a field this app cannot take."));
     }
-    serde_json::from_value::<AppCommand>(value.clone()).map_err(|error| format!("{kind}: {error}"))
+    AppCommand::from_json(value).map_err(|error| format!("{kind}: {error}"))
 }
 
 /// Whether a command from outside the window passes the window's field checks.

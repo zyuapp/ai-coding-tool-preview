@@ -1261,7 +1261,7 @@ fn computer_switch(root: &mut Root, state: &WorkspaceState, window: &mut Window,
 
 /// `json!` commands for the shapes with many optional fields.
 pub fn command(value: serde_json::Value) -> Option<AppCommand> {
-    match serde_json::from_value(value.clone()) {
+    match AppCommand::from_json(&value) {
         Ok(command) => Some(command),
         Err(error) => {
             eprintln!("unreadable command {value}: {error}");

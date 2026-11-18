@@ -32,7 +32,7 @@ pub fn thread_from_stored(stored: &StoredThread) -> Option<(Thread, Vec<Subagent
     let mut value = serde_json::to_value(stored).ok()?;
     let subagents = value.as_object_mut().and_then(|fields| fields.remove("subagents"));
     let ranked = value.get("rankedAt").is_some();
-    let mut thread: Thread = serde_json::from_value(value).ok()?;
+    let mut thread = Thread::from_json(&value).ok()?;
     if !ranked {
         thread.ranked_at = thread_last_output_at(&thread);
     }

@@ -689,7 +689,7 @@ impl Workspace {
                 })
             })
             .collect();
-        if let Ok(event) = serde_json::from_value::<WorkspaceEvent>(serde_json::json!({ "type": "computers.changed", "name": name, "links": links })) {
+        if let Ok(event) = WorkspaceEvent::from_json(&serde_json::json!({ "type": "computers.changed", "name": name, "links": links })) {
             self.dispatch(WorkspaceInput::Event(event), cx);
         }
     }

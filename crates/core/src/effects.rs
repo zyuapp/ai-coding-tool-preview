@@ -539,7 +539,13 @@ impl Effect {
     }
 
     pub fn type_name(&self) -> String {
-        serde_json::to_value(&self.work).ok().and_then(|value| value.get("type").and_then(|kind| kind.as_str()).map(String::from)).unwrap_or_default()
+        self.work.type_name()
+    }
+}
+
+impl EffectWork {
+    pub fn type_name(&self) -> String {
+        serde_json::to_value(self).ok().and_then(|value| value.get("type").and_then(|kind| kind.as_str()).map(String::from)).unwrap_or_default()
     }
 }
 

@@ -32,7 +32,7 @@ pub fn render(state: &WorkspaceState) -> AnyElement {
         .iter()
         .filter_map(|toast| {
             let command = serde_json::to_value(&toast.action.as_ref()?.command).ok()?;
-            Some((toast.id as u64, serde_json::from_value(command).ok()?))
+            Some((toast.id as u64, AppCommand::from_json(&command).ok()?))
         })
         .collect();
     Toasts::new(cards)

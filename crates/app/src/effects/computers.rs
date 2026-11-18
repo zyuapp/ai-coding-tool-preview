@@ -112,7 +112,7 @@ impl WorkspaceHooks for Publisher {
         let me = self.me.upgrade();
         // The first input is handed over now, so requests reach the workspace in the order they were made.
         let mut inputs = inputs.into_iter();
-        let first = me.as_ref().zip(inputs.next()).map(|(me, input)| serde_json::from_value::<WorkspaceInput>(input).map(|parsed| me.requests.execute(parsed).completed));
+        let first = me.as_ref().zip(inputs.next()).map(|(me, input)| WorkspaceInput::from_json(&input).map(|parsed| me.requests.execute(parsed).completed));
         async move {
             let Some(me) = me else { return Err("This computer is shutting down.".into()) };
             let mut result = json!({ "ok": true });
@@ -122,7 +122,7 @@ impl WorkspaceHooks for Publisher {
                     Some(Ok(completed)) => completed,
                     Some(Err(error)) => return Ok(json!({ "ok": false, "message": format!("Invalid input: {error}"), "revision": me.revision.load(Ordering::SeqCst) })),
                     None => match inputs.next() {
-                        Some(input) => match serde_json::from_value::<WorkspaceInput>(input) {
+                        Some(input) => match WorkspaceInput::from_json(&input) {
                             Ok(parsed) => me.requests.execute(parsed).completed,
                             Err(error) => return Ok(json!({ "ok": false, "message": format!("Invalid input: {error}"), "revision": me.revision.load(Ordering::SeqCst) })),
                         },
@@ -520,12 +520,12 @@ async fn carry_images(attachments: &AttachmentStore, inputs: &mut [WorkspaceInpu
 #[allow(clippy::too_many_arguments)]
 async fn forward(sink: &Sink, links: Option<Arc<ComputerLinks>>, attachments: &AttachmentStore, id: String, mut inputs: Vec<WorkspaceInput>, project_add_request: Option<i64>, draft: Option<act_core::events::SentDraft>, proposal: Option<act_core::effects::ForwardProposal>, silent: bool) {
     let housekeeping = inputs.iter().all(|input| {
-        let kind = serde_json::to_value(input).ok().and_then(|value| value.get("type").and_then(Value::as_str).map(String::from)).unwrap_or_default();
+        let kind = input.to_json().ok().and_then(|value| value.get("type").and_then(Value::as_str).map(String::from)).unwrap_or_default();
         matches!(kind.as_str(), "view.set-focused" | "usage.read" | "pull-request.read-member")
     });
-    let removes_project = inputs.iter().any(|input| serde_json::to_value(input).ok().and_then(|value| value.get("type").and_then(Value::as_str).map(|kind| kind == "project.remove")).unwrap_or(false));
+    let removes_project = inputs.iter().any(|input| input.to_json().ok().and_then(|value| value.get("type").and_then(Value::as_str).map(|kind| kind == "project.remove")).unwrap_or(false));
     let carried = carry_images(attachments, &mut inputs).await;
-    let values: Vec<Value> = inputs.iter().filter_map(|input| serde_json::to_value(input).ok()).collect();
+    let values: Vec<Value> = inputs.iter().filter_map(|input| input.to_json().ok()).collect();
     let sent = match (carried, links) {
         (Err(message), _) => Err(message),
         (Ok(()), Some(links)) => links.send(&id, values).await,

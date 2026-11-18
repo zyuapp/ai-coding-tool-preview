@@ -44,7 +44,7 @@ fn message_value(message: &ConversationMessage) -> Value {
 
 fn thread_fields(thread: &Thread) -> Value {
     let bare = Thread { messages: Vec::new(), ..thread.clone() };
-    let mut value = serde_json::to_value(&bare).unwrap_or(Value::Null);
+    let mut value = bare.to_json().unwrap_or(Value::Null);
     if let Value::Object(fields) = &mut value {
         fields.remove("messages");
     }
@@ -53,7 +53,7 @@ fn thread_fields(thread: &Thread) -> Value {
 
 fn rest_value(state: &WorkspaceState) -> Value {
     let bare = WorkspaceState { threads: Vec::new(), ..state.clone() };
-    let mut value = serde_json::to_value(&bare).unwrap_or(Value::Null);
+    let mut value = bare.to_json().unwrap_or(Value::Null);
     if let Value::Object(fields) = &mut value {
         fields.remove("threads");
     }

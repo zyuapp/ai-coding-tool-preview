@@ -76,7 +76,7 @@ pub fn main(arguments: Vec<String>) -> i32 {
         Workspace::start(&workspace, cx);
         // Browser and computer-use surfaces need a desktop; shells can be viewed from a paired computer.
         for command in [json!({ "type": "view.set-browser-tools", "enabled": false }), json!({ "type": "view.set-computer-use", "enabled": false })] {
-            match serde_json::from_value(command) {
+            match act_core::AppCommand::from_json(&command) {
                 Ok(command) => host.sink.command(command),
                 Err(error) => eprintln!("Could not turn off a desktop surface: {error}"),
             }

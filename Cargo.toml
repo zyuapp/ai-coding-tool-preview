@@ -36,6 +36,10 @@ debug = "line-tables-only"
 opt-level = 2
 debug = false
 
+# Fewer units than the default 16: less work to build on the release runners' 3 or 4 cores, and more inlining.
+[profile.release]
+codegen-units = 4
+
 [patch.crates-io]
 # 0.15.0 with Chromium's layout unit, negative-margin intrinsic sizes and snap_origin; see ARCHITECTURE.md.
 taffy = { path = "vendor/taffy" }

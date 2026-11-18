@@ -82,6 +82,7 @@ GTK runs on GPUI's main thread (`act_browser::linux::gtk_loop`). Hidden pages (M
 Shaders compile at runtime (`runtime_shaders`), so no Metal toolchain is needed.
 - `cargo run -p ai-coding-tool`; `ACT_PROFILE_DIR` picks a profile, `ACT_WINDOW_SIZE=WxH` the window size.
 - `cargo test --workspace`, and `scripts/test-vendor.sh` for the vendored crates.
+- Build time: a crate that reads or writes a type through `serde_json` compiles that type's whole serde tree again. `crates/core/src/json.rs` gives the largest (`AppCommand`, `WorkspaceEvent`, `WorkspaceInput`, `WorkspaceState`, `Thread`, the phone views) `from_json` and `to_json`, compiled once in core; other crates call those. `cargo llvm-lines` shows what a crate compiles. The app is a library under a one-line `main.rs`, so it compiles while the crates under it are still generating code.
 - `scripts/reducer-diff/run.sh` fuzzes the reducer against the TypeScript one; `scripts/command-diff/run.sh` compares command validation with it.
 - `scripts/package-mac.sh` builds the `.app`, signed with `MAC_SIGN_IDENTITY` or ad hoc; `scripts/package-linux.sh [x86_64|aarch64]` the Linux tarball (and AppImage when `appimagetool` is on PATH), in Docker when not on Linux.
 - `scripts/profile.sh <dir>` copies the Electron dev profile (or `ELECTRON_PROFILE`) for `ACT_PROFILE_DIR`; `scripts/shot.sh <process-name-or-pid> out.png` screenshots a window. Compare against the Electron dev app (`npm start` in `../ai-coding-tool`).

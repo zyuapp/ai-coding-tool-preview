@@ -162,11 +162,8 @@ jobs:
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --key "$RUNNER_TEMP/apple.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
           xcrun stapler staple "$APP"
           rm -f "$RUNNER_TEMP/notarize.zip"
+      # The disk image carries the notarized app and is not notarized itself.
       - name: Make the zip and disk image
-        env:
-          SIGNED: ${{ steps.signing.outputs.enabled }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
           APP="$(ls -d "$RUNNER_TEMP"/package/*.app | head -1)"
           NAME="$(sed -n 's/^pub const ARTIFACT_NAME: [^=]* = "\(.*\)";$/\1/p' crates/core/src/identity.rs)-$VERSION-arm64"
@@ -176,11 +173,6 @@ jobs:
           cp -R "$APP" "$RUNNER_TEMP/dmg/"
           ln -s /Applications "$RUNNER_TEMP/dmg/Applications"
           hdiutil create -volname "$(basename "$APP" .app)" -srcfolder "$RUNNER_TEMP/dmg" -ov -format UDZO "release/$NAME.dmg"
-          if [ "$SIGNED" = true ]; then
-            codesign --force --sign "$MAC_SIGN_IDENTITY" --timestamp "release/$NAME.dmg"
-            xcrun notarytool submit "release/$NAME.dmg" --key "$RUNNER_TEMP/apple.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
-            xcrun stapler staple "release/$NAME.dmg"
-          fi
           scripts/release-feed.sh "$VERSION" "release/$NAME.zip" "release/$NAME.dmg" > release/latest-mac.yml
       - name: Remove signing credentials
         if: always()
@@ -217,15 +209,39 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       TAG: ${{ needs.prepare.outputs.tag }}
       ARCH: ${{ matrix.arch }}
+      APT_PACKAGES: >-
+        clang cmake pkg-config libasound2-dev libfontconfig-dev libfreetype-dev libssl-dev
+        libvulkan1 libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev
+        libzstd-dev libdbus-1-dev curl file unzip xz-utils libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install build dependencies
+      # The package files are cached, so a slow mirror does not hold the build up.
+      - name: Name the system packages
+        id: apt
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            clang cmake pkg-config libasound2-dev libfontconfig-dev libfreetype-dev libssl-dev \
-            libvulkan1 libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libzstd-dev libdbus-1-dev curl file unzip xz-utils libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev
+          sudo apt-get install --print-uris -qq --no-install-recommends $APT_PACKAGES | awk '{ print $2 }' | sort > "$RUNNER_TEMP/apt-packages"
+          echo "key=$(sha256sum < "$RUNNER_TEMP/apt-packages" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: Restore the system packages
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: apt-${{ runner.os }}-${{ matrix.arch }}-${{ steps.apt.outputs.key }}
+          restore-keys: apt-${{ runner.os }}-${{ matrix.arch }}-
+      - name: Install build dependencies
+        run: |
+          mkdir -p ~/apt-archives/partial
+          for deb in ~/apt-archives/*.deb; do
+            grep -qxF "$(basename "$deb")" "$RUNNER_TEMP/apt-packages" || rm -f "$deb"
+          done
+          sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$HOME/apt-archives" $APT_PACKAGES
+      - name: Save the system packages
+        if: steps.apt-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
       - name: Install appimagetool
         env:
           APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}

@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::tools::{
-    grants_tool, mcp_tool_name, tool_reach, ApprovalScope, ServedToolSet, ToolReach,
+    grants_tool, mcp_tool_name, role_limits, tool_reach, ApprovalScope, ServedToolSet, ToolReach,
 };
 use crate::types::{CoordinationRole, ExecutionPolicy};
 
@@ -65,7 +65,7 @@ fn mode_rules(policy: ExecutionPolicy) -> Vec<PermissionRule> {
 }
 
 /// The rules a session runs under: the mode's, then the app's tools each granted as Claude grants
-/// them, then what a coordinator may never do.
+/// them, then what the thread's role keeps from it.
 pub fn permission_rules(
     scope: ApprovalScope,
     role: Option<CoordinationRole>,
@@ -95,12 +95,15 @@ pub fn permission_rules(
             },
         ));
     }
-    if role == Some(CoordinationRole::Coordinator) {
-        rules.extend([
-            rule("edit", "deny"),
-            rule("shell", "deny"),
-            rule("subagent", "deny"),
-        ]);
+    let limits = role_limits(role);
+    if limits.read_only {
+        rules.extend([rule("edit", "deny"), rule("shell", "deny")]);
+    }
+    if limits.no_subagents {
+        rules.push(rule("subagent", "deny"));
+    }
+    if limits.no_native_questions {
+        rules.push(rule("question", "deny"));
     }
     rules
 }
@@ -111,5 +114,39 @@ pub fn agent_for(policy: ExecutionPolicy) -> &'static str {
         "plan"
     } else {
         "build"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::RunChannel;
+
+    /// What the last rule matching `action` says, as OpenCode reads them.
+    fn effect(rules: &[PermissionRule], action: &str) -> &'static str {
+        rules
+            .iter()
+            .rev()
+            .find(|rule| rule.action == action || rule.action == "*")
+            .map_or("ask", |rule| rule.effect)
+    }
+
+    #[test]
+    fn a_role_keeps_what_it_may_not_do_whatever_the_mode() {
+        let scope = ApprovalScope {
+            policy: ExecutionPolicy::Bypass,
+            channel: RunChannel::Main,
+        };
+        let coordinator = permission_rules(scope, Some(CoordinationRole::Coordinator), &[], false);
+        for action in ["edit", "shell", "subagent", "question"] {
+            assert_eq!(effect(&coordinator, action), "deny", "{action}");
+        }
+        let member = permission_rules(scope, Some(CoordinationRole::Member), &[], false);
+        assert_eq!(effect(&member, "question"), "deny");
+        assert_eq!(effect(&member, "edit"), "allow");
+        assert_eq!(
+            effect(&permission_rules(scope, None, &[], false), "question"),
+            "allow"
+        );
     }
 }

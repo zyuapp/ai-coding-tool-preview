@@ -2,6 +2,7 @@
 
 use serde_json::{json, Value};
 
+use crate::tools::role_limits;
 use crate::types::{CoordinationRole, ExecutionPolicy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +59,11 @@ fn policy_grants(policy: ExecutionPolicy) -> CodexPolicy {
     }
 }
 
-/// Codex has no plan mode, so a plan run is held to what a confirm run may do. A coordinator's
+/// Codex has no plan mode, so a plan run is held to what a confirm run may do. A read-only run's
 /// shell is read-only, and every escalation out of it is refused.
 pub fn codex_policy(policy: ExecutionPolicy, role: Option<CoordinationRole>) -> CodexPolicy {
     let granted = policy_grants(policy);
-    if role != Some(CoordinationRole::Coordinator) {
+    if !role_limits(role).read_only {
         return granted;
     }
     if policy == ExecutionPolicy::Autonomous {

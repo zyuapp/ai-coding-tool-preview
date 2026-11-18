@@ -7,7 +7,7 @@ use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{ExecutionPolicy, RunChannel};
+use crate::types::{CoordinationRole, ExecutionPolicy, RunChannel};
 
 /// One piece of a tool's answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -140,6 +140,28 @@ pub enum ToolReach {
     App,
     ComputerUse,
     Workspace,
+}
+
+/// What a thread's place in a team keeps from it, whichever engine runs it. Each engine holds it
+/// to these its own way: a tool list, a sandbox, or permission rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RoleLimits {
+    /// Changes nothing itself: no edits, no command that could write, and not the user's own browser.
+    pub read_only: bool,
+    /// Hands work only to threads the user can see, never to subagents of the engine's own.
+    pub no_subagents: bool,
+    /// Asks the user only through the app's decisions, which the coordinator's Overview shows.
+    pub no_native_questions: bool,
+}
+
+/// A coordinator reads, plans and delegates; it and its members put questions to the user as decisions.
+pub fn role_limits(role: Option<CoordinationRole>) -> RoleLimits {
+    let coordinator = role == Some(CoordinationRole::Coordinator);
+    RoleLimits {
+        read_only: coordinator,
+        no_subagents: coordinator,
+        no_native_questions: role.is_some(),
+    }
 }
 
 /// What a run may do and where it is read: together they decide what runs without asking.

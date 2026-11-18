@@ -10,8 +10,8 @@ use crate::catalog::{claude_effort, model_takes_effort};
 use crate::pooled_provider::{PooledProvider, SessionEngine};
 use crate::provider::RunInput;
 use crate::session_pool::{SessionHooks, SessionPool};
-use crate::tools::{grants_tool, withheld_tools, ToolReach};
-use crate::types::{AgentEngine, ComputerUseRunConfig, CoordinationRole};
+use crate::tools::{grants_tool, role_limits, withheld_tools, ToolReach};
+use crate::types::{AgentEngine, ComputerUseRunConfig};
 
 use super::query::{ClaudeOptions, SdkMcpServer, SystemPrompt};
 use super::session::{claude_permission_mode, ClaudeSession};
@@ -27,8 +27,8 @@ pub const CLAUDE_DIALECT: BriefDialect = BriefDialect {
 
 const CHROME_INSTRUCTIONS: &str = "The user's own Chrome answers the mcp__claude-in-chrome__ tools, and those tools drive the windows and tabs they already have on screen: when they ask for the external browser, for their browser, or for Chrome by name, use them rather than the AICodingTool browser panel or an open command through Bash. Everything else stays in the panel, which reads a page without disturbing what the user is looking at.";
 
-/// The only tools a coordinator's Claude is given: it reads, plans and delegates.
-pub const COORDINATOR_TOOLS: [&str; 12] = [
+/// Claude's tools that change nothing and start no subagent: all a read-only run is given.
+pub const READ_ONLY_TOOLS: [&str; 12] = [
     "Read",
     "Grep",
     "Glob",
@@ -76,9 +76,9 @@ pub fn setting_sources(projectless: bool) -> Vec<String> {
     }
 }
 
-/// Whether the run drives the user's own Chrome. A coordinator never does.
+/// Whether the run drives the user's own Chrome. A read-only run never does.
 fn drives_chrome(input: &RunInput) -> bool {
-    input.chrome_browser && input.coordination_role != Some(CoordinationRole::Coordinator)
+    input.chrome_browser && !role_limits(input.coordination_role).read_only
 }
 
 /// Everything a session is built with. A run that disagrees with any of it needs a session of its own.
@@ -108,9 +108,9 @@ fn run_options(input: &RunInput, brief: &RunBrief) -> anyhow::Result<ClaudeOptio
         append.push(CHROME_INSTRUCTIONS.to_string());
     }
     options.cwd = Some(input.workspace_root.clone());
-    if input.coordination_role == Some(CoordinationRole::Coordinator) {
+    if role_limits(input.coordination_role).read_only {
         options.tools = Some(
-            COORDINATOR_TOOLS
+            READ_ONLY_TOOLS
                 .iter()
                 .map(|tool| tool.to_string())
                 .collect(),

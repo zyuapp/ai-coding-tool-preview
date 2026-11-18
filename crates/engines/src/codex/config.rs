@@ -3,8 +3,10 @@
 use serde_json::{json, Map, Value};
 
 use crate::provider::RunInput;
-use crate::tools::{grants_tool, mcp_tool_name, tool_reach, ServedToolSet, ServedTools, ToolReach};
-use crate::types::{ComputerUseRunConfig, CoordinationRole};
+use crate::tools::{
+    grants_tool, mcp_tool_name, role_limits, tool_reach, ServedToolSet, ServedTools, ToolReach,
+};
+use crate::types::ComputerUseRunConfig;
 
 /// The name Codex files the app's own tools under.
 pub const APP_SERVER_NAME: &str = "aicodingtool";
@@ -143,9 +145,10 @@ pub fn codex_config(
             ));
         }
     }
+    let limits = role_limits(input.coordination_role);
     let mut args = app_features();
     args.push(
-        if input.coordination_role.is_some() {
+        if limits.no_native_questions {
             "--disable"
         } else {
             "--enable"
@@ -153,7 +156,7 @@ pub fn codex_config(
         .into(),
     );
     args.push("default_mode_request_user_input".into());
-    if input.coordination_role == Some(CoordinationRole::Coordinator) {
+    if limits.no_subagents {
         args.extend(["--disable", "multi_agent", "--disable", "multi_agent_v2"].map(String::from));
     }
     for (key, value) in config {

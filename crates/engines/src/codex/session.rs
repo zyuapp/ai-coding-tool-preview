@@ -19,10 +19,10 @@ use crate::session_pool::SessionHooks;
 use crate::session_turn::{
     drain_steering, first_line, opened, Compacting, OpenFailure, SessionCore, TurnSession, TurnSlot,
 };
-use crate::tools::{grants_tool, ServedTools, ToolHost, ToolReach};
+use crate::tools::{grants_tool, role_limits, ServedTools, ToolHost, ToolReach};
 use crate::types::{
     ActiveGoal, AgentEngine, BackgroundProcess, BackgroundProcessKind, CompactionTrigger,
-    Continuation, CoordinationRole, GoalReport, GoalStatus, RetryNotice, RunOperation, ToolIntent,
+    Continuation, GoalReport, GoalStatus, RetryNotice, RunOperation, ToolIntent,
 };
 
 use super::app_server::{
@@ -1457,7 +1457,7 @@ impl CodexSession {
             };
             (turn.input.clone(), turn.id)
         };
-        if workspace && input.coordination_role == Some(CoordinationRole::Coordinator) {
+        if workspace && role_limits(input.coordination_role).read_only {
             return false;
         }
         if grants_tool(ToolReach::Workspace, Some(input.scope())) {

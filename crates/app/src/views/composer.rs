@@ -596,7 +596,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
         .pr(px(inset + side))
         .pb(px(20.0))
         .rounded_b(px(theme.metrics.page_radius))
-        .child(div().relative().child(column).child(bounds_probe(&probe)))
+        .child(div().relative().occlude().child(column).child(bounds_probe(&probe)))
 }
 
 /// Send, Stop while a run is going, or a spinner while a send is on its way.

@@ -75,6 +75,21 @@ pub fn is_base64(data: &str) -> bool {
     !body.is_empty() && data.len() - body.len() <= 2 && body.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/')
 }
 
+/// An attachment's bytes from base64, refusing an empty or oversized image.
+fn decode(data: &str) -> Result<Vec<u8>, AttachmentError> {
+    if data.is_empty() || data.len() > MAX_ATTACHMENT_ENCODED_BYTES {
+        return Err(AttachmentError::Size);
+    }
+    if !is_base64(data) {
+        return Err(AttachmentError::NotBase64);
+    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| AttachmentError::NotBase64)?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
+        return Err(AttachmentError::Size);
+    }
+    Ok(bytes)
+}
+
 #[derive(Debug, Clone)]
 pub struct AttachmentStore {
     directory: PathBuf,
@@ -122,16 +137,7 @@ impl AttachmentStore {
 
     /// Puts base64 PNG bytes in the attachments directory under a name of this app's own making.
     pub async fn write(&self, data: &str, context: Option<&ScreenshotContext>) -> Result<PathBuf, AttachmentError> {
-        if data.is_empty() || data.len() > MAX_ATTACHMENT_ENCODED_BYTES {
-            return Err(AttachmentError::Size);
-        }
-        if !is_base64(data) {
-            return Err(AttachmentError::NotBase64);
-        }
-        let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| AttachmentError::NotBase64)?;
-        if bytes.is_empty() || bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
-            return Err(AttachmentError::Size);
-        }
+        let bytes = decode(data)?;
         tokio::fs::create_dir_all(&self.directory).await?;
         let file = self.directory.join(format!("{}.png", uuid::Uuid::new_v4()));
         tokio::fs::write(&file, bytes).await?;
@@ -140,6 +146,25 @@ impl AttachmentStore {
             if let Ok(json) = serde_json::to_string(context) {
                 let _ = tokio::fs::write(format!("{}{CONTEXT_SUFFIX}", file.to_string_lossy()), json).await;
             }
+        }
+        Ok(file)
+    }
+
+    /// Keeps a copy of an attachment another computer holds under the name it has there, so a thread
+    /// that computer holds shows it here. Only a saved attachment's name is taken.
+    pub async fn keep(&self, name: &str, data: &str) -> Result<PathBuf, AttachmentError> {
+        if !is_saved_attachment_name(name) {
+            return Err(AttachmentError::InvalidName);
+        }
+        let bytes = decode(data)?;
+        tokio::fs::create_dir_all(&self.directory).await?;
+        let file = self.directory.join(name);
+        // Written aside and moved in, so a half-written copy is never taken for the image.
+        let partial = self.directory.join(format!(".{name}.{}", uuid::Uuid::new_v4()));
+        tokio::fs::write(&partial, bytes).await?;
+        if let Err(error) = tokio::fs::rename(&partial, &file).await {
+            let _ = tokio::fs::remove_file(&partial).await;
+            return Err(error.into());
         }
         Ok(file)
     }
@@ -201,5 +226,6 @@ mod tests {
         assert!(matches!(store.write("not base64!", None).await, Err(AttachmentError::NotBase64)));
         assert!(matches!(store.save("aGk=", Some("/tmp/x.png")).await, Err(AttachmentError::NotKept)));
         assert!(matches!(store.read_saved("../x.png").await, Err(AttachmentError::InvalidName)));
+        assert!(matches!(store.keep("../x.png", "aGk=").await, Err(AttachmentError::InvalidName)));
     }
 }

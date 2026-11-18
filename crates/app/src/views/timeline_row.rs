@@ -618,7 +618,7 @@ fn user_message(model: &RowModel, message: &ConversationMessage, newest: bool, r
     if let Some(attachments) = message.attachments.as_ref().filter(|items| !items.is_empty()) {
         let gallery: Vec<String> = attachments.clone();
         stack = stack.child(div().flex().flex_wrap().justify_end().gap(px(8.0)).max_w_full().children(attachments.iter().enumerate().map(|(index, file)| {
-            let path = crate::effects::window_desktop::image_file(file, cx);
+            let preview = crate::effects::window_desktop::attachment_preview(file, &model.task_id, cx);
             let name = crate::effects::window_desktop::attachment_name(file).to_string();
             let source = file.clone();
             let gallery = gallery.clone();
@@ -634,8 +634,13 @@ fn user_message(model: &RowModel, message: &ConversationMessage, newest: bool, r
                 .bg(t.canvas)
                 .cursor(gpui::CursorStyle::PointingHand)
                 .hover(|style| style.border_color(t.line_bright))
-                // A definite height lets the width follow the picture's aspect, as `height: 100%; width: auto`.
-                .child(gpui::img(path).h(px(90.0)).max_w(px(280.0)).object_fit(gpui::ObjectFit::Cover).rounded(px(7.0)))
+                .map(|tile| match preview {
+                    // A definite height lets the width follow the picture's aspect, as `height: 100%; width: auto`.
+                    crate::effects::window_desktop::MessagePreview::Shown(path) => tile.child(gpui::img(path).h(px(90.0)).max_w(px(280.0)).object_fit(gpui::ObjectFit::Cover).rounded(px(7.0))),
+                    // Until the picture is here, or when it cannot be found, the tile keeps a picture's place.
+                    crate::effects::window_desktop::MessagePreview::Reading => tile.w(px(120.0)),
+                    crate::effects::window_desktop::MessagePreview::Unavailable => tile.w(px(120.0)).flex().items_center().justify_center().text_color(t.quiet).child(act_ui::Icon::new(IconName::Paperclip).size(px(18.0))),
+                })
                 .tip(name)
                 .on_click(move |_, _, cx| dispatch(AppCommand::ImageOpen { source: source.clone(), gallery: Some(gallery.clone()) }, cx))
         })));

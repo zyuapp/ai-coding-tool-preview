@@ -176,6 +176,64 @@ pub fn message_preview(file: &str, root: &str, message: &str, cx: &mut App) -> O
     Some(MessagePreview::Reading)
 }
 
+/// How long an attached image another computer could not give stays unavailable before it is asked for again.
+const ATTACHMENT_RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Each attached image's preview, by the path its message names.
+#[derive(Default)]
+struct AttachmentPreviews(HashMap<String, MessagePreview>);
+
+impl Global for AttachmentPreviews {}
+
+/// `attachment`: an image a message carries. The path it names is the holder's, so a thread another
+/// computer holds has its images read from that computer once, off the window, and kept here under
+/// the same name, which `image_file` then finds.
+pub fn attachment_preview(file: &str, task_id: &str, cx: &mut App) -> MessagePreview {
+    if let Some(known) = cx.default_global::<AttachmentPreviews>().0.get(file) {
+        return known.clone();
+    }
+    let local = image_file(file, cx);
+    let name = attachment_name(file).to_string();
+    let first = if local.exists() {
+        MessagePreview::Shown(local)
+    } else if act_host::attachments::is_saved_attachment_name(&name) {
+        MessagePreview::Reading
+    } else {
+        MessagePreview::Unavailable
+    };
+    cx.default_global::<AttachmentPreviews>().0.insert(file.to_string(), first.clone());
+    if !matches!(first, MessagePreview::Reading) {
+        return first;
+    }
+    let host = host(cx);
+    let query = serde_json::json!({ "kind": "attachment", "name": name });
+    let owner = ReadOwner::Thread(Some(task_id.to_string()));
+    let read = off_window(async move {
+        let value = host.read_content(query, owner).await?;
+        let data = value.as_str().ok_or_else(|| "Invalid attachment response.".to_string())?;
+        host.services.attachments.keep(&name, data).await.map_err(|error| error.to_string())
+    });
+    let key = file.to_string();
+    cx.spawn(async move |cx| {
+        let preview = read.await.map_or(MessagePreview::Unavailable, MessagePreview::Shown);
+        let failed = matches!(preview, MessagePreview::Unavailable);
+        cx.update(|cx| {
+            cx.default_global::<AttachmentPreviews>().0.insert(key.clone(), preview);
+            cx.refresh_windows();
+        });
+        // A computer that was away may be back, so a failed read is tried again once it has rested.
+        if failed {
+            cx.background_executor().timer(ATTACHMENT_RETRY).await;
+            cx.update(|cx| {
+                cx.default_global::<AttachmentPreviews>().0.remove(&key);
+                cx.refresh_windows();
+            });
+        }
+    })
+    .detach();
+    first
+}
+
 /// The file behind an image source the viewer shows: a message image's kept copy, one of the app's
 /// attachments, or a path from another profile.
 pub fn image_file(source: &str, cx: &App) -> PathBuf {

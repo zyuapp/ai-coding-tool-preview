@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use act_core::domain::session_resources::{unsafe_memory, MemorySample, ResourceCleanup, ResourceStop};
 use serde_json::{json, Value};
+use act_platform::process::Signal;
+use act_platform::system::{available_memory, processes, ProcessSample};
 use tokio::sync::Notify;
 
 const MIB: u64 = 1024 * 1024;
@@ -16,101 +18,8 @@ const CLEANUP_LIMIT: i64 = 15_000;
 const SAMPLE_EVERY: Duration = Duration::from_secs(5);
 const HISTORY: usize = 12;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProcessSample {
-    pub pid: u32,
-    pub parent: u32,
-    pub bytes: u64,
-    pub born: String,
-}
-
-/// `lstart` tells a live process from another that later reuses its pid, on macOS and Linux.
-pub fn parse_process_samples(output: &str) -> Vec<ProcessSample> {
-    let mut samples = Vec::new();
-    for line in output.lines() {
-        let fields: Vec<&str> = line.split_whitespace().collect();
-        if fields.len() != 8 {
-            continue;
-        }
-        let (Ok(pid), Ok(parent), Ok(rss)) = (fields[0].parse::<u32>(), fields[1].parse::<u32>(), fields[2].parse::<u64>()) else { continue };
-        let born = &fields[3..];
-        let shaped = born[0].len() == 3 && born[1].len() == 3 && born[0].chars().all(|c| c.is_ascii_alphabetic()) && born[1].chars().all(|c| c.is_ascii_alphabetic())
-            && born[2].len() <= 2 && born[2].chars().all(|c| c.is_ascii_digit())
-            && born[3].len() == 8 && born[3].chars().filter(|c| *c == ':').count() == 2
-            && born[4].len() == 4 && born[4].chars().all(|c| c.is_ascii_digit());
-        if !shaped || pid <= 1 {
-            continue;
-        }
-        samples.push(ProcessSample { pid, parent, bytes: rss * 1024, born: born.join(" ") });
-    }
-    samples
-}
-
-fn read_process_samples() -> std::io::Result<Vec<ProcessSample>> {
-    let output = std::process::Command::new("/bin/ps").args(["-axo", "pid=,ppid=,rss=,lstart="]).env("LC_ALL", "C").stdin(std::process::Stdio::null()).output()?;
-    if !output.status.success() {
-        return Err(std::io::Error::other("ps failed"));
-    }
-    Ok(parse_process_samples(&String::from_utf8_lossy(&output.stdout)))
-}
-
-/// Free RAM alone excludes reclaimable caches and would stop healthy workloads. A failed reading is
-/// never an emergency.
-pub fn available_memory() -> u64 {
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(info) = std::fs::read_to_string("/proc/meminfo") {
-            if let Some(kb) = info.lines().find_map(|line| line.strip_prefix("MemAvailable:")).and_then(|rest| rest.trim().strip_suffix("kB")).and_then(|kb| kb.trim().parse::<u64>().ok()) {
-                return kb * 1024;
-            }
-        }
-        u64::MAX
-    }
-    #[cfg(target_os = "macos")]
-    {
-        match std::process::Command::new("/usr/bin/vm_stat").env("LC_ALL", "C").stdin(std::process::Stdio::null()).output() {
-            Ok(output) if output.status.success() => available_mac_memory(&String::from_utf8_lossy(&output.stdout)),
-            _ => u64::MAX,
-        }
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        u64::MAX
-    }
-}
-
-pub fn available_mac_memory(output: &str) -> u64 {
-    let Some(page) = output.split("page size of ").nth(1).and_then(|rest| rest.split_whitespace().next()).and_then(|size| size.parse::<u64>().ok()) else { return u64::MAX };
-    let mut pages = 0;
-    for name in ["free", "inactive", "speculative"] {
-        let prefix = format!("Pages {name}:");
-        let Some(count) = output.lines().find_map(|line| line.strip_prefix(&prefix)).and_then(|rest| rest.trim().strip_suffix('.')).and_then(|count| count.trim().parse::<u64>().ok()) else { return u64::MAX };
-        pages += count;
-    }
-    pages * page
-}
-
-pub fn total_memory() -> u64 {
-    #[cfg(target_os = "macos")]
-    {
-        let mut size: u64 = 0;
-        let mut length = std::mem::size_of::<u64>();
-        let name = c"hw.memsize";
-        // SAFETY: hw.memsize is a u64 and `length` names its size.
-        let status = unsafe { libc::sysctlbyname(name.as_ptr(), (&mut size as *mut u64).cast(), &mut length, std::ptr::null_mut(), 0) };
-        if status == 0 {
-            return size;
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(info) = std::fs::read_to_string("/proc/meminfo") {
-            if let Some(kb) = info.lines().find_map(|line| line.strip_prefix("MemTotal:")).and_then(|rest| rest.trim().strip_suffix("kB")).and_then(|kb| kb.trim().parse::<u64>().ok()) {
-                return kb * 1024;
-            }
-        }
-    }
-    16 * 1024 * MIB
+fn total_memory() -> u64 {
+    act_platform::system::total_memory().unwrap_or(16 * 1024 * MIB)
 }
 
 /// What the monitor tells the run host.
@@ -261,11 +170,10 @@ impl SessionMonitor {
 
     pub async fn sample(&self) -> std::io::Result<()> {
         let _sampling = self.inner.sampling.lock().await;
-        let rows = tokio::task::spawn_blocking(read_process_samples).await.map_err(std::io::Error::other)??;
+        let rows = tokio::task::spawn_blocking(processes).await.map_err(std::io::Error::other)??;
         let (total, available) = tokio::task::spawn_blocking(|| (total_memory(), available_memory())).await.map_err(std::io::Error::other)?;
         let calls = self.poll(&rows, now(), total, available, &|pid, signal| {
-            // SAFETY: kill(2) with a pid checked against this sample's birth time.
-            unsafe { libc::kill(pid as libc::pid_t, signal) };
+            act_platform::process::signal(pid, signal);
         });
         for call in calls {
             match call {
@@ -278,7 +186,7 @@ impl SessionMonitor {
         Ok(())
     }
 
-    fn poll(&self, rows: &[ProcessSample], now: i64, total: u64, available: u64, signal: &dyn Fn(u32, i32)) -> Vec<Call> {
+    fn poll(&self, rows: &[ProcessSample], now: i64, total: u64, available: u64, signal: &dyn Fn(u32, Signal)) -> Vec<Call> {
         let by_pid: HashMap<u32, &ProcessSample> = rows.iter().map(|row| (row.pid, row)).collect();
         let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
         for row in rows {
@@ -365,7 +273,7 @@ impl SessionMonitor {
             if elapsed < 1000 {
                 continue;
             }
-            let kind = if elapsed >= 5000 { libc::SIGKILL } else { libc::SIGTERM };
+            let kind = if elapsed >= 5000 { Signal::Kill } else { Signal::Terminate };
             for (pid, born) in &owner.known {
                 if by_pid.get(pid).is_some_and(|row| &row.born == born) {
                     signal(*pid, kind);
@@ -391,8 +299,7 @@ impl SessionMonitor {
         }
         let temporary = journal.with_extension(format!("json.{}.tmp", std::process::id()));
         let written = std::fs::write(&temporary, &text).and_then(|_| {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600))?;
+            act_platform::fs::make_private_file(&temporary)?;
             std::fs::rename(&temporary, journal)
         });
         match written {
@@ -452,7 +359,7 @@ mod tests {
     fn run(monitor: &SessionMonitor, rows: &[ProcessSample], at: i64, available: u64) -> Vec<String> {
         let signals: Arc<Mutex<Vec<String>>> = Arc::default();
         let sent = signals.clone();
-        let calls = monitor.poll(rows, at, 32 * GIB, available, &move |pid, signal| sent.lock().unwrap().push(format!("signal {pid} {signal}")));
+        let calls = monitor.poll(rows, at, 32 * GIB, available, &move |pid, signal| sent.lock().unwrap().push(format!("signal {pid} {signal:?}")));
         let mut said: Vec<String> = calls.into_iter().map(|call| match call {
             Call::Stop(task, _, stop) => format!("stop {task} {:?}", stop.cleanup),
             Call::Release(task, _) => format!("release {task}"),
@@ -460,13 +367,6 @@ mod tests {
         }).collect();
         said.extend(signals.lock().unwrap().drain(..));
         said
-    }
-
-    #[test]
-    fn process_samples_read_ps_output() {
-        let samples = parse_process_samples("  412     1  20480 Sat Nov 14 17:06:25 2026\nbad line\n    1     0  100 Sat Nov 14 17:06:25 2026\n");
-        assert_eq!(samples, vec![row(412, 1, 20480 * 1024, "Sat Nov 14 17:06:25 2026")]);
-        assert_eq!(available_mac_memory("Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:  10.\nPages active: 5.\nPages inactive: 2.\nPages speculative: 1.\n"), 13 * 16384);
     }
 
     #[tokio::test]
@@ -480,10 +380,10 @@ mod tests {
         }
         assert_eq!(run(&monitor, &rows(GIB), 15_000, GIB), vec!["stop big Stopping"]);
         assert!(run(&monitor, &rows(GIB), 15_500, GIB).is_empty());
-        assert_eq!(run(&monitor, &rows(GIB), 16_000, GIB), vec!["signal 100 15", "signal 101 15"]);
+        assert_eq!(run(&monitor, &rows(GIB), 16_000, GIB), vec!["signal 100 Terminate", "signal 101 Terminate"]);
         // A pid reused by another process is not signalled.
         let reused = vec![row(100, 1, 3 * GIB, "a"), row(101, 1, GIB, "other"), row(200, 1, GIB, "c")];
-        assert_eq!(run(&monitor, &reused, 20_000, GIB), vec!["signal 100 9"]);
+        assert_eq!(run(&monitor, &reused, 20_000, GIB), vec!["signal 100 Kill"]);
         assert_eq!(run(&monitor, &[row(200, 1, GIB, "c")], 21_000, GIB), vec!["changed big Complete"]);
     }
 
@@ -504,14 +404,14 @@ mod tests {
         let mut child = std::process::Command::new("/bin/sh").args(["-c", "sleep 61 & wait"]).spawn().unwrap();
         monitor.process("t", "s", child.id());
         std::thread::sleep(Duration::from_millis(200));
-        let kill = |pid: u32, signal: i32| unsafe {
-            libc::kill(pid as libc::pid_t, signal);
+        let kill = |pid: u32, signal: Signal| {
+            act_platform::process::signal(pid, signal);
         };
         // So small a computer that the session's few megabytes are an eighth of it.
         let total = MIB;
         let mut stopped = false;
         for step in 0..4 {
-            let rows = read_process_samples().unwrap();
+            let rows = processes().unwrap();
             let calls = monitor.poll(&rows, step * 5_000, total, 100 * MIB, &kill);
             stopped |= calls.iter().any(|call| matches!(call, Call::Stop(task, _, _) if task == "t"));
             if stopped {
@@ -519,12 +419,12 @@ mod tests {
             }
         }
         assert!(stopped);
-        let rows = read_process_samples().unwrap();
+        let rows = processes().unwrap();
         monitor.poll(&rows, 30_000, total, 8 * GIB, &kill);
         let status = child.wait().unwrap();
         assert!(!status.success());
         std::thread::sleep(Duration::from_millis(200));
-        let after = read_process_samples().unwrap();
+        let after = processes().unwrap();
         assert!(!after.iter().any(|row| row.parent == child.id()), "the sleep under the session was signalled too");
     }
 }

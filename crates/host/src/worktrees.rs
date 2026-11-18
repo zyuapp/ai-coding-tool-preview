@@ -484,7 +484,7 @@ mod tests {
         let hook = project.join(".git/hooks/pre-commit");
         std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
         std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
-        std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        act_platform::fs::set_executable(&hook).unwrap();
         let (created, root) = made(&service, &project).await;
         std::fs::write(root.join("file.txt"), "must not be lost\n").unwrap();
         assert!(service.release(&release_of(&created, None)).await.unwrap().commit.is_some());
@@ -525,7 +525,7 @@ mod tests {
         std::fs::write(project.join(WORKTREE_INCLUDE_FILE), "*.log\n!drop.log\nfile.txt\n").unwrap();
         test_repo::run(&project, &["commit", "-qam", "includes"]);
         std::fs::write(project.join("file.txt"), "dirty\n").unwrap();
-        std::os::unix::fs::symlink("file.txt", project.join("link.txt")).unwrap();
+        act_platform::fs::symlink("file.txt", project.join("link.txt")).unwrap();
         let (_, root) = made(&service, &project).await;
         assert!(root.join("keep.log").exists());
         assert!(!root.join("drop.log").exists());

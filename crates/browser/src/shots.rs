@@ -23,10 +23,7 @@ impl Shots {
             }
         }
         let home = std::env::temp_dir().join(format!("aicodingtool-shots-{}", uuid::Uuid::new_v4().simple()));
-        let mut builder = std::fs::DirBuilder::new();
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder.recursive(true).create(&home)?;
+        act_platform::fs::create_private_dir_all(&home)?;
         self.home = Some(home.clone());
         Ok(home)
     }

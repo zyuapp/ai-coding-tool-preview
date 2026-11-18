@@ -14,18 +14,15 @@ pub mod files;
 pub mod fs_copy;
 pub mod git;
 pub mod image_download;
-#[cfg(unix)]
 pub mod instance_lock;
 pub mod linux_protocol;
 pub mod lock_awake;
-pub mod login_path;
 pub mod message_images;
 pub mod message_links;
 pub mod mobile;
 pub mod notify;
 pub mod open;
 pub mod paths;
-pub mod process;
 pub mod resolve_run;
 pub mod serve_args;
 pub mod services;

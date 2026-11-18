@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::Mutex;
 
 pub const HOST_BUNDLE_ID: &str = act_core::identity::BUNDLE_ID;
@@ -76,91 +76,13 @@ pub enum ComputerUseRunConfig {
     Unavailable { message: String },
 }
 
-/// Which display server a Linux session runs, from its environment.
-fn linux_display() -> &'static str {
-    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty());
-    let x11 = std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty());
-    match (wayland, x11) {
-        (true, true) => "xwayland",
-        (true, false) => "wayland",
-        (false, true) => "x11",
-        (false, false) => "none",
-    }
-}
-
-/// Whether this platform can do computer use at all, and why not when it cannot.
-fn capability() -> Result<&'static str, String> {
-    if cfg!(target_os = "macos") {
-        return Ok("macos");
-    }
-    if !cfg!(target_os = "linux") {
-        return Err(format!("Computer use is not supported on {}.", std::env::consts::OS));
-    }
-    let display = linux_display();
-    if display == "none" {
-        return Err("Computer use needs a graphical Linux session, but neither DISPLAY nor WAYLAND_DISPLAY is available.".into());
-    }
-    if display == "wayland" && std::env::var("CUA_DRIVER_RS_ENABLE_WAYLAND").as_deref() != Ok("1") {
-        return Err(concat!("Native Wayland computer use is compositor-dependent and opt-in. Start ", act_core::app_name!(), " with CUA_DRIVER_RS_ENABLE_WAYLAND=1, or use an X11/XWayland session.").into());
-    }
-    Ok(display)
-}
-
 #[cfg(target_os = "macos")]
-mod mac {
-    use std::ffi::c_void;
+#[path = "mac.rs"]
+mod os;
 
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        fn AXIsProcessTrusted() -> bool;
-        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
-        static kAXTrustedCheckOptionPrompt: *const c_void;
-    }
-
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGPreflightScreenCaptureAccess() -> bool;
-        fn CGRequestScreenCaptureAccess() -> bool;
-    }
-
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        static kCFBooleanTrue: *const c_void;
-        static kCFTypeDictionaryKeyCallBacks: c_void;
-        static kCFTypeDictionaryValueCallBacks: c_void;
-        fn CFDictionaryCreate(allocator: *const c_void, keys: *const *const c_void, values: *const *const c_void, count: isize, key_callbacks: *const c_void, value_callbacks: *const c_void) -> *const c_void;
-        fn CFRelease(value: *const c_void);
-    }
-
-    pub fn accessibility() -> bool {
-        unsafe { AXIsProcessTrusted() }
-    }
-
-    pub fn screen_recording() -> bool {
-        unsafe { CGPreflightScreenCaptureAccess() }
-    }
-
-    /// Asks macOS to list the app under Accessibility, which shows its own prompt the first time.
-    pub fn prompt_accessibility() -> bool {
-        unsafe {
-            let keys = [kAXTrustedCheckOptionPrompt];
-            let values = [kCFBooleanTrue];
-            let options = CFDictionaryCreate(std::ptr::null(), keys.as_ptr(), values.as_ptr(), 1, &kCFTypeDictionaryKeyCallBacks as *const c_void, &kCFTypeDictionaryValueCallBacks as *const c_void);
-            let trusted = AXIsProcessTrustedWithOptions(options);
-            if !options.is_null() {
-                CFRelease(options);
-            }
-            trusted
-        }
-    }
-
-    pub fn request_screen_recording() -> bool {
-        unsafe { CGRequestScreenCaptureAccess() }
-    }
-}
-
-const ACCESSIBILITY_SETTINGS: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-const SCREEN_RECORDING_SETTINGS: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+#[cfg(target_os = "linux")]
+#[path = "linux.rs"]
+mod os;
 
 /// The bundled driver, which lives beside a packaged app's resources and under `vendor/` in a source checkout.
 pub fn driver_binary(resources: Option<&Path>, source_root: Option<&Path>) -> Option<PathBuf> {
@@ -191,67 +113,12 @@ impl ComputerUseHost {
     }
 
     pub async fn permissions(&self) -> ComputerUsePermissions {
-        if cfg!(target_os = "linux") {
-            let display = match capability() {
-                Err(message) => {
-                    return ComputerUsePermissions {
-                        accessibility: false,
-                        screen_recording: false,
-                        linux_runtime: Some(LinuxRuntime { status: "unavailable".into(), display: linux_display().into(), message }),
-                    }
-                }
-                Ok(display) => display,
-            };
-            if !self.binary.as_ref().is_some_and(|binary| binary.is_file()) {
-                return ComputerUsePermissions {
-                    accessibility: false,
-                    screen_recording: false,
-                    linux_runtime: Some(LinuxRuntime { status: "unavailable".into(), display: display.into(), message: "The bundled CUA Driver executable is missing.".into() }),
-                };
-            }
-            let limited = display == "xwayland" || display == "wayland";
-            let message = match display {
-                "x11" => "Computer use is ready for this X11 session.",
-                "xwayland" => "X11 and XWayland apps are available. Native Wayland apps depend on the compositor and may not be reachable.",
-                _ => "Native Wayland support is enabled, but its capabilities depend on the active compositor.",
-            };
-            return ComputerUsePermissions {
-                accessibility: true,
-                screen_recording: true,
-                linux_runtime: Some(LinuxRuntime { status: if limited { "limited" } else { "available" }.into(), display: display.into(), message: message.into() }),
-            };
-        }
-        #[cfg(target_os = "macos")]
-        {
-            ComputerUsePermissions { accessibility: mac::accessibility(), screen_recording: mac::screen_recording(), linux_runtime: None }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            ComputerUsePermissions { accessibility: false, screen_recording: false, linux_runtime: None }
-        }
+        os::permissions(self.binary.as_deref())
     }
 
-    /// Asks the platform for one permission. macOS shows its own prompt once; after that the user is
-    /// sent to the setting, and a grant takes effect only once the app restarts.
+    /// Asks the platform for one permission.
     pub async fn request(&self, permission: ComputerUsePermission) -> ComputerUsePermissions {
-        #[cfg(target_os = "macos")]
-        {
-            match permission {
-                ComputerUsePermission::Accessibility => {
-                    if !mac::prompt_accessibility() {
-                        crate::open::open_url(ACCESSIBILITY_SETTINGS);
-                    }
-                }
-                ComputerUsePermission::ScreenRecording => {
-                    mac::request_screen_recording();
-                    if !mac::screen_recording() {
-                        crate::open::open_url(SCREEN_RECORDING_SETTINGS);
-                    }
-                }
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        let _ = (permission, ACCESSIBILITY_SETTINGS, SCREEN_RECORDING_SETTINGS);
+        os::request(permission);
         self.permissions().await
     }
 
@@ -262,11 +129,11 @@ impl ComputerUseHost {
         if !self.accepting.load(Ordering::SeqCst) {
             return ComputerUseRunConfig::Unavailable { message: concat!(act_core::app_name!(), " is quitting.").into() };
         }
-        let display = match capability() {
+        let display = match os::capability() {
             Ok(display) => display,
             Err(message) => return ComputerUseRunConfig::Unavailable { message },
         };
-        if cfg!(target_os = "macos") {
+        if os::NEEDS_GRANTS {
             let permissions = self.permissions().await;
             if !permissions.accessibility || !permissions.screen_recording {
                 return ComputerUseRunConfig::SetupRequired;
@@ -277,15 +144,7 @@ impl ComputerUseHost {
         };
         match self.ensure_daemon(&binary).await {
             Ok(socket) => ComputerUseRunConfig::Available { mcp: mcp_config(&binary, &socket) },
-            Err(error) if cfg!(target_os = "linux") => {
-                let session = match display {
-                    "wayland" => "this Wayland compositor",
-                    "xwayland" => "this Wayland/XWayland session",
-                    _ => "this X11 session",
-                };
-                ComputerUseRunConfig::Unavailable { message: format!("CUA Driver could not start in {session}: {error}") }
-            }
-            Err(error) => ComputerUseRunConfig::Unavailable { message: error },
+            Err(error) => ComputerUseRunConfig::Unavailable { message: os::start_failure(display, error) },
         }
     }
 
@@ -301,18 +160,14 @@ impl ComputerUseHost {
             return Err(concat!(act_core::app_name!(), " is quitting.").into());
         }
         tokio::fs::create_dir_all(&self.socket_dir).await.map_err(|error| error.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = tokio::fs::set_permissions(&self.socket_dir, std::fs::Permissions::from_mode(0o700)).await;
-        }
+        let _ = act_platform::fs::make_private_dir(&self.socket_dir);
         let name = format!("cua-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
         let socket = self.socket_dir.join(format!("{name}.sock"));
         let _ = tokio::fs::remove_file(&socket).await;
         // A file rather than a pipe: a daemon whose stderr reader died with the app keeps running.
         let log = self.socket_dir.join(format!("{name}.log"));
         let stderr = std::fs::File::create(&log).map_err(|error| format!("CUA Driver could not start: {error}"))?;
-        let mut command = Command::new(binary);
+        let mut command = act_platform::process::command(binary);
         command
             .args(["serve", "--embedded", "--parent-liveness-stdio", "--no-permissions-gate", "--socket"])
             .arg(&socket)
@@ -326,7 +181,7 @@ impl ComputerUseHost {
         let mut child = command.spawn().map_err(|error| format!("CUA Driver could not start: {error}"))?;
         let deadline = tokio::time::Instant::now() + STARTUP_TIMEOUT;
         loop {
-            if tokio::net::UnixStream::connect(&socket).await.is_ok() {
+            if act_platform::ipc::connect_async(&socket).await.is_ok() {
                 break;
             }
             if let Ok(Some(status)) = child.try_wait() {
@@ -354,9 +209,8 @@ impl ComputerUseHost {
         self.accepting.store(false, std::sync::atomic::Ordering::SeqCst);
         let taken = self.daemon.lock().await.take();
         if let Some(mut daemon) = taken {
-            #[cfg(unix)]
             if let Some(pid) = daemon.child.id() {
-                unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+                act_platform::process::signal(pid, act_platform::process::Signal::Terminate);
             }
             if tokio::time::timeout(SHUTDOWN_TIMEOUT, daemon.child.wait()).await.is_err() {
                 let _ = daemon.child.kill().await;

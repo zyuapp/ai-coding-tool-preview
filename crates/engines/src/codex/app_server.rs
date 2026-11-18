@@ -11,7 +11,7 @@ use std::time::Duration;
 use futures::future::{BoxFuture, FutureExt, Shared};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
+use act_platform::process::{Detach, Signal};
 use tokio::sync::{mpsc, oneshot};
 
 use super::shared_auth::{acquire_shared_auth, SharedAuth};
@@ -39,17 +39,7 @@ impl ExitStatus {
     }
 }
 
-pub fn signal_name(signal: i32) -> String {
-    match signal {
-        libc::SIGTERM => "SIGTERM".into(),
-        libc::SIGKILL => "SIGKILL".into(),
-        libc::SIGINT => "SIGINT".into(),
-        libc::SIGHUP => "SIGHUP".into(),
-        libc::SIGSEGV => "SIGSEGV".into(),
-        libc::SIGABRT => "SIGABRT".into(),
-        other => other.to_string(),
-    }
-}
+use act_platform::process::signal_name;
 
 /// How an app-server failed.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -154,7 +144,7 @@ pub fn client_info() -> Value {
 impl AppServerClient {
     /// Starts the server in a process group of its own, so closing reaches what it started under it.
     pub fn connect(command: AppServerCommand) -> AppServerClient {
-        let mut process = Command::new(&command.executable);
+        let mut process = act_platform::process::command(&command.executable);
         process
             .args(&command.args)
             .env_clear()
@@ -165,7 +155,7 @@ impl AppServerClient {
         if let Some(cwd) = &command.cwd {
             process.current_dir(cwd);
         }
-        process.process_group(0);
+        process.own_group();
         let (exit_tx, exit_rx) = oneshot::channel::<ExitStatus>();
         let exited: Shared<BoxFuture<'static, ExitStatus>> = async move {
             exit_rx.await.unwrap_or(ExitStatus {
@@ -260,13 +250,12 @@ impl AppServerClient {
                 let _ = stderr_done.await;
             })
             .await;
-            use std::os::unix::process::ExitStatusExt;
             let stderr = String::from_utf8_lossy(&tail.lock().unwrap())
                 .trim()
                 .to_string();
             let exit = ExitStatus {
                 code: status.and_then(|s| s.code()),
-                signal: status.and_then(|s| s.signal()),
+                signal: status.as_ref().and_then(act_platform::process::exit_signal),
                 stderr,
             };
             finisher.finish(exit, exit_tx);
@@ -401,7 +390,7 @@ impl AppServerClient {
     pub fn terminate(&self) {
         if self.inner.exit.lock().unwrap().is_none() {
             self.inner.writer.lock().unwrap().take();
-            self.signal(libc::SIGTERM);
+            self.signal(Signal::Terminate);
         }
     }
 
@@ -412,7 +401,7 @@ impl AppServerClient {
                 .await
                 .is_err()
             {
-                self.signal(libc::SIGKILL);
+                self.signal(Signal::Kill);
             }
         }
         let exit = self.exited.clone().await;
@@ -423,14 +412,9 @@ impl AppServerClient {
         exit
     }
 
-    fn signal(&self, signal: i32) {
+    fn signal(&self, how: Signal) {
         if let Some(pid) = self.inner.pid {
-            // SAFETY: signals the server's own process group, falling back to the process.
-            unsafe {
-                if libc::kill(-(pid as i32), signal) != 0 {
-                    libc::kill(pid as i32, signal);
-                }
-            }
+            act_platform::process::signal_group_or_process(pid, how);
         }
     }
 

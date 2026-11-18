@@ -147,20 +147,9 @@ pub fn legacy_worktrees_roots(user_data: &Path, worktrees_root: &Path) -> Vec<Pa
     unique
 }
 
-pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").filter(|home| !home.is_empty()).map(PathBuf::from)
-}
+pub use act_platform::paths::home_dir;
 
-/// The platform's per-user application data directory, as Electron's `appData` names it.
-pub fn app_data_dir(home: Option<&Path>) -> Option<PathBuf> {
-    if cfg!(target_os = "macos") {
-        return Some(home?.join("Library").join("Application Support"));
-    }
-    match std::env::var_os("XDG_CONFIG_HOME").filter(|dir| !dir.is_empty()) {
-        Some(dir) => Some(PathBuf::from(dir)),
-        None => Some(home?.join(".config")),
-    }
-}
+pub use act_platform::paths::app_data_dir;
 
 fn absolute(path: &Path) -> PathBuf {
     if path.is_absolute() {

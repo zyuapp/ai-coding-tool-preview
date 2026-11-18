@@ -25,8 +25,7 @@ pub struct Launch {
 pub fn prepare() -> Option<Launch> {
     let runtime = act_host::runtime();
     // Asking the login shell takes about half a second, so the window does not wait for it.
-    act_host::login_path::adopt_tool_folders();
-    runtime.spawn(act_host::login_path::adopt_login_shell_path());
+    runtime.spawn(act_platform::search_path::adopt_login_shell_path());
     let profile = Profile::resolve_for(packaged())?;
     import_electron_profile(&profile, packaged());
     if let Err(error) = profile.ensure() {
@@ -57,7 +56,7 @@ pub fn prepare() -> Option<Launch> {
 
 /// The engines' private homes and the workspace registry, shared by the window and `aic serve`.
 pub fn open_services(profile: &Profile) -> Option<HostServices> {
-    std::env::set_var(act_engines::codex::home::PRIVATE_CODEX_HOME_ENV, profile.codex_private());
+    act_platform::process::set_child_env(act_engines::codex::home::PRIVATE_CODEX_HOME_ENV, profile.codex_private().to_string_lossy());
     let app_profile = AppProfile { name: profile.name.clone(), user_data: profile.user_data.clone(), worktrees_root: profile.worktrees_root.clone() };
     match act_host::runtime().block_on(HostServices::open(app_profile)) {
         Ok(services) => Some(services),

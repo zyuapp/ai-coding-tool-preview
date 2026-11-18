@@ -12,7 +12,7 @@ use futures::future::{BoxFuture, FutureExt, Shared};
 use futures::StreamExt;
 use serde_json::Value;
 use tokio::io::AsyncReadExt;
-use tokio::process::{ChildStdin, Command};
+use tokio::process::ChildStdin;
 use tokio::task::AbortHandle;
 
 use crate::binary::{engine_binary_path, OPENCODE_BINARY};
@@ -56,7 +56,7 @@ impl ExitStatus {
         }
         match (self.signal, self.code) {
             (Some(signal), _) => {
-                format!("signal {}", crate::codex::app_server::signal_name(signal))
+                format!("signal {}", act_platform::process::signal_name(signal))
             }
             (None, Some(code)) => format!("exit code {code}"),
             _ => "exit code null".into(),
@@ -159,7 +159,7 @@ pub async fn start_open_code_server(options: ServerOptions) -> anyhow::Result<Op
     let binary = engine_binary_path(&OPENCODE_BINARY)
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_else(|| "opencode".into());
-    let mut command = Command::new("/bin/sh");
+    let mut command = act_platform::process::command("/bin/sh");
     command
         .args(["-c", WATCHED_SERVE, &binary])
         .current_dir(&options.cwd)
@@ -195,13 +195,12 @@ pub async fn start_open_code_server(options: ServerOptions) -> anyhow::Result<Op
         }
     });
     let exited: Shared<BoxFuture<'static, ExitStatus>> = async move {
-        use std::os::unix::process::ExitStatusExt;
         let status = child.wait().await.ok();
         tokio::time::sleep(Duration::from_millis(50)).await;
         let stderr = stderr_text.lock().unwrap().clone();
         ExitStatus {
             code: status.and_then(|s| s.code()),
-            signal: status.and_then(|s| s.signal()),
+            signal: status.as_ref().and_then(act_platform::process::exit_signal),
             stderr,
         }
     }
@@ -239,10 +238,7 @@ pub async fn start_open_code_server(options: ServerOptions) -> anyhow::Result<Op
         Err(_) => {
             drop(stdin);
             if let Some(pid) = pid {
-                // SAFETY: ends the shell that watches a server that never came up.
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGKILL);
-                }
+                act_platform::process::signal(pid, act_platform::process::Signal::Kill);
             }
             match unread_line(&output) {
                 Some(line) => anyhow::bail!("OpenCode started, but this version of the app cannot read how to reach it (\"{line}\"). Update AI Coding Tool, or use the OpenCode version it was built for."),
@@ -452,10 +448,7 @@ impl OpenCodeServer {
             .is_err()
         {
             if let Some(pid) = self.inner.pid {
-                // SAFETY: kills the watching shell that would not stop.
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGKILL);
-                }
+                act_platform::process::signal(pid, act_platform::process::Signal::Kill);
             }
             self.inner.exited.clone().await;
         }

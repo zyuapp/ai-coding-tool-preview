@@ -22,11 +22,7 @@ pub struct AppProfile {
 /// The platform's per-user application data folder, as Electron's `appData` names it.
 pub fn app_data_dir() -> PathBuf {
     let home = crate::paths::home();
-    if cfg!(target_os = "macos") {
-        home.join("Library").join("Application Support")
-    } else {
-        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|path| path.is_absolute()).unwrap_or_else(|| home.join(".config"))
-    }
+    act_platform::paths::app_data_dir(Some(&home)).unwrap_or(home)
 }
 
 /// Dotted versions compared part by part, a missing part counting as zero.

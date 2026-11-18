@@ -509,7 +509,7 @@ impl Inner {
             return helper.clone();
         }
         let (lines, outgoing) = std::sync::mpsc::channel::<String>();
-        let mut command = std::process::Command::new(&self.helper_file);
+        let mut command = act_platform::process::std_command(&self.helper_file);
         if let Some(models) = &self.models {
             command.arg("--models").arg(models);
         }

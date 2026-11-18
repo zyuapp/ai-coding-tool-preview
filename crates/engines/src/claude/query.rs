@@ -9,10 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use act_platform::process::Signal;
 use futures::future::{BoxFuture, FutureExt, Shared};
 use serde_json::{json, Map, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -310,33 +310,6 @@ impl ErrorResults {
     }
 }
 
-fn signal_name(signal: i32) -> String {
-    let names = [
-        (libc::SIGHUP, "SIGHUP"),
-        (libc::SIGINT, "SIGINT"),
-        (libc::SIGQUIT, "SIGQUIT"),
-        (libc::SIGILL, "SIGILL"),
-        (libc::SIGTRAP, "SIGTRAP"),
-        (libc::SIGABRT, "SIGABRT"),
-        (libc::SIGBUS, "SIGBUS"),
-        (libc::SIGFPE, "SIGFPE"),
-        (libc::SIGKILL, "SIGKILL"),
-        (libc::SIGUSR1, "SIGUSR1"),
-        (libc::SIGSEGV, "SIGSEGV"),
-        (libc::SIGUSR2, "SIGUSR2"),
-        (libc::SIGPIPE, "SIGPIPE"),
-        (libc::SIGALRM, "SIGALRM"),
-        (libc::SIGTERM, "SIGTERM"),
-        (libc::SIGXCPU, "SIGXCPU"),
-        (libc::SIGXFSZ, "SIGXFSZ"),
-    ];
-    names
-        .iter()
-        .find(|(number, _)| *number == signal)
-        .map(|(_, name)| name.to_string())
-        .unwrap_or_else(|| signal.to_string())
-}
-
 /// Credentials a stderr tail must not carry into an error message.
 fn secret_patterns() -> &'static [(regex::Regex, &'static str)] {
     static PATTERNS: std::sync::OnceLock<Vec<(regex::Regex, &'static str)>> =
@@ -421,7 +394,7 @@ impl ClaudeQuery {
     pub fn spawn(
         options: ClaudeOptions,
     ) -> anyhow::Result<(ClaudeQuery, mpsc::UnboundedReceiver<QueryOutput>)> {
-        let mut command = Command::new(&options.executable);
+        let mut command = act_platform::process::command(&options.executable);
         command.args(options.args());
         command.env_clear();
         command.envs(options.environment());
@@ -614,8 +587,9 @@ impl ClaudeQuery {
                             format!("Claude Code process exited with code {code}{stderr}")
                         }
                         None => {
-                            use std::os::unix::process::ExitStatusExt;
-                            let signal = status.signal().map(signal_name).unwrap_or_default();
+                            let signal = act_platform::process::exit_signal(&status)
+                                .map(act_platform::process::signal_name)
+                                .unwrap_or_default();
                             format!("Claude Code process terminated by signal {signal}{stderr}")
                         }
                     })
@@ -788,12 +762,12 @@ impl ClaudeQuery {
             {
                 return;
             }
-            signal(pid, libc::SIGTERM);
+            signal(pid, Signal::Terminate);
             if tokio::time::timeout(KILL_GRACE, exited.wait_for(|done| *done))
                 .await
                 .is_err()
             {
-                signal(pid, libc::SIGKILL);
+                signal(pid, Signal::Kill);
             }
         });
     }
@@ -907,12 +881,9 @@ impl ClaudeQuery {
     }
 }
 
-fn signal(pid: Option<u32>, signal: i32) {
+fn signal(pid: Option<u32>, how: Signal) {
     if let Some(pid) = pid {
-        // SAFETY: plain signal delivery to a child process id.
-        unsafe {
-            libc::kill(pid as i32, signal);
-        }
+        act_platform::process::signal(pid, how);
     }
 }
 

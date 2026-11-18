@@ -70,7 +70,7 @@ pub async fn list_directories(prefix: &str) -> Result<Vec<String>, FileError> {
     let partial = if whole { String::new() } else { Path::new(&expanded).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default() };
     let mut entries = match tokio::fs::read_dir(&directory).await {
         Ok(entries) => entries,
-        Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) || error.raw_os_error() == Some(libc::ENOTDIR) => return Ok(Vec::new()),
+        Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => return Ok(Vec::new()),
         Err(error) => return Err(refused(error.to_string())),
     };
     let mut matches = Vec::new();
@@ -206,7 +206,7 @@ async fn canonical_write_path(candidate: &Path) -> Option<PathBuf> {
     loop {
         match tokio::fs::canonicalize(&pending).await {
             Ok(existing) => return Some(suffix.iter().rev().fold(existing, |current, part| current.join(part))),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ENOTDIR) => {
+            Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => {
                 let parent = pending.parent()?.to_path_buf();
                 suffix.push(pending.file_name()?.to_os_string());
                 pending = parent;
@@ -282,7 +282,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("root");
         std::fs::create_dir(&root).unwrap();
-        std::os::unix::fs::symlink(dir.path(), root.join("escape")).unwrap();
+        act_platform::fs::symlink(dir.path(), root.join("escape")).unwrap();
         assert!(is_write_path_inside(&root, Path::new("new/file.txt")).await);
         assert!(!is_write_path_inside(&root, Path::new("escape/file.txt")).await);
     }

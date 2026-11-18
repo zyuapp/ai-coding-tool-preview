@@ -47,7 +47,7 @@ pub fn main(arguments: Vec<String>) -> i32 {
             }
         };
     }
-    runtime.block_on(act_host::login_path::adopt_login_shell_path());
+    runtime.block_on(act_platform::search_path::adopt_login_shell_path());
     if parsed.user_data.is_none() {
         crate::startup::import_electron_profile(&profile, packaged);
     }

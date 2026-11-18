@@ -40,9 +40,8 @@ pub fn load_level(user_data: &Path) -> f64 {
 
 /// The Electron dev app's profile folder, whose Chromium preferences hold the zoom it renders at.
 fn electron_profile() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    let base = if cfg!(target_os = "macos") { PathBuf::from(home).join("Library/Application Support") } else { std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(home).join(".config")) };
-    Some(base.join("AI Coding Tool Dev"))
+    let home = act_platform::paths::home_dir()?;
+    Some(act_platform::paths::app_data_dir(Some(&home))?.join("AI Coding Tool Dev"))
 }
 
 /// The zoom level Chromium keeps for the app's page in a profile's `Preferences`.

@@ -43,7 +43,7 @@ pub async fn codex_app_server(
     args: &[String],
     options: ServerOptions,
 ) -> anyhow::Result<AppServerCommand> {
-    let environment = options.env.unwrap_or_else(|| std::env::vars().collect());
+    let environment = options.env.unwrap_or_else(act_platform::process::environment);
     let env = if options.shared_home {
         environment.clone()
     } else {

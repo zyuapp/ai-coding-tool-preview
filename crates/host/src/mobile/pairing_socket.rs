@@ -1,4 +1,4 @@
-//! A pairing code over a private Unix socket, for `aic pair` beside a headless host on the same machine.
+//! A pairing code over a private local socket, for `aic pair` beside a headless host on the same machine.
 
 use std::convert::Infallible;
 use std::path::{Path, PathBuf};
@@ -17,17 +17,16 @@ pub type Pair = Arc<dyn Fn() -> BoxFuture<'static, Result<MobilePairingOffer, St
 
 /// Serves pairing codes at `socket_path` until the returned token is cancelled, which also removes the socket.
 pub async fn serve_pairing_socket(socket_path: &Path, pair: Pair) -> Result<CancellationToken, String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let directory = socket_path.parent().ok_or("The pairing socket has no folder.")?;
     std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;
     let entry = std::fs::symlink_metadata(directory).map_err(|error| error.to_string())?;
-    if !entry.is_dir() || entry.uid() != unsafe { libc::getuid() } {
+    if !entry.is_dir() || !act_platform::fs::owned_by_current_user(&entry) {
         return Err("The pairing socket directory is not owned by this user.".into());
     }
-    std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())?;
+    act_platform::fs::make_private_dir(directory).map_err(|error| error.to_string())?;
     // Whoever serves holds the machine's one instance, so any previous socket is stale.
     let _ = std::fs::remove_file(socket_path);
-    let listener = tokio::net::UnixListener::bind(socket_path).map_err(|error| error.to_string())?;
+    let listener = act_platform::ipc::bind_async(socket_path).map_err(|error| error.to_string())?;
     let stop = CancellationToken::new();
     let stopping = stop.clone();
     let path: PathBuf = socket_path.to_path_buf();
@@ -76,7 +75,7 @@ pub async fn serve_pairing_socket(socket_path: &Path, pair: Pair) -> Result<Canc
 /// Asks the process serving on the socket for a pairing code.
 pub async fn request_pairing(socket_path: &Path) -> Result<MobilePairingOffer, String> {
     let work = async {
-        let stream = tokio::net::UnixStream::connect(socket_path).await.map_err(|_| "The bridge is not ready.".to_string())?;
+        let stream = act_platform::ipc::connect_async(socket_path).await.map_err(|_| "The bridge is not ready.".to_string())?;
         let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream)).await.map_err(|error| error.to_string())?;
         tokio::spawn(connection);
         let request = Request::post("/pair").header("host", "localhost").body(Full::new(Bytes::new())).map_err(|error| error.to_string())?;

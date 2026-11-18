@@ -15,8 +15,7 @@ pub fn copy_recursive(from: &Path, to: &Path) -> io::Result<()> {
         if fs::symlink_metadata(to).is_ok() {
             fs::remove_file(to)?;
         }
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&target, to)?;
+        act_platform::fs::symlink(&target, to)?;
         return Ok(());
     }
     if metadata.is_dir() {
@@ -56,12 +55,10 @@ mod tests {
         let from = dir.path().join("from");
         fs::create_dir_all(from.join("nested")).unwrap();
         fs::write(from.join("nested/file"), "x").unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("nested/file", from.join("link")).unwrap();
+        act_platform::fs::symlink("nested/file", from.join("link")).unwrap();
         let to = dir.path().join("deep/to");
         copy_recursive(&from, &to).unwrap();
         assert_eq!(fs::read_to_string(to.join("nested/file")).unwrap(), "x");
-        #[cfg(unix)]
         assert_eq!(fs::read_link(to.join("link")).unwrap(), Path::new("nested/file"));
     }
 }

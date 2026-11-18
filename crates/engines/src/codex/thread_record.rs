@@ -22,7 +22,7 @@ pub struct GitOrigin {
 pub type ReadOrigin = Arc<dyn Fn(String) -> BoxFuture<'static, GitOrigin> + Send + Sync>;
 
 async fn git(root: &str, args: &[&str]) -> Option<String> {
-    let output = tokio::process::Command::new("git")
+    let output = act_platform::process::command("git")
         .arg("-C")
         .arg(root)
         .args(args)

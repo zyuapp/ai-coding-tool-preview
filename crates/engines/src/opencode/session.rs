@@ -1266,14 +1266,9 @@ fn whole_slash_names(prompt: &str) -> Vec<&str> {
 
 fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(text.as_bytes())
+    act_platform::fs::private(std::fs::OpenOptions::new().write(true).create(true).truncate(true))
+        .open(path)?
+        .write_all(text.as_bytes())
 }
 
 impl TurnSession for OpenCodeSession {

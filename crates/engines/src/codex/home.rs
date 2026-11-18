@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -38,18 +37,14 @@ fn missing(error: &std::io::Error) -> bool {
 }
 
 fn mkdir_private(path: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(path)
+    act_platform::fs::create_private_dir_all(path)
 }
 
 fn share(source: &Path, destination: &Path, adopt_directory: bool) -> anyhow::Result<()> {
     if let Some(parent) = destination.parent() {
         mkdir_private(parent)?;
     }
-    match std::os::unix::fs::symlink(source, destination) {
+    match act_platform::fs::symlink(source, destination) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == ErrorKind::AlreadyExists => {
             let target = std::fs::read_link(destination).ok();
@@ -63,7 +58,7 @@ fn share(source: &Path, destination: &Path, adopt_directory: bool) -> anyhow::Re
                     uuid::Uuid::new_v4()
                 );
                 std::fs::rename(destination, kept)?;
-                std::os::unix::fs::symlink(source, destination)?;
+                act_platform::fs::symlink(source, destination)?;
                 return Ok(());
             }
             let resolved =
@@ -108,12 +103,9 @@ fn share_mcp_credentials(source: &Path, destination: &Path) -> std::io::Result<(
             let empty = source.join(format!(".credentials-{}.tmp", uuid::Uuid::new_v4()));
             let written = (|| {
                 use std::io::Write;
-                use std::os::unix::fs::OpenOptionsExt;
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .open(&empty)?;
+                let mut file =
+                    act_platform::fs::private(std::fs::OpenOptions::new().write(true).create_new(true))
+                        .open(&empty)?;
                 file.write_all(b"{}")?;
                 match std::fs::hard_link(&empty, &original) {
                     Err(error) if error.kind() != ErrorKind::AlreadyExists => Err(error),
@@ -126,11 +118,11 @@ fn share_mcp_credentials(source: &Path, destination: &Path) -> std::io::Result<(
         Err(error) => return Err(error),
     }
     let canonical = std::fs::canonicalize(&original)?;
-    let source_stat = std::fs::metadata(&canonical)?;
+    let (source_dev, source_ino) = act_platform::fs::file_identity(&std::fs::metadata(&canonical)?);
     let remember = || {
         write_private(
             &marker,
-            &json!({ "dev": source_stat.dev(), "ino": source_stat.ino() }).to_string(),
+            &json!({ "dev": source_dev, "ino": source_ino }).to_string(),
         )
     };
     let target_stat = match std::fs::symlink_metadata(&target) {
@@ -139,7 +131,8 @@ fn share_mcp_credentials(source: &Path, destination: &Path) -> std::io::Result<(
         Err(error) => return Err(error),
     };
     if let Some(stat) = &target_stat {
-        if stat.is_file() && stat.dev() == source_stat.dev() && stat.ino() == source_stat.ino() {
+        let (dev, ino) = act_platform::fs::file_identity(stat);
+        if stat.is_file() && dev == source_dev && ino == source_ino {
             return remember();
         }
         if stat.file_type().is_symlink() && std::fs::read_link(&target)? != original {
@@ -153,8 +146,7 @@ fn share_mcp_credentials(source: &Path, destination: &Path) -> std::io::Result<(
                 .ok()
                 .and_then(|text| serde_json::from_str(&text).ok());
             let same = previous.is_some_and(|previous| {
-                previous["dev"].as_u64() == Some(stat.dev())
-                    && previous["ino"].as_u64() == Some(stat.ino())
+                previous["dev"].as_u64() == Some(dev) && previous["ino"].as_u64() == Some(ino)
             });
             if !same {
                 return Err(std::io::Error::other(format!(
@@ -174,14 +166,9 @@ fn share_mcp_credentials(source: &Path, destination: &Path) -> std::io::Result<(
 
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(text.as_bytes())
+    act_platform::fs::private(std::fs::OpenOptions::new().write(true).create(true).truncate(true))
+        .open(path)?
+        .write_all(text.as_bytes())
 }
 
 /// A link left by an earlier relocation is followed, and recreated if its target was removed.
@@ -240,14 +227,14 @@ fn relocate(private_home: &Path, home: &Path, source: &Path) -> anyhow::Result<P
     let destination = source.join("aicodingtool-threads").join(&digest[..16]);
     mkdir_private(&destination)?;
     share_mcp_credentials(source, &destination).map_err(|error| {
-        if error.raw_os_error() == Some(libc::EXDEV) {
+        if error.kind() == ErrorKind::CrossesDevices {
             unrelocatable(&destination)
         } else {
             error.into()
         }
     })?;
     std::fs::remove_dir_all(private_home)?;
-    std::os::unix::fs::symlink(&destination, private_home)?;
+    act_platform::fs::symlink(&destination, private_home)?;
     Ok(std::fs::canonicalize(private_home)?)
 }
 
@@ -264,7 +251,7 @@ fn prepare(private_home: &Path, source_home: &Path) -> anyhow::Result<PathBuf> {
     }
     let destination = match share_mcp_credentials(&source, &home) {
         Ok(()) => home.clone(),
-        Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {
+        Err(error) if error.kind() == ErrorKind::CrossesDevices => {
             relocate(private_home, &home, &source)?
         }
         Err(error) => return Err(error.into()),
@@ -373,7 +360,7 @@ mod tests {
             .is_symlink());
         let shared = std::fs::metadata(source.join(".credentials.json")).unwrap();
         let linked = std::fs::metadata(home.join(".credentials.json")).unwrap();
-        assert_eq!(shared.ino(), linked.ino());
+        assert_eq!(act_platform::fs::file_identity(&shared), act_platform::fs::file_identity(&linked));
         assert_eq!(prepare(&private, &source).unwrap(), home);
     }
 }

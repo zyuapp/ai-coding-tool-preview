@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::process::{Exec, RunError};
+use act_platform::process::{Exec, RunError};
 
 /// Room for one round trip to GitHub. Nothing waits on this, so a slower network simply has no answer.
 const TIMEOUT: Duration = Duration::from_secs(5);

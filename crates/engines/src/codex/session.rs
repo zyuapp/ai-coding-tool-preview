@@ -26,8 +26,7 @@ use crate::types::{
 };
 
 use super::app_server::{
-    client_info, signal_name, AppServerClient, AppServerError, CodexConnect, ExitStatus,
-    IncomingRequest,
+    client_info, AppServerClient, AppServerError, CodexConnect, ExitStatus, IncomingRequest,
 };
 use super::config::{codex_config, TOOL_TOKEN_ENV};
 use super::plan_usage::read_codex_usage_limit;
@@ -108,7 +107,7 @@ fn describe_exit(exit: &ExitStatus) -> String {
         return line.to_string();
     }
     match (exit.signal, exit.code) {
-        (Some(signal), _) => format!("signal {}", signal_name(signal)),
+        (Some(signal), _) => format!("signal {}", act_platform::process::signal_name(signal)),
         (None, Some(code)) => format!("exit code {code}"),
         _ => "exit code null".to_string(),
     }
@@ -589,7 +588,7 @@ impl CodexSession {
             )
         };
         let env = token.map(|token| {
-            let mut env: HashMap<String, String> = std::env::vars().collect();
+            let mut env: HashMap<String, String> = act_platform::process::environment();
             env.insert(TOOL_TOKEN_ENV.into(), token);
             env
         });

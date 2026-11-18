@@ -5,6 +5,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+act_platform.workspace = true
 gpui.workspace = true
 alacritty_terminal = "0.26"
 portable-pty = "0.9"

@@ -19,6 +19,7 @@ Same as the original:
 | crate | ports | role |
 |---|---|---|
 | `act_core` | `src/domain`, `src/contracts`, `src/application` | types, commands, validation, events, effects, reducer, view projections (`view::*`) |
+| `act_platform` | `src/main/login-path.ts`, `agent-process.ts`, `instance-lock.ts` | what differs between operating systems: child processes and the search path they get, process groups and signals, the instance socket, private files, user folders, memory and the process table, system tools |
 | `act_store` | `src/main/task-database-*`, `json-storage` | SQLite store, schema-compatible with `tasks.v3.sqlite`; profile JSON files |
 | `act_engines` | `src/main/{agent,claude,codex,opencode}` | Claude Code, Codex and OpenCode processes and their protocols |
 | `act_host` | `src/host`, rest of `src/main` | services effects call: git, worktrees, files, attachments, automations, MCP tools, paired computers, phone bridge |
@@ -29,7 +30,12 @@ Same as the original:
 | `act_devices` | simulator, dictation, glass, capture | iOS simulator panel, dictation, window glass, screenshot context |
 | `ai-coding-tool` (`crates/app`) | `src/renderer`, `src/main/main.ts` | window, workspace, effect dispatch, views, CLI (`serve`, `pair`) |
 
-Dependencies point downward only: app → browser/devices/ui/markdown/terminal/host → engines/store → core.
+Dependencies point downward only: app → browser/devices/ui/markdown/terminal/host → engines/store → core and platform. `act_platform` depends on no other crate of the app's.
+
+## Platforms
+- Every child process starts through `act_platform::process::{command, std_command}` (a PTY takes `child_env`): the program is found on the search path the user's login shell reported (`search_path`), and the child gets that path and the app's child variables. The app never changes its own environment.
+- Per-OS code sits in modules chosen once, never in scattered `cfg`s: `act_platform`'s `sys` (`unix.rs`) and `os` (`mac.rs`, `linux.rs`), and the same `mac.rs`/`linux.rs` split in `act_host::notify` and `act_host::computer_use_host`; `act_host::dock` and `act_devices::glass` have a `none` module for systems without the feature; each `act_browser` `Pages` has the same methods. Catalogues and per-OS choices in shared code match on `act_platform::Platform`.
+- A Windows port adds a `windows.rs` beside each `mac.rs`/`linux.rs` (and for `sys`), and the compiler names the `Platform::Windows` arms and missing `os` items.
 
 ## Engines
 - `act_core::domain::engine` is the catalogue: each `AgentEngine`'s `EngineSpec` (id, name, built-in models, default model, capabilities such as fast mode, review and sign-in). Validation, stored records, views, the host's tools and the engines all read it; wire names are the spec ids.

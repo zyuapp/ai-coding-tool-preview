@@ -185,7 +185,7 @@ fn copy_tree(from: &Path, to: &Path, skipped: &[&str]) -> StoreResult<()> {
         let destination = to.join(&name);
         let kind = entry.file_type()?;
         if kind.is_symlink() {
-            std::os::unix::fs::symlink(fs::read_link(&path)?, &destination)?;
+            act_platform::fs::symlink(fs::read_link(&path)?, &destination)?;
         } else if kind.is_dir() {
             copy_tree(&path, &destination, &[])?;
         } else if name.ends_with(".sqlite") {
@@ -208,7 +208,7 @@ mod tests {
         fs::write(source.join("attachments/a.png"), b"png").unwrap();
         fs::write(source.join("codex-private/sessions/s.jsonl"), b"{}").unwrap();
         fs::write(source.join("codex-private/.credentials.json"), b"{}").unwrap();
-        std::os::unix::fs::symlink("/elsewhere/config.toml", source.join("codex-private/config.toml")).unwrap();
+        act_platform::fs::symlink("/elsewhere/config.toml", source.join("codex-private/config.toml")).unwrap();
         fs::write(source.join("launched-version"), b"0.10.0").unwrap();
         let projectless = format!("{}/projectless", source.to_string_lossy());
         fs::write(source.join("workspaces.v1.json"), serde_json::to_vec(&json!({ "version": 1, "workspaces": [{ "id": "p", "kind": "projectless", "root": projectless }] })).unwrap()).unwrap();

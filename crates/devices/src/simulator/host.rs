@@ -8,12 +8,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use act_core::domain::platform::{untilted, SimulatorAvailability, SimulatorButton, SimulatorDevice, SimulatorDeviceState, SimulatorInput, SimulatorOrientation, TouchPhase, PasteboardPhase};
-use act_host::process::{Exec, RunError};
+use act_platform::process::{Exec, RunError};
 use act_host::tools::types::{SimulatorElement, SimulatorShot, SimulatorSnapshot};
 use futures::future::{BoxFuture, FutureExt, Shared};
 use serde_json::{json, Map, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, ChildStdin, Command};
+use act_platform::process::Detach;
+use tokio::process::{Child, ChildStdin};
 use tokio::sync::{oneshot, watch};
 
 use super::devices::{listed, parse_device_list, pasted_text, RawElement};
@@ -180,7 +181,7 @@ pub fn default_helper_path() -> PathBuf {
 fn pbcopy() -> ClipboardWriter {
     Arc::new(|text: String| {
         act_host::runtime().spawn(async move {
-            let _ = Exec::new("/usr/bin/pbcopy").env("LANG", "en_US.UTF-8").input(Some(text.as_bytes())).timeout(REQUEST_TIMEOUT).run().await;
+            let _ = act_platform::tools::copy_text(&text, REQUEST_TIMEOUT).await;
         });
     })
 }
@@ -416,13 +417,8 @@ impl SimulatorHost {
     pub fn shutdown_started(&self) {
         let started: Vec<String> = self.inner.state.lock().unwrap().started_here.drain().collect();
         for udid in started {
-            let mut command = std::process::Command::new("xcrun");
-            command.args(["simctl", "shutdown", &udid]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                command.process_group(0);
-            }
+            let mut command = act_platform::process::std_command("xcrun");
+            command.args(["simctl", "shutdown", &udid]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).own_group();
             let _ = command.spawn();
         }
     }
@@ -565,7 +561,7 @@ impl Inner {
 
     async fn spawn_helper(self: &Arc<Self>) -> SimulatorResult<Arc<Helper>> {
         let dir = self.xcode().await.ok_or_else(|| "Install Xcode to use the simulator.".to_string())?;
-        let mut child = Command::new(&self.helper_path)
+        let mut child = act_platform::process::command(&self.helper_path)
             .arg(&dir)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

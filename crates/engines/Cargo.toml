@@ -5,6 +5,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+act_platform.workspace = true
 act_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -17,7 +18,6 @@ tokio-util = "0.7"
 futures = "0.3"
 base64 = "0.22"
 toml = "0.8"
-libc = "0.2"
 regex = "1"
 sha2 = "0.10"
 hex = "0.4"

@@ -7,7 +7,7 @@ pub mod tree;
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -30,7 +30,7 @@ pub fn default_driver() -> Option<PathBuf> {
     if shipped.is_file() {
         return Some(shipped);
     }
-    std::env::var_os("PATH").and_then(|path| std::env::split_paths(&path).map(|dir| dir.join("cua-driver")).find(|candidate| candidate.is_file()))
+    act_platform::search_path::folders().into_iter().map(|dir| dir.join("cua-driver")).find(|candidate| candidate.is_file())
 }
 
 /// Whether this app may read other apps through accessibility, without asking.
@@ -146,7 +146,7 @@ static WARM: Mutex<Option<Warm>> = Mutex::new(None);
 static WARMING: AtomicBool = AtomicBool::new(false);
 
 fn spawn_driver(driver: &PathBuf, hyprland: bool) -> Option<(Child, ChildStdin, ChildStdout)> {
-    let mut command = Command::new(driver);
+    let mut command = act_platform::process::std_command(driver);
     command.arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
     // The person's own compositor is read, even with computer-use tools off or XWayland present.
     command.env_remove("CUA_WAYLAND_NEST");

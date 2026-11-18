@@ -5,6 +5,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+act_platform.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
@@ -27,7 +28,6 @@ regex = "1"
 base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
-libc = "0.2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 tracing = "0.1"
 act_core.workspace = true

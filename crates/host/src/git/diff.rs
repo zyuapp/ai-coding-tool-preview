@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::process::{Exec, RunError};
+use act_platform::process::{Exec, RunError};
 use crate::workspaces::{UnavailableReason, WorkspaceError, WorkspaceResolution, WorkspaceService};
 
 const TIMEOUT: Duration = Duration::from_secs(10);

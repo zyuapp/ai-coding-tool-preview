@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use futures::future::{BoxFuture, FutureExt, Shared};
 use regex::Regex;
-use tokio::process::Command;
+use act_platform::process::command;
 
 use crate::types::EngineReadiness;
 use crate::version::{is_older_than, read_version};
@@ -56,19 +56,9 @@ pub const OPENCODE_BINARY: EngineCommand = EngineCommand {
     is_native: |path| path.contains("/.opencode/bin/"),
 };
 
-fn is_executable(candidate: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(candidate)
-        .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-}
-
 /// Where an engine's command sits on the search path, or nothing when the user has not installed it.
 pub fn engine_binary_path(binary: &EngineCommand) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .filter(|folder| !folder.as_os_str().is_empty())
-        .map(|folder| folder.join(binary.command))
-        .find(|candidate| is_executable(candidate))
+    act_platform::search_path::find(binary.command)
 }
 
 /// How an install is brought up to date: what the user would type, and the program and arguments the app runs.
@@ -141,7 +131,7 @@ fn is_mise_launcher(path: &str) -> bool {
 /// The tool beside an install, which belongs to it, or the one on the search path when there is none.
 fn beside_or_on_path(prefix: &str, tool: &str) -> String {
     let beside = Path::new(prefix).join("bin").join(tool);
-    if is_executable(&beside) {
+    if act_platform::fs::is_executable(&beside) {
         beside.to_string_lossy().into_owned()
     } else {
         tool.to_string()
@@ -220,7 +210,7 @@ pub async fn installed_engine(binary: &EngineCommand) -> Option<InstalledEngine>
         .unwrap_or_else(|_| binary_path.clone());
     let version = match tokio::time::timeout(
         VERSION_TIMEOUT,
-        Command::new(&path)
+        command(&path)
             .arg("--version")
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)
@@ -301,7 +291,7 @@ async fn homebrew_latest(keg: HomebrewKeg) -> Option<String> {
     let brew = beside_or_on_path(&keg.prefix, "brew");
     let output = tokio::time::timeout(
         HOMEBREW_INFO_TIMEOUT,
-        Command::new(brew)
+        command(brew)
             .args(["info", "--json=v2", &keg.name])
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)
@@ -395,7 +385,7 @@ pub async fn upgrade_engine(binary: &EngineCommand) -> anyhow::Result<()> {
     };
     let output = tokio::time::timeout(
         UPGRADE_TIMEOUT,
-        Command::new(&update.file)
+        command(&update.file)
             .args(&update.args)
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)

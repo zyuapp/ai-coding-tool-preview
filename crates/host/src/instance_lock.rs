@@ -6,28 +6,15 @@
 
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+
+use act_platform::fs::symlink;
+use act_platform::ipc::{self, hostname, Listener};
+use act_platform::process::alive;
 
 const SERVE_LOCK: &str = "serve.lock";
 const APP_LOCK: &str = "SingletonLock";
 const APP_SOCKET: &str = "SingletonSocket";
-
-fn alive(pid: u32) -> bool {
-    // Signal 0 checks the process exists; EPERM means it does, under another user.
-    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
-    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-}
-
-pub fn hostname() -> String {
-    let mut buffer = [0u8; 256];
-    let result = unsafe { libc::gethostname(buffer.as_mut_ptr() as *mut libc::c_char, buffer.len()) };
-    if result != 0 {
-        return String::new();
-    }
-    let end = buffer.iter().position(|byte| *byte == 0).unwrap_or(buffer.len());
-    String::from_utf8_lossy(&buffer[..end]).into_owned()
-}
 
 fn holder_of(lock: &Path) -> Option<u32> {
     fs::read_to_string(lock).ok()?.trim().parse().ok().filter(|holder| *holder > 0)
@@ -71,7 +58,7 @@ pub fn desktop_open(user_data: &Path) -> bool {
 
 /// The turn to clear a dead server's lock: a link naming the starter that has it, made in one step.
 fn take_turn(turn: &Path) -> std::io::Result<bool> {
-    match std::os::unix::fs::symlink(std::process::id().to_string(), turn) {
+    match symlink(std::process::id().to_string(), turn) {
         Ok(()) => Ok(true),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
         Err(error) => Err(error),
@@ -148,7 +135,7 @@ pub struct DesktopLock {
     lock: PathBuf,
     socket_link: PathBuf,
     socket_dir: PathBuf,
-    listener: Option<UnixListener>,
+    listener: Option<Listener>,
 }
 
 impl DesktopLock {
@@ -187,15 +174,15 @@ pub fn claim_desktop_lock(user_data: &Path, arguments: &[String]) -> std::io::Re
     let socket_link = user_data.join(APP_SOCKET);
     let ours = format!("{}-{}", hostname(), std::process::id());
     for _ in 0..2 {
-        match std::os::unix::fs::symlink(&ours, &lock) {
+        match symlink(&ours, &lock) {
             Ok(()) => {
-                // A Unix socket path is short, so the socket lives in a temporary folder the lock links to.
+                // A socket path is short, so the socket lives in a temporary folder the lock links to.
                 let socket_dir = std::env::temp_dir().join(format!("aic-{}", uuid::Uuid::new_v4().simple()));
                 fs::create_dir_all(&socket_dir)?;
                 let socket = socket_dir.join("S");
-                let listener = UnixListener::bind(&socket)?;
+                let listener = ipc::bind(&socket)?;
                 let _ = fs::remove_file(&socket_link);
-                std::os::unix::fs::symlink(&socket, &socket_link)?;
+                symlink(&socket, &socket_link)?;
                 return Ok(DesktopClaim::Claimed(DesktopLock { lock, socket_link, socket_dir, listener: Some(listener) }));
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -207,7 +194,7 @@ pub fn claim_desktop_lock(user_data: &Path, arguments: &[String]) -> std::io::Re
                         let _ = fs::remove_file(&socket_link);
                     }
                     _ => {
-                        return Ok(match UnixStream::connect(&socket_link) {
+                        return Ok(match ipc::connect(&socket_link) {
                             Ok(mut stream) => {
                                 let mut line = serde_json::to_string(arguments).unwrap_or_else(|_| "[]".into());
                                 line.push('\n');
@@ -246,7 +233,7 @@ mod tests {
     #[test]
     fn a_crashed_window_leaves_a_lock_that_counts_for_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        std::os::unix::fs::symlink(format!("{}-999999", hostname()), dir.path().join(APP_LOCK)).unwrap();
+        symlink(format!("{}-999999", hostname()), dir.path().join(APP_LOCK)).unwrap();
         assert!(!desktop_open(dir.path()));
         assert!(matches!(claim_desktop_lock(dir.path(), &[]).unwrap(), DesktopClaim::Claimed(_)));
     }

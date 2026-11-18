@@ -201,7 +201,7 @@ impl System {
         let target = act_host::updates::update_target(&exe);
         let result = match target {
             Some(target) => act_host::updates::relaunch(&target, &arguments),
-            None => relaunch_binary(&exe, &arguments),
+            None => act_platform::process::start_after_exit(&exe.to_string_lossy(), &arguments),
         };
         if let Err(error) = result {
             eprintln!("Could not restart: {error}");
@@ -234,27 +234,7 @@ fn notification_sender() -> String {
 /// The identifier of the bundle this binary runs from, if it runs from one.
 fn bundle_identifier() -> Option<String> {
     let bundle = executable().and_then(|exe| exe.parent()?.parent().map(|contents| contents.join("Info.plist")));
-    bundle.filter(|plist| plist.is_file()).and_then(|plist| {
-        let output = std::process::Command::new("/usr/bin/defaults").arg("read").arg(&plist).arg("CFBundleIdentifier").stdin(std::process::Stdio::null()).output().ok()?;
-        let identifier = String::from_utf8(output.stdout).ok()?.trim().to_string();
-        (!identifier.is_empty()).then_some(identifier)
-    })
-}
-
-/// A build run straight from its binary starts again the same way, once this one has exited.
-fn relaunch_binary(exe: &std::path::Path, arguments: &[String]) -> std::io::Result<()> {
-    let quoted = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
-    let mut start = quoted(&exe.to_string_lossy());
-    for argument in arguments {
-        start.push(' ');
-        start.push_str(&quoted(argument));
-    }
-    let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.2; done; {start} >/dev/null 2>&1 &", std::process::id());
-    let mut command = std::process::Command::new("/bin/sh");
-    command.args(["-c", &script]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    use std::os::unix::process::CommandExt;
-    command.process_group(0);
-    command.spawn().map(|_| ())
+    bundle.filter(|plist| plist.is_file()).and_then(|plist| act_platform::tools::bundle_identifier(&plist))
 }
 
 /// Threads whose run an update would cut off, to carry on in the new build (application/update-relaunch.ts).

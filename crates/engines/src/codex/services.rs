@@ -191,7 +191,7 @@ pub fn codex_title_args(schema_file: &str, output_file: &str, images: &[String])
 }
 
 async fn exec_codex(args: Vec<String>, input: String, cwd: &Path) -> anyhow::Result<()> {
-    let environment: HashMap<String, String> = std::env::vars().collect();
+    let environment: HashMap<String, String> = act_platform::process::environment();
     let private_home = private_codex_home(&environment).await?;
     let mut env = environment.clone();
     let shared = shared_codex_home(&environment);
@@ -222,7 +222,7 @@ async fn exec_codex(args: Vec<String>, input: String, cwd: &Path) -> anyhow::Res
     let mut full = args[..args.len() - 1].to_vec();
     full.extend(overrides);
     full.push(args[args.len() - 1].clone());
-    let mut child = tokio::process::Command::new(codex_executable()?)
+    let mut child = act_platform::process::command(codex_executable()?)
         .args(full)
         .current_dir(cwd)
         .env_clear()

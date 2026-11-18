@@ -5,6 +5,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+act_platform.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 act_core.workspace = true

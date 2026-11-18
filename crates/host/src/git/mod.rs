@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::process::{Exec, RunError};
+use act_platform::process::{Exec, RunError};
 
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 /// Checkout-scale work — populating or removing a worktree, committing a whole tree — takes as long as the tree is big.

@@ -10,6 +10,7 @@ license = "MIT"
 
 [workspace.dependencies]
 act_core = { path = "crates/core" }
+act_platform = { path = "crates/platform" }
 act_store = { path = "crates/store" }
 act_engines = { path = "crates/engines" }
 act_host = { path = "crates/host" }

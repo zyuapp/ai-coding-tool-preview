@@ -3,7 +3,7 @@
 //! folders; a moved AppImage is repaired on its next launch.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use crate::cli_install::CLI_URL_SCHEME;
@@ -78,7 +78,7 @@ fn owned_entry(contents: &[u8]) -> bool {
 }
 
 fn run(program: &str, args: &[&str], timeout: Duration) -> Option<String> {
-    let mut child = Command::new(program).args(args).env("LC_ALL", "C").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    let mut child = act_platform::process::std_command(program).args(args).env("LC_ALL", "C").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
     let start = Instant::now();
     loop {
         match child.try_wait().ok()? {
@@ -173,13 +173,7 @@ pub fn register_appimage(appimage: &Path, home: &Path, icon: &[u8], data_home: O
 fn write_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o644);
-    }
-    options.open(path)?.write_all(bytes)
+    act_platform::fs::shared(options.write(true).create_new(true)).open(path)?.write_all(bytes)
 }
 
 #[cfg(test)]

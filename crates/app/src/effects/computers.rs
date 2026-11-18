@@ -83,7 +83,7 @@ impl WorkspaceHooks for Publisher {
             return Some(links.name());
         }
         let file = inner.links_file.get()?;
-        Some(act_host::computers::links::stored_computer_name(file, act_host::instance_lock::hostname().trim_end_matches(".local")))
+        Some(act_host::computers::links::stored_computer_name(file, act_platform::ipc::hostname().trim_end_matches(".local")))
     }
 
     fn snapshot(&self) -> WorkspaceUpdate {
@@ -266,7 +266,7 @@ impl Computers {
             let named = Arc::downgrade(&self.0);
             let links = ComputerLinks::new(ComputerLinksOptions {
                 file,
-                device_name: act_host::instance_lock::hostname().trim_end_matches(".local").to_string(),
+                device_name: act_platform::ipc::hostname().trim_end_matches(".local").to_string(),
                 on_changed: Arc::new(move |links| {
                     let name = named.upgrade().and_then(|inner| inner.links.get().map(|links| links.name())).unwrap_or_default();
                     changed.json(json!({ "type": "computers.changed", "name": name, "links": links }));

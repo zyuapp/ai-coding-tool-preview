@@ -389,11 +389,7 @@ fn claude_config_dir() -> PathBuf {
         .unwrap_or_else(|| home_dir().join(".claude"))
 }
 
-pub fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
-}
+pub use act_platform::paths::home as home_dir;
 
 async fn read_metadata(config: PathBuf, id: String, session_id: String) -> SubagentMetadata {
     let projects = config.join("projects");

@@ -19,13 +19,9 @@ fn replace_file(file: &Path, staging: &Path, contents: &str, private: bool) -> s
     }
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
     if private {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        act_platform::fs::private(&mut options);
     }
-    #[cfg(not(unix))]
-    let _ = private;
     std::io::Write::write_all(&mut options.open(staging)?, contents.as_bytes())?;
     std::fs::rename(staging, file)
 }

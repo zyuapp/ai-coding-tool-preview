@@ -1,13 +1,18 @@
-//! Gives this process the search path the user's own shell has. macOS starts an app from the Dock with
-//! four system folders and nothing else, so without this every command the app runs — `git`, `gh`,
+//! The search path children get: the one the user's own shell has. macOS starts an app from the Dock
+//! with four system folders and nothing else, so without it every command the app runs — `git`, `gh`,
 //! and whatever an agent's shell calls — is looked for where the user installed nothing.
+//!
+//! The path is held here and given to each child as it starts; this process's own environment is
+//! never changed.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
+
+use crate::process::Signal;
 
 /// Room for a shell with heavy start-up files, short enough that the window is not held back on one.
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -18,6 +23,34 @@ const MARK: &str = "__aic_environment__";
 /// Where a Mac keeps tools that launchd's own search path never lists, in the order a shell looks.
 fn tool_folders(home: &Path) -> Vec<String> {
     vec!["/opt/homebrew/bin".into(), "/opt/homebrew/sbin".into(), "/usr/local/bin".into(), home.join(".local").join("bin").to_string_lossy().into_owned()]
+}
+
+fn installed_tool_folders() -> String {
+    tool_folders(&crate::paths::home()).into_iter().filter(|folder| Path::new(folder).exists()).collect::<Vec<_>>().join(":")
+}
+
+/// Until the login shell answers: what the app was started with, then the standard tool folders.
+pub(crate) fn held() -> &'static RwLock<String> {
+    static HELD: OnceLock<RwLock<String>> = OnceLock::new();
+    HELD.get_or_init(|| {
+        let inherited = std::env::var("PATH").ok();
+        RwLock::new(merge_search_paths([inherited.as_deref(), Some(installed_tool_folders().as_str())]))
+    })
+}
+
+/// The search path children get.
+pub fn get() -> String {
+    held().read().unwrap().clone()
+}
+
+/// The folders of the search path, in order.
+pub fn folders() -> Vec<PathBuf> {
+    get().split(':').filter(|folder| !folder.is_empty()).map(PathBuf::from).collect()
+}
+
+/// Where `command` is on the search path, as a shell finds it.
+pub fn find(command: &str) -> Option<PathBuf> {
+    folders().into_iter().map(|folder| folder.join(command)).find(|candidate| crate::fs::is_executable(candidate))
 }
 
 /// The search path a shell reported, read off the `PATH=` line of the environment between the marks.
@@ -44,16 +77,11 @@ pub fn merge_search_paths<'a>(paths: impl IntoIterator<Item = Option<&'a str>>) 
 /// start-up file that fails afterwards has already printed the environment, and the marks find it.
 async fn login_shell_environment(shell: &str) -> String {
     let script = format!("printf '{MARK}'; /usr/bin/env; printf '{MARK}'");
-    let mut command = Command::new(shell);
+    let mut command = crate::process::command(shell);
     command.args(["-ilc", &script]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
-    // An interactive shell on Linux can touch the launching terminal and stop its whole process group
-    // with SIGTTIN, so it runs as a session of its own there.
-    #[cfg(target_os = "linux")]
-    unsafe {
-        command.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
+    let own_session = crate::os::LOGIN_SHELL_OWN_SESSION;
+    if own_session {
+        crate::sys::new_session(command.as_std_mut());
     }
     let Ok(mut child) = command.spawn() else { return String::new() };
     let Some(mut stdout) = child.stdout.take() else { return String::new() };
@@ -75,11 +103,8 @@ async fn login_shell_environment(shell: &str) -> String {
     };
     let finished = tokio::time::timeout(TIMEOUT, read).await.is_ok();
     if !finished {
-        #[cfg(target_os = "linux")]
-        if let Some(pid) = child.id() {
-            unsafe {
-                libc::kill(-(pid as i32), libc::SIGKILL);
-            }
+        if let Some(pid) = child.id().filter(|_| own_session) {
+            crate::process::signal_group(pid, Signal::Kill);
         }
         let _ = child.start_kill();
     }
@@ -87,31 +112,19 @@ async fn login_shell_environment(shell: &str) -> String {
     String::from_utf8_lossy(&output).into_owned()
 }
 
-/// The search path to adopt: the shell's answer leads, what the app was started with follows, and
-/// the standard folders last.
+/// The search path to hold: the shell's answer leads, the one held so far follows, and the standard
+/// folders last.
 pub async fn login_shell_path() -> String {
     let shell = std::env::var("SHELL").ok().filter(|shell| !shell.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
     let reported = search_path_from_environment(&login_shell_environment(&shell).await);
-    let home = crate::paths::home();
-    let installed: Vec<String> = tool_folders(&home).into_iter().filter(|folder| Path::new(folder).exists()).collect();
-    let current = std::env::var("PATH").ok();
-    let installed = installed.join(":");
-    merge_search_paths([reported.as_deref(), current.as_deref(), Some(installed.as_str())])
+    let current = get();
+    merge_search_paths([reported.as_deref(), Some(current.as_str()), Some(installed_tool_folders().as_str())])
 }
 
-/// The standard tool folders after what the app was started with, adopted at once while the login
-/// shell is still being asked.
-pub fn adopt_tool_folders() {
-    let installed: Vec<String> = tool_folders(&crate::paths::home()).into_iter().filter(|folder| Path::new(folder).exists()).collect();
-    let current = std::env::var("PATH").ok();
-    let installed = installed.join(":");
-    std::env::set_var("PATH", merge_search_paths([current.as_deref(), Some(installed.as_str())]));
-}
-
-/// Every child process inherits the result.
+/// Asks the login shell and holds its answer; every child started afterwards gets it.
 pub async fn adopt_login_shell_path() {
     let path = login_shell_path().await;
-    std::env::set_var("PATH", path);
+    *held().write().unwrap() = path;
 }
 
 #[cfg(test)]

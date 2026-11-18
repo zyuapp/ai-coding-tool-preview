@@ -2,7 +2,7 @@
 //! idle-sleep once the screen is locked and nothing is left to do, so a quiet app never drains the
 //! battery.
 
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,16 +14,7 @@ struct SleepBlocker(Child);
 
 impl SleepBlocker {
     fn start() -> Option<Self> {
-        let pid = std::process::id().to_string();
-        let mut command = if cfg!(target_os = "macos") {
-            let mut command = Command::new("caffeinate");
-            command.args(["-i", "-w", &pid]);
-            command
-        } else {
-            let mut command = Command::new("systemd-inhibit");
-            command.args(["--what=idle:sleep", concat!("--who=", act_core::app_name!()), "--why=A thread is working", "--mode=block", "sleep", "infinity"]);
-            command
-        };
+        let mut command = act_platform::tools::sleep_blocker(std::process::id(), act_core::identity::APP_NAME, "A thread is working");
         command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().ok().map(SleepBlocker)
     }
 }

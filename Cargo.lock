@@ -88,6 +88,7 @@ version = "0.1.7"
 dependencies = [
  "act_core",
  "act_host",
+ "act_platform",
  "act_ui",
  "aes",
  "anyhow",
@@ -142,6 +143,7 @@ version = "0.1.7"
 dependencies = [
  "act_core",
  "act_host",
+ "act_platform",
  "act_ui",
  "anyhow",
  "base64 0.22.1",
@@ -177,6 +179,7 @@ name = "act_engines"
 version = "0.1.7"
 dependencies = [
  "act_core",
+ "act_platform",
  "anyhow",
  "base64 0.22.1",
  "bytes",
@@ -186,7 +189,6 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "libc",
  "regex",
  "reqwest",
  "serde",
@@ -205,6 +207,7 @@ name = "act_host"
 version = "0.1.7"
 dependencies = [
  "act_core",
+ "act_platform",
  "act_store",
  "anyhow",
  "base64 0.22.1",
@@ -220,7 +223,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "image",
- "libc",
  "mac-notification-sys",
  "notify-rust",
  "objc2 0.6.5",
@@ -258,10 +260,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "act_platform"
+version = "0.1.7"
+dependencies = [
+ "libc",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "act_store"
 version = "0.1.7"
 dependencies = [
  "act_core",
+ "act_platform",
  "futures-channel",
  "rusqlite",
  "serde",
@@ -275,6 +289,7 @@ dependencies = [
 name = "act_terminal"
 version = "0.1.7"
 dependencies = [
+ "act_platform",
  "alacritty_terminal",
  "anyhow",
  "futures",
@@ -355,6 +370,7 @@ dependencies = [
  "act_engines",
  "act_host",
  "act_markdown",
+ "act_platform",
  "act_store",
  "act_terminal",
  "act_ui",

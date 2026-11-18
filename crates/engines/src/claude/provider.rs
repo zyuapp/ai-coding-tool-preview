@@ -53,7 +53,7 @@ pub fn claude_executable() -> Option<String> {
 pub fn claude_process() -> anyhow::Result<ClaudeOptions> {
     let executable =
         claude_executable().ok_or_else(|| anyhow::anyhow!("Claude is not installed."))?;
-    let mut env: HashMap<String, String> = std::env::vars().collect();
+    let mut env: HashMap<String, String> = act_platform::process::environment();
     env.insert("CLAUDE_CODE_ENTRYPOINT".into(), CLAUDE_ENTRYPOINT.into());
     env.insert("CLAUDE_CODE_DISABLE_ARTIFACT".into(), "1".into());
     Ok(ClaudeOptions {

@@ -215,7 +215,6 @@ async fn canonical_directory(root: &Path) -> Result<String, WorkspaceError> {
 fn unavailable_reason(error: &std::io::Error) -> UnavailableReason {
     match error.kind() {
         std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory => UnavailableReason::Missing,
-        _ if error.raw_os_error() == Some(libc::ENOTDIR) => UnavailableReason::Missing,
         _ => UnavailableReason::Inaccessible,
     }
 }

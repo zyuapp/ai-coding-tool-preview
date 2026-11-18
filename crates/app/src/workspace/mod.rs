@@ -674,7 +674,7 @@ impl Workspace {
     /// Paired computers this build cannot reach, listed as offline so their names still read.
     fn restore_computers(&mut self, cx: &mut Context<Self>) {
         let stored = act_store::files::read_computers(&self.host.profile.computers());
-        let name = stored.name.unwrap_or_else(|| act_host::instance_lock::hostname().trim_end_matches(".local").to_string());
+        let name = stored.name.unwrap_or_else(|| act_platform::ipc::hostname().trim_end_matches(".local").to_string());
         let links: Vec<serde_json::Value> = stored
             .computers
             .iter()

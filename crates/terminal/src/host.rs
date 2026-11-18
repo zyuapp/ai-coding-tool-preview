@@ -254,15 +254,12 @@ impl TerminalHost {
 
 /// The user's own login shell, so a terminal here has the environment their terminal app would.
 fn shell_command(cwd: &str) -> CommandBuilder {
-    #[cfg(windows)]
-    let mut command = CommandBuilder::new(std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
-    #[cfg(not(windows))]
-    let mut command = {
-        let shell = std::env::var("SHELL").ok().filter(|shell| !shell.is_empty()).unwrap_or_else(|| "/bin/bash".into());
-        let mut command = CommandBuilder::new(shell);
-        command.arg("-l");
-        command
-    };
+    let (shell, args) = act_platform::process::terminal_shell();
+    let mut command = CommandBuilder::new(shell);
+    command.args(args);
+    for (key, value) in act_platform::process::child_env() {
+        command.env(key, value);
+    }
     command.cwd(cwd);
     command.env_remove("ELECTRON_RUN_AS_NODE");
     command.env("TERM", "xterm-256color");

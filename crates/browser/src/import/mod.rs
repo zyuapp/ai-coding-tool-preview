@@ -6,7 +6,7 @@ pub mod cookies;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use act_core::domain::terminal::{BrowserImportSite, BrowserImportSource};
@@ -304,7 +304,7 @@ enum Ran {
 
 /// What a command printed, whether it failed, or that it is not installed.
 fn run(command: &str, args: &[&str], timeout: Duration) -> Ran {
-    let child = Command::new(command).args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+    let child = act_platform::process::std_command(command).args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
     let mut child = match child {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ran::Missing,
@@ -440,7 +440,7 @@ pub fn cookie_details(cookie: &StoredCookie) -> CookieDetails {
 /// Opens the setting a blocked read asks the user to change.
 pub fn open_full_disk_access() {
     if cfg!(target_os = "macos") {
-        let _ = Command::new("open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").spawn();
+        act_platform::tools::open("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles");
     }
 }
 

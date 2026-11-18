@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use act_core::domain::platform::{AppBuild, AppUpdate};
+use act_platform::Platform;
 use base64::Engine;
 use futures::StreamExt;
 use sha2::{Digest, Sha512};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::process::Exec;
 use crate::user_data::compare_versions;
 
 pub const RELEASES: &str = act_core::identity::RELEASES_URL;
@@ -33,14 +33,14 @@ pub enum UpdateTarget {
 
 /// What this process would replace, or None for a copy that cannot replace itself, such as a source build.
 pub fn update_target(executable: &Path) -> Option<UpdateTarget> {
-    if cfg!(target_os = "macos") {
-        let bundle = executable.parent()?.parent()?.parent()?;
-        return bundle.extension().is_some_and(|extension| extension == "app").then(|| UpdateTarget::Bundle(bundle.to_path_buf()));
+    match Platform::current() {
+        Platform::Darwin => {
+            let bundle = executable.parent()?.parent()?.parent()?;
+            bundle.extension().is_some_and(|extension| extension == "app").then(|| UpdateTarget::Bundle(bundle.to_path_buf()))
+        }
+        Platform::Linux => std::env::var_os("APPIMAGE").map(|image| UpdateTarget::AppImage(PathBuf::from(image))),
+        Platform::Windows => None,
     }
-    if cfg!(target_os = "linux") {
-        return std::env::var_os("APPIMAGE").map(|image| UpdateTarget::AppImage(PathBuf::from(image)));
-    }
-    None
 }
 
 /// What a user who asked for a check is told, for the window to show as a dialog.
@@ -61,12 +61,10 @@ pub enum UpdateNotice {
 
 /// How a user replaces this app by hand when the update could not.
 pub fn manual_update_recovery() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Download the new version and replace the app in Applications."
-    } else if cfg!(target_os = "linux") {
-        "Download the new AppImage and replace the one you run."
-    } else {
-        "Download the new version and replace the installed app."
+    match Platform::current() {
+        Platform::Darwin => "Download the new version and replace the app in Applications.",
+        Platform::Linux => "Download the new AppImage and replace the one you run.",
+        Platform::Windows => "Download the new version and replace the installed app.",
     }
 }
 
@@ -128,12 +126,10 @@ pub fn parse_release_manifest(text: &str) -> Option<ReleaseManifest> {
 }
 
 fn manifest_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "latest-mac.yml"
-    } else if cfg!(target_arch = "aarch64") {
-        "latest-linux-arm64.yml"
-    } else {
-        "latest-linux.yml"
+    match Platform::current() {
+        Platform::Darwin => "latest-mac.yml",
+        Platform::Linux | Platform::Windows if cfg!(target_arch = "aarch64") => "latest-linux-arm64.yml",
+        Platform::Linux | Platform::Windows => "latest-linux.yml",
     }
 }
 
@@ -147,13 +143,11 @@ fn release_file<'a>(manifest: &'a ReleaseManifest, target: &UpdateTarget) -> Opt
 
 /// Accepts only a bundle signed by whoever signed the one it replaces, as Squirrel does.
 pub async fn verify_bundle(current: &Path, next: &Path) -> Result<(), String> {
-    let current_text = current.to_string_lossy();
-    let shown = Exec::new("/usr/bin/codesign").args(["-d", "-r-", current_text.as_ref()]).run().await.map_err(|error| error.to_string())?;
+    let shown = act_platform::tools::signature_details(current).await.map_err(|error| error.to_string())?;
     let text = format!("{}\n{}", shown.stdout_text(), String::from_utf8_lossy(&shown.stderr));
     let requirement = text.lines().find_map(|line| line.strip_prefix("designated => ")).ok_or("The installed app has no signature to check the update against.")?;
     let requirement = format!("={requirement}");
-    let next_text = next.to_string_lossy();
-    Exec::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict", "-R", requirement.as_str(), next_text.as_ref()]).run().await.map_err(|error| format!("The update is not signed like the installed app: {error}"))?;
+    act_platform::tools::verify_signature(next, &requirement).await.map_err(|error| format!("The update is not signed like the installed app: {error}"))?;
     Ok(())
 }
 
@@ -194,9 +188,7 @@ impl Source {
         let url = if file.url.starts_with("https://") { file.url.clone() } else { format!("{}/download/v{}/{}", self.releases, manifest.version, crate::tools::browser::encode_uri_component(&file.url)) };
         let response = self.get(&url).await?;
         let mut options = tokio::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        options.mode(0o755);
+        act_platform::fs::executable(options.write(true).create_new(true));
         let mut out = options.open(destination).await.map_err(|error| error.to_string())?;
         let mut hash = Sha512::new();
         let mut received: u64 = 0;
@@ -242,9 +234,7 @@ impl Source {
                 let result = async {
                     let archive = download.join("update.zip");
                     self.fetch(manifest, file, &archive, progress).await?;
-                    let archive_text = archive.to_string_lossy();
-                    let unpacked_text = unpacked.to_string_lossy();
-                    Exec::new("/usr/bin/ditto").args(["-x", "-k", archive_text.as_ref(), unpacked_text.as_ref()]).run().await.map_err(|error| error.to_string())?;
+                    act_platform::tools::extract_zip(&archive, &unpacked).await.map_err(|error| error.to_string())?;
                     let mut entries = tokio::fs::read_dir(&unpacked).await.map_err(|error| error.to_string())?;
                     let mut app = None;
                     while let Some(entry) = entries.next_entry().await.map_err(|error| error.to_string())? {
@@ -381,7 +371,7 @@ impl AppUpdater {
         }
         if self.options.target.is_none() {
             if user_requested {
-                (self.options.on_notice)(if cfg!(target_os = "linux") { UpdateNotice::ManualLinux } else { UpdateNotice::SourceCopy });
+                (self.options.on_notice)(if Platform::current() == Platform::Linux { UpdateNotice::ManualLinux } else { UpdateNotice::SourceCopy });
             }
             return;
         }
@@ -570,39 +560,17 @@ impl AppUpdater {
 
 /// Starts the installed build once this process has exited, so the new one claims the instance lock.
 pub fn relaunch(target: &UpdateTarget, arguments: &[String]) -> std::io::Result<()> {
-    let pid = std::process::id().to_string();
-    let quoted = |value: &str| format!("'{}'", value.replace('\'', "'\\''"));
-    let start = match target {
+    match target {
         UpdateTarget::Bundle(bundle) => {
-            let mut command = format!("/usr/bin/open -n {}", quoted(&bundle.to_string_lossy()));
+            let mut args = vec!["-n".to_string(), bundle.to_string_lossy().into_owned()];
             if !arguments.is_empty() {
-                command.push_str(" --args");
-                for argument in arguments {
-                    command.push(' ');
-                    command.push_str(&quoted(argument));
-                }
+                args.push("--args".into());
+                args.extend(arguments.iter().cloned());
             }
-            command
+            act_platform::process::start_after_exit("/usr/bin/open", &args)
         }
-        UpdateTarget::AppImage(image) => {
-            let mut command = quoted(&image.to_string_lossy());
-            for argument in arguments {
-                command.push(' ');
-                command.push_str(&quoted(argument));
-            }
-            command.push_str(" >/dev/null 2>&1 &");
-            command
-        }
-    };
-    let script = format!("while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; {start}");
-    let mut command = std::process::Command::new("/bin/sh");
-    command.args(["-c", &script]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
+        UpdateTarget::AppImage(image) => act_platform::process::start_after_exit(&image.to_string_lossy(), arguments),
     }
-    command.spawn().map(|_| ())
 }
 
 /// Writes down the threads to carry on once `version` is the build running.

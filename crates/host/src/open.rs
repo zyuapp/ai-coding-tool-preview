@@ -7,26 +7,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::process::launch_detached;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Platform {
-    Darwin,
-    Windows,
-    Linux,
-}
-
-impl Platform {
-    pub fn current() -> Self {
-        if cfg!(target_os = "macos") {
-            Platform::Darwin
-        } else if cfg!(windows) {
-            Platform::Windows
-        } else {
-            Platform::Linux
-        }
-    }
-}
+pub use act_platform::Platform;
+use act_platform::process::launch_detached;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -148,11 +130,7 @@ fn file_url(file: &Path) -> String {
     url
 }
 
-/// The desktop's own handler for a URL or path.
-fn system_open(target: &str) -> bool {
-    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-    launch_detached(opener, &[target.to_string()])
-}
+use act_platform::tools::open as system_open;
 
 /// Opens a web page outside the app.
 pub fn open_url(url: &str) -> bool {
@@ -161,12 +139,7 @@ pub fn open_url(url: &str) -> bool {
 
 /// Shows a path in the platform's file manager.
 pub fn reveal_in_file_manager(path: &Path) -> bool {
-    if cfg!(target_os = "macos") {
-        launch_detached("open", &["-R".into(), path.to_string_lossy().into_owned()])
-    } else {
-        let folder = if path.is_dir() { path } else { path.parent().unwrap_or(path) };
-        system_open(&folder.to_string_lossy())
-    }
+    act_platform::tools::reveal(path)
 }
 
 /// The launcher that answered last time, so later clicks skip the ones that already missed.
@@ -373,8 +346,7 @@ pub fn app_candidates(app_id: &str, platform: Platform, home: &str, folder: &str
 
 /// The launcher's absolute path, found the way a shell finds it, or None when PATH has none.
 pub fn on_path(command: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).filter(|folder| !folder.as_os_str().is_empty()).map(|folder| folder.join(command)).find(|target| target.exists())
+    act_platform::search_path::folders().into_iter().map(|folder| folder.join(command)).find(|target| target.exists())
 }
 
 /// Whether a candidate is on this machine, without starting anything.

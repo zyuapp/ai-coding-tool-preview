@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use act_core::identity::APP_NAME;
 
-use crate::process::Exec;
 
 pub use act_core::identity::CLI_COMMAND;
 pub const CLI_INSTALL_PATH: &str = concat!("/usr/local/bin/", act_core::cli_command!());
@@ -179,13 +178,12 @@ pub fn cli_install_command(target: &CliConfiguration) -> String {
 }
 
 fn is_permission_error(error: &std::io::Error) -> bool {
-    matches!(error.raw_os_error(), Some(libc::EACCES) | Some(libc::EPERM) | Some(libc::EROFS)) || error.kind() == std::io::ErrorKind::PermissionDenied
+    matches!(error.kind(), std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem)
 }
 
 /// `/usr/local/bin` belongs to root on a stock Mac, so writing there asks for the password once.
 async fn elevate(command: &str) -> Result<(), String> {
-    let script = format!("do shell script {} with administrator privileges", serde_json::to_string(command).unwrap_or_default());
-    match Exec::new("/usr/bin/osascript").args(["-e", script.as_str()]).run().await {
+    match act_platform::tools::run_as_administrator(command).await {
         Ok(_) => Ok(()),
         Err(error) => {
             let message = format!("{} {}", String::from_utf8_lossy(error.stderr()), error);
@@ -226,7 +224,7 @@ impl CliInstaller {
         let target = self.configuration.as_ref().map(|configuration| configuration.install_path.clone()).unwrap_or_else(|| CLI_INSTALL_PATH.into());
         let on_path = (self.platform == "linux").then(|| {
             let directory = Path::new(&target).parent().map(Path::to_path_buf).unwrap_or_default();
-            std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|entry| crate::paths::resolve(&entry) == directory))
+            act_platform::search_path::folders().iter().any(|entry| crate::paths::resolve(entry) == directory)
         });
         CliStatus { state, path: target, on_path, current: None }
     }
@@ -295,7 +293,6 @@ impl CliInstaller {
 
 /// Written beside and renamed over, so the command is never half a script.
 async fn write_script(target: &CliConfiguration) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
     let path = PathBuf::from(&target.install_path);
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -303,11 +300,11 @@ async fn write_script(target: &CliConfiguration) -> std::io::Result<()> {
     let staged = PathBuf::from(format!("{}.{}.{}.tmp", target.install_path, std::process::id(), uuid::Uuid::new_v4()));
     let result = async {
         let mut options = tokio::fs::OpenOptions::new();
-        options.write(true).create_new(true).mode(0o755);
+        act_platform::fs::executable(options.write(true).create_new(true));
         let mut file = options.open(&staged).await?;
         tokio::io::AsyncWriteExt::write_all(&mut file, target.script.as_bytes()).await?;
         drop(file);
-        tokio::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)).await?;
+        act_platform::fs::set_executable(&staged)?;
         tokio::fs::rename(&staged, &path).await
     }
     .await;

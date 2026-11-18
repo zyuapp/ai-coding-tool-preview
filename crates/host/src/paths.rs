@@ -49,10 +49,7 @@ pub fn stays_inside(root: &Path, file: &str) -> bool {
     is_path_inside(root, &resolve_from(root, Path::new(file)))
 }
 
-/// The user's home folder.
-pub fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
-}
+pub use act_platform::paths::home;
 
 /// `~` and `~/…` expanded against the home folder; anything else as written.
 pub fn expand_home(named: &str) -> PathBuf {

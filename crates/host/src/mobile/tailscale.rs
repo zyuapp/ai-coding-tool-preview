@@ -10,7 +10,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::addresses::{health_path, mobile_instance, BIND_HOST, MOBILE_HEALTH_RESPONSE, MOBILE_INSTANCE_HEADER};
-use crate::process::Exec;
+use act_platform::process::Exec;
 
 const TAILSCALE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Serve provisions a certificate on its first call, which is slow the way any certificate is.
@@ -23,10 +23,7 @@ pub const OPERATOR_NEEDED: &str = "Tailscale needs permission. Run: sudo tailsca
 pub const CERTS_OFF: &str = "This tailnet does not issue HTTPS certificates yet. Turn on HTTPS in the Tailscale admin console, under DNS, then check again.";
 pub const HELD_ELSEWHERE: &str = "Another AI Coding Tool on this computer is using Tailscale. Quit it, then check again.";
 
-fn executable(candidate: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(candidate).is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-}
+use act_platform::fs::is_executable as executable;
 
 /// The command, or None when this machine has no Tailscale. Remembered, because the answer rarely moves.
 pub fn find_tailscale() -> Option<PathBuf> {
@@ -35,7 +32,7 @@ pub fn find_tailscale() -> Option<PathBuf> {
     if let Some(binary) = cached.as_ref().filter(|binary| executable(binary)) {
         return Some(binary.clone());
     }
-    let on_path = std::env::var_os("PATH").and_then(|path| std::env::split_paths(&path).filter(|directory| directory.is_absolute()).map(|directory| directory.join("tailscale")).find(|candidate| executable(candidate)));
+    let on_path = act_platform::search_path::folders().into_iter().filter(|directory| directory.is_absolute()).map(|directory| directory.join("tailscale")).find(|candidate| executable(candidate));
     let found = on_path.into_iter().chain(KNOWN_CLI_PATHS.iter().map(PathBuf::from)).find(|candidate| executable(candidate));
     *cached = found.clone();
     found
@@ -45,7 +42,7 @@ fn first_line(text: &str) -> Option<String> {
     text.lines().map(str::trim).find(|line| !line.is_empty()).map(str::to_string)
 }
 
-fn readable(error: &crate::process::RunError) -> String {
+fn readable(error: &act_platform::process::RunError) -> String {
     let stderr = String::from_utf8_lossy(error.stderr()).trim().to_string();
     let text = if stderr.is_empty() { first_line(&error.to_string()) } else { first_line(&stderr) }.unwrap_or_else(|| error.to_string());
     let stripped = without_error_prefix(text.trim());
@@ -59,7 +56,7 @@ fn without_error_prefix(text: &str) -> &str {
     }
 }
 
-fn serve_failure(error: &crate::process::RunError) -> String {
+fn serve_failure(error: &act_platform::process::RunError) -> String {
     let said = format!("{}\n{error}", String::from_utf8_lossy(error.stderr())).to_lowercase();
     if said.contains("access denied") || said.contains("--operator") { OPERATOR_NEEDED.into() } else { readable(error) }
 }
@@ -80,11 +77,11 @@ async fn tailscale(binary: &Path, args: &[&str], timeout: Duration, stop: &Cance
     }
 }
 
-async fn tailscale_raw(binary: &Path, args: &[&str], timeout: Duration, stop: &CancellationToken) -> Result<String, crate::process::RunError> {
+async fn tailscale_raw(binary: &Path, args: &[&str], timeout: Duration, stop: &CancellationToken) -> Result<String, act_platform::process::RunError> {
     let run = Exec::new(binary).args(args.iter().copied()).timeout(timeout).max_buffer(4 * 1024 * 1024).run();
     tokio::select! {
         output = run => output.map(|output| output.stdout_text()),
-        _ = stop.cancelled() => Err(crate::process::RunError::Io(std::io::Error::other("Stopped."))),
+        _ = stop.cancelled() => Err(act_platform::process::RunError::Io(std::io::Error::other("Stopped."))),
     }
 }
 

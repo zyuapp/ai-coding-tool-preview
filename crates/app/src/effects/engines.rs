@@ -17,7 +17,7 @@ pub struct Engines {
 
 impl Engines {
     pub fn new() -> Engines {
-        let search_again = Arc::new(|| act_host::login_path::adopt_login_shell_path().boxed());
+        let search_again = Arc::new(|| act_platform::search_path::adopt_login_shell_path().boxed());
         Engines { access: EngineAccessHost::new(search_again) }
     }
 

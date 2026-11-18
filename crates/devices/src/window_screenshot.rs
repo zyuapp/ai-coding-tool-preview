@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use act_core::domain::conversation::{ScreenshotContext, ScreenshotPlatform};
-use act_host::process::{Exec, RunError};
+use act_platform::process::{Exec, RunError};
 use base64::Engine;
 use regex::Regex;
 use serde::Deserialize;
@@ -29,17 +29,10 @@ pub enum WindowShot {
 
 /// The shutter, played beside the capture. `screencapture` makes no sound of its own, so this stays one choice.
 pub fn play_shutter() {
-    if !cfg!(target_os = "macos") || !Path::new(SHUTTER).exists() {
+    if !Path::new(SHUTTER).exists() {
         return;
     }
-    let mut player = std::process::Command::new("/usr/bin/afplay");
-    player.arg(SHUTTER).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        player.process_group(0);
-    }
-    let _ = player.spawn();
+    act_platform::tools::play_sound(Path::new(SHUTTER));
 }
 
 /// Whether this app may record the screen, without asking.
@@ -126,7 +119,7 @@ async fn capture_frontmost_mac_window(sound: bool, driver: Option<PathBuf>) -> W
         return WindowShot::Denied;
     }
     let outcome = async {
-        let picked = run("/usr/bin/osascript", &["-l", "JavaScript", "-e", PICK_WINDOW]).await.map_err(|error| message(&error))?;
+        let picked = act_platform::tools::run_automation_script(PICK_WINDOW, RUN_TIMEOUT).await.map(|output| output.stdout_text()).map_err(|error| message(&error))?;
         let window: Pick = serde_json::from_str(picked.trim()).map_err(|error| error.to_string())?;
         if window.pid == i64::from(std::process::id()) {
             return Ok(WindowShot::NoWindow { app: act_core::identity::APP_NAME.into() });

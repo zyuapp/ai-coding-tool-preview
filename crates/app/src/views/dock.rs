@@ -687,8 +687,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     if !expanded {
         outer = outer.child(resizer(root, sheet, window, cx));
     }
-    // The dock's edge lies over the resizer's line, as `.right-dock::before` does.
-    outer.when(!sheet, |outer| outer.child(div().absolute().top_0().bottom_0().left_0().w(px(1.0)).bg(t.line_glass)))
+    // The dock's edge lies over the resizer's line, as `.right-dock::before` does. Expanded, the sidebar's edge stands in for it.
+    outer.when(!sheet && !expanded, |outer| outer.child(div().absolute().top_0().bottom_0().left_0().w(px(1.0)).bg(t.line_glass)))
 }
 
 /// Left and Right walk the tabs and Home and End jump to either end; Enter or Space selects the one

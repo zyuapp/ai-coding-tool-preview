@@ -319,7 +319,7 @@ impl Host {
             | EffectWork::RemoteSetEnabled { .. }
             | EffectWork::RemoteCreatePairingCode
             | EffectWork::RemoteRevokeDevice { .. }
-            | EffectWork::RemoteRefresh) => self.computers.perform(&sink, work).await,
+            | EffectWork::RemoteRefresh) => self.computers.perform(&sink, &self.services.attachments, work).await,
             other => unsupported(&other),
         }
     }

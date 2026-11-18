@@ -209,7 +209,8 @@ fn forwarded_send(state: &WorkspaceState, computer: &PairedComputer, command: &A
         AppCommand::AttachmentsSend { steer, attachments, text, .. } => AppCommand::AttachmentsSend {
             task_id: target.clone(),
             steer: *steer,
-            attachments: attachments.iter().map(|attachment| crate::domain::conversation::OutgoingAttachment { path: None, ..attachment.clone() }).collect(),
+            // The forward effect reads each staged image from its path into its source, then drops the path.
+            attachments: attachments.clone(),
             text: text.clone(),
         },
         AppCommand::TaskSend(send) => {

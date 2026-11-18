@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use act_core::effects::EffectWork;
 use act_core::events::WorkspaceEvent;
 use act_core::view::mobile::{apply_mobile_patch, diff_mobile_view, project_mobile_view, MobileView};
-use act_core::{WorkspaceInput, WorkspaceState};
+use act_core::{AppCommand, WorkspaceInput, WorkspaceState};
+use act_host::attachments::AttachmentStore;
 use act_host::computers::links::{ComputerLinks, ComputerLinksOptions};
 use act_host::computers::queries::{ComputerReads, QueryHost};
 use act_host::mobile::host::{MobileHost, MobileHostOptions, TailscaleHooks};
@@ -424,7 +425,7 @@ impl Computers {
         }
     }
 
-    pub async fn perform(&self, sink: &Sink, work: EffectWork) {
+    pub async fn perform(&self, sink: &Sink, attachments: &AttachmentStore, work: EffectWork) {
         let links = self.0.links.get().cloned();
         let link_failed = || "Computers are not ready.".to_string();
         match work {
@@ -465,7 +466,7 @@ impl Computers {
                 Some(links) => links.label(&id, &name),
                 None => sink.failed(link_failed()),
             },
-            EffectWork::ComputerForward { id, inputs, project_add_request, draft, proposal, silent } => forward(sink, links, id, inputs, project_add_request, draft, proposal, silent).await,
+            EffectWork::ComputerForward { id, inputs, project_add_request, draft, proposal, silent } => forward(sink, links, attachments, id, inputs, project_add_request, draft, proposal, silent).await,
             EffectWork::RemoteSetEnabled { enabled } => self.bridge(sink, |mobile| async move { Ok(mobile.set_enabled(enabled).await) }.boxed()).await,
             EffectWork::RemoteCreatePairingCode => self.bridge(sink, |mobile| async move { mobile.create_pairing_code().map(|_| mobile.mobile_state()) }.boxed()).await,
             EffectWork::RemoteRevokeDevice { device_id } => self.bridge(sink, |mobile| async move { Ok(mobile.revoke_device(&device_id)) }.boxed()).await,
@@ -500,19 +501,35 @@ impl Computers {
     }
 }
 
+/// Another computer cannot read this one's files, so each staged image goes as its bytes and never by its path.
+async fn carry_images(attachments: &AttachmentStore, inputs: &mut [WorkspaceInput]) -> Result<(), String> {
+    for input in inputs {
+        let WorkspaceInput::Command(AppCommand::AttachmentsSend { attachments: outgoing, .. }) = input else { continue };
+        for attachment in outgoing {
+            if let Some(path) = attachment.path.take().filter(|_| attachment.source.is_empty()) {
+                let data = attachments.read_kept(&path).await.map_err(|_| "That image is no longer available.".to_string())?;
+                attachment.source = format!("data:image/png;base64,{data}");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// What the other computer refused comes back as this window's own error, since it is the one that
 /// asked. A draft a send carried is let go of only once that computer has taken it.
 #[allow(clippy::too_many_arguments)]
-async fn forward(sink: &Sink, links: Option<Arc<ComputerLinks>>, id: String, inputs: Vec<WorkspaceInput>, project_add_request: Option<i64>, draft: Option<act_core::events::SentDraft>, proposal: Option<act_core::effects::ForwardProposal>, silent: bool) {
+async fn forward(sink: &Sink, links: Option<Arc<ComputerLinks>>, attachments: &AttachmentStore, id: String, mut inputs: Vec<WorkspaceInput>, project_add_request: Option<i64>, draft: Option<act_core::events::SentDraft>, proposal: Option<act_core::effects::ForwardProposal>, silent: bool) {
     let housekeeping = inputs.iter().all(|input| {
         let kind = serde_json::to_value(input).ok().and_then(|value| value.get("type").and_then(Value::as_str).map(String::from)).unwrap_or_default();
         matches!(kind.as_str(), "view.set-focused" | "usage.read" | "pull-request.read-member")
     });
     let removes_project = inputs.iter().any(|input| serde_json::to_value(input).ok().and_then(|value| value.get("type").and_then(Value::as_str).map(|kind| kind == "project.remove")).unwrap_or(false));
+    let carried = carry_images(attachments, &mut inputs).await;
     let values: Vec<Value> = inputs.iter().filter_map(|input| serde_json::to_value(input).ok()).collect();
-    let sent = match links {
-        Some(links) => links.send(&id, values).await,
-        None => Err("That computer is no longer paired.".to_string()),
+    let sent = match (carried, links) {
+        (Err(message), _) => Err(message),
+        (Ok(()), Some(links)) => links.send(&id, values).await,
+        (Ok(()), None) => Err("That computer is no longer paired.".to_string()),
     };
     let answered = sent.and_then(|result| {
         if result.get("ok") == Some(&Value::Bool(true)) {
@@ -564,5 +581,26 @@ async fn forward(sink: &Sink, links: Option<Arc<ComputerLinks>>, id: String, inp
                 None => sink.failed(message),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use act_core::domain::conversation::OutgoingAttachment;
+
+    #[tokio::test]
+    async fn a_staged_image_goes_to_another_computer_as_its_bytes() {
+        let dir = std::env::temp_dir().join(format!("act-carry-images-{}", std::process::id()));
+        let store = AttachmentStore::new(&dir);
+        let path = store.write("aGk=", None).await.unwrap().to_string_lossy().into_owned();
+        let staged = OutgoingAttachment { id: "a".into(), source: String::new(), annotations: Vec::new(), path: Some(path), context: None };
+        let mut inputs = vec![WorkspaceInput::Command(AppCommand::AttachmentsSend { task_id: None, steer: None, attachments: vec![staged], text: None })];
+        let carried = carry_images(&store, &mut inputs).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        carried.unwrap();
+        let WorkspaceInput::Command(AppCommand::AttachmentsSend { attachments, .. }) = &inputs[0] else { unreachable!() };
+        assert_eq!(attachments[0].source, "data:image/png;base64,aGk=");
+        assert!(attachments[0].path.is_none());
     }
 }

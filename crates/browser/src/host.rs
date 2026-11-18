@@ -89,73 +89,44 @@ impl BrowserHost {
 
     /// The user's shortcuts, which on Linux a page holding the keyboard hands to the app.
     pub fn set_shortcuts(&self, overrides: &act_core::domain::shortcuts::ShortcutOverrides) {
-        #[cfg(target_os = "linux")]
         if let Some(pages) = &self.pages {
             pages.set_shortcuts(overrides);
         }
-        #[cfg(not(target_os = "linux"))]
-        let _ = overrides;
     }
 
     /// Whether the app paints the pages itself (Wayland) rather than placing native views over its window.
     pub fn paints_pages(&self) -> bool {
-        #[cfg(target_os = "linux")]
-        return self.pages.as_ref().is_some_and(|pages| pages.painted_by_app());
-        #[cfg(not(target_os = "linux"))]
-        false
+        self.pages.as_ref().is_some_and(|pages| pages.painted_by_app())
     }
 
     /// The last frame of a page the app paints.
     pub fn page_frame(&self, tab_id: &str) -> Option<std::sync::Arc<gpui::RenderImage>> {
-        #[cfg(target_os = "linux")]
-        return self.pages.as_ref().and_then(|pages| pages.frame(tab_id));
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = tab_id;
-            None
-        }
+        self.pages.as_ref().and_then(|pages| pages.frame(tab_id))
     }
 
     /// Hands pointer or focus input to a page the app paints.
     pub fn page_input(&self, tab_id: &str, input: &crate::PageInput) {
-        #[cfg(target_os = "linux")]
         if let Some(pages) = &self.pages {
             pages.input(tab_id, input);
         }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (tab_id, input);
     }
 
     /// Answers a drop-down list a page the app paints opened: the row chosen, or None to close it.
     pub fn page_option(&self, tab_id: &str, choice: Option<usize>) {
-        #[cfg(target_os = "linux")]
         if let Some(pages) = &self.pages {
             pages.choose_option(tab_id, choice);
         }
-        #[cfg(not(target_os = "linux"))]
-        let _ = (tab_id, choice);
     }
 
     /// The pointer a page the app paints shows over itself.
     pub fn page_cursor(&self, tab_id: &str) -> gpui::CursorStyle {
-        #[cfg(target_os = "linux")]
-        if let Some(pages) = &self.pages {
-            return pages.cursor(tab_id);
-        }
-        let _ = tab_id;
-        gpui::CursorStyle::Arrow
+        self.pages.as_ref().map(|pages| pages.cursor(tab_id)).unwrap_or(gpui::CursorStyle::Arrow)
     }
 
     /// Hands a key to a page the app paints when it holds the keyboard and the key is not the app's.
     /// True when the page took it.
     pub fn page_key(&self, tab_id: &str, down: bool, keystroke: &gpui::Keystroke) -> bool {
-        #[cfg(target_os = "linux")]
-        return self.pages.as_ref().is_some_and(|pages| pages.key(tab_id, down, keystroke));
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = (tab_id, down, keystroke);
-            false
-        }
+        self.pages.as_ref().is_some_and(|pages| pages.key(tab_id, down, keystroke))
     }
 
     /// Hands the keyboard back to the app when a page holds it.

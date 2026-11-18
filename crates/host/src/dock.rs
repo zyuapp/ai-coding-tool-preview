@@ -2,6 +2,20 @@
 //! AppKit's, so they are set on the main thread; elsewhere they do nothing.
 
 #[cfg(target_os = "macos")]
+use mac as os;
+
+#[cfg(not(target_os = "macos"))]
+use none as os;
+
+/// Systems without a Dock.
+#[cfg(not(target_os = "macos"))]
+mod none {
+    pub fn install_dock_menu(_on_mark_all_read: impl Fn() + 'static) {}
+
+    pub fn set_unread_badge(_count: usize) {}
+}
+
+#[cfg(target_os = "macos")]
 mod mac {
     use std::cell::RefCell;
     use std::ptr;
@@ -109,16 +123,10 @@ mod mac {
 /// The Dock icon's menu, whose one item clears what the badge counts. Call on the main thread once the
 /// app has launched; it takes over the app delegate's Dock menu.
 pub fn install_dock_menu(on_mark_all_read: impl Fn() + 'static) {
-    #[cfg(target_os = "macos")]
-    mac::install_dock_menu(on_mark_all_read);
-    #[cfg(not(target_os = "macos"))]
-    drop(on_mark_all_read);
+    os::install_dock_menu(on_mark_all_read);
 }
 
 /// Shows `count` on the Dock icon, nothing for zero, and enables the menu's item while there is something unread.
 pub fn set_unread_badge(count: usize) {
-    #[cfg(target_os = "macos")]
-    mac::set_unread_badge(count);
-    #[cfg(not(target_os = "macos"))]
-    let _ = count;
+    os::set_unread_badge(count);
 }

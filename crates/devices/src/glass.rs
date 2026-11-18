@@ -34,13 +34,7 @@ pub enum WindowMaterial {
 impl WindowMaterial {
     /// The material this computer draws under a window.
     pub fn current() -> WindowMaterial {
-        if !cfg!(target_os = "macos") {
-            WindowMaterial::None
-        } else if available() {
-            WindowMaterial::Glass
-        } else {
-            WindowMaterial::Vibrancy
-        }
+        os::material()
     }
 
     /// How GPUI opens a window over this material: clear over glass, blurred for vibrancy, else opaque.
@@ -54,7 +48,50 @@ impl WindowMaterial {
 }
 
 #[cfg(target_os = "macos")]
+use mac as os;
+
+#[cfg(not(target_os = "macos"))]
+use none as os;
+
+/// Systems with no material under a window.
+#[cfg(not(target_os = "macos"))]
+mod none {
+    use super::{GlassRegion, WindowMaterial};
+
+    pub fn material() -> WindowMaterial {
+        WindowMaterial::None
+    }
+
+    pub fn available() -> bool {
+        false
+    }
+
+    pub fn attach(_window: &gpui::Window) -> bool {
+        false
+    }
+
+    pub fn regions(_window: &gpui::Window, _regions: &[GlassRegion]) -> bool {
+        false
+    }
+
+    pub fn set_app_appearance(_dark: Option<bool>) {}
+
+    pub fn system_glass_tint() -> f64 {
+        0.0
+    }
+}
+
+#[cfg(target_os = "macos")]
 mod mac {
+    /// Glass where this macOS has it, else vibrancy.
+    pub fn material() -> super::WindowMaterial {
+        if available() {
+            super::WindowMaterial::Glass
+        } else {
+            super::WindowMaterial::Vibrancy
+        }
+    }
+
     use objc2::rc::{Allocated, Retained};
     use objc2::runtime::AnyClass;
     use objc2::{msg_send, ClassType, MainThreadMarker};
@@ -211,50 +248,29 @@ mod mac {
 
 /// Whether this macOS has Liquid Glass.
 pub fn available() -> bool {
-    #[cfg(target_os = "macos")]
-    return mac::available();
-    #[cfg(not(target_os = "macos"))]
-    false
+    os::available()
 }
 
 /// Lays one sheet of glass under the whole window. Returns whether glass went under it.
 pub fn attach(window: &gpui::Window) -> bool {
-    #[cfg(target_os = "macos")]
-    return mac::attach(window);
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = window;
-        false
-    }
+    os::attach(window)
 }
 
 /// One pane of clear glass per region, over the sheet and under the window's drawing. Panes are reused,
 /// so a region that moves is not rebuilt.
 pub fn regions(window: &gpui::Window, regions: &[GlassRegion]) -> bool {
-    #[cfg(target_os = "macos")]
-    return mac::regions(window, regions);
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (window, regions);
-        false
-    }
+    os::regions(window, regions)
 }
 
 /// Draws the app's windows, their glass and system controls light or dark, or as the system does for
 /// `None` (Electron's `nativeTheme.themeSource`).
 pub fn set_app_appearance(dark: Option<bool>) {
-    #[cfg(target_os = "macos")]
-    mac::set_app_appearance(dark);
-    #[cfg(not(target_os = "macos"))]
-    let _ = dark;
+    os::set_app_appearance(dark);
 }
 
 /// How tinted the person has set the system's glass, from 0 for the clearest to 1.
 pub fn system_glass_tint() -> f64 {
-    #[cfg(target_os = "macos")]
-    return mac::system_glass_tint();
-    #[cfg(not(target_os = "macos"))]
-    0.0
+    os::system_glass_tint()
 }
 
 /// A page names its panes in its own pixels, which a zoomed window draws larger than its points.

@@ -632,6 +632,30 @@ impl Pages {
         self.inner.tabs.borrow().iter().map(|tab| tab.id.clone()).collect()
     }
 
+    /// WebKit views sit over the window and take their own input, so the app paints no page.
+    pub fn painted_by_app(&self) -> bool {
+        false
+    }
+
+    pub fn frame(&self, _tab_id: &str) -> Option<std::sync::Arc<gpui::RenderImage>> {
+        None
+    }
+
+    pub fn input(&self, _tab_id: &str, _input: &crate::PageInput) {}
+
+    pub fn key(&self, _tab_id: &str, _down: bool, _keystroke: &gpui::Keystroke) -> bool {
+        false
+    }
+
+    pub fn choose_option(&self, _tab_id: &str, _choice: Option<usize>) {}
+
+    pub fn cursor(&self, _tab_id: &str) -> gpui::CursorStyle {
+        gpui::CursorStyle::Arrow
+    }
+
+    /// AppKit hands the app its shortcuts before a page sees them.
+    pub fn set_shortcuts(&self, _overrides: &act_core::domain::shortcuts::ShortcutOverrides) {}
+
     /// Waits for the tab to stop loading, up to the timeout. None when the tab is gone by then.
     async fn settled(&self, tab_id: &str, timeout_ms: u64) -> Option<Rc<Tab>> {
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);

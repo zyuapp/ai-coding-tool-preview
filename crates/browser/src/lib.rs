@@ -125,6 +125,21 @@ mod unsupported {
         pub fn tab_ids(&self) -> Vec<String> {
             Vec::new()
         }
+        pub fn painted_by_app(&self) -> bool {
+            false
+        }
+        pub fn frame(&self, _tab_id: &str) -> Option<std::sync::Arc<gpui::RenderImage>> {
+            None
+        }
+        pub fn input(&self, _tab_id: &str, _input: &crate::PageInput) {}
+        pub fn key(&self, _tab_id: &str, _down: bool, _keystroke: &gpui::Keystroke) -> bool {
+            false
+        }
+        pub fn choose_option(&self, _tab_id: &str, _choice: Option<usize>) {}
+        pub fn cursor(&self, _tab_id: &str) -> gpui::CursorStyle {
+            gpui::CursorStyle::Arrow
+        }
+        pub fn set_shortcuts(&self, _overrides: &act_core::domain::shortcuts::ShortcutOverrides) {}
         pub async fn read_page(&self, _tab_id: &str, _text_limit: f64, _timeout_ms: u64, _task_id: Option<&str>) -> Result<Option<BrowserSnapshot>, String> {
             Ok(None)
         }

@@ -272,6 +272,157 @@ impl PanelRow {
     }
 }
 
+/// A file's patch, equal only to itself.
+#[derive(Clone)]
+struct Drawing(Rc<DrawnFile>);
+
+impl PartialEq for Drawing {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// What a file shows under its row.
+#[derive(PartialEq)]
+enum FileShape {
+    Folded,
+    Note(String),
+    Drawn(Drawing),
+}
+
+/// Everything the review's rows are cut from, in file order. Empty while the first patches settle.
+#[derive(PartialEq)]
+struct RowsFrom {
+    files: Vec<(String, FileShape)>,
+    split: bool,
+    /// The file and row a comment is being written under.
+    commenting: Option<(String, usize)>,
+}
+
+fn cut_rows(from: &RowsFrom) -> Vec<PanelRow> {
+    let mut rows = Vec::new();
+    for (path, shape) in &from.files {
+        rows.push(PanelRow::File(path.clone()));
+        let drawing = match shape {
+            FileShape::Folded => continue,
+            FileShape::Note(text) => {
+                rows.push(PanelRow::Note(path.clone(), text.clone()));
+                continue;
+            }
+            FileShape::Drawn(Drawing(drawing)) => drawing,
+        };
+        let commenting = from.commenting.as_ref().filter(|(of, _)| of == path).map(|(_, to)| *to);
+        if from.split {
+            for (index, pair) in drawing.pairs.iter().enumerate() {
+                rows.push(PanelRow::Pair(path.clone(), index));
+                if let (Some(to), SplitRow::Pair { left, right, .. }) = (commenting, pair) {
+                    let reached = [left, right].iter().any(|side| side.as_ref().and_then(|row| drawing.index_by_key.get(&row.key)) == Some(&to));
+                    if reached {
+                        rows.push(PanelRow::Composer(path.clone()));
+                    }
+                }
+            }
+        } else {
+            for index in 0..drawing.rows.len() {
+                rows.push(PanelRow::Line(path.clone(), index));
+                if commenting == Some(index) {
+                    rows.push(PanelRow::Composer(path.clone()));
+                }
+            }
+        }
+    }
+    rows
+}
+
+/// Everything the rows' measurement signatures and keyboard stops are taken from besides the rows.
+#[derive(PartialEq)]
+struct MarksFrom {
+    collapsed: HashSet<String>,
+    viewed: HashSet<String>,
+    versions: HashMap<String, String>,
+    selected: Option<(String, usize, usize)>,
+    highlighted: HashSet<(String, usize)>,
+    /// The notes of the comments marked on each row.
+    markers: HashMap<(String, usize), Vec<String>>,
+    /// The search and the match being read, while find is over the review.
+    find: Option<(String, Option<ReviewHit>)>,
+    editing: bool,
+}
+
+/// The rows, and their signatures and stops, kept while what they were taken from holds.
+struct Cut {
+    rows_from: RowsFrom,
+    rows: Rc<Vec<PanelRow>>,
+    marks_from: Option<MarksFrom>,
+    signatures: Vec<u64>,
+}
+
+fn signatures(rows: &[PanelRow], drawings: &HashMap<&str, &Rc<DrawnFile>>, marks: &MarksFrom) -> Vec<u64> {
+    let picked = |path: &str, at: usize| marks.selected.as_ref().is_some_and(|(of, from, to)| of == path && at >= *from && at <= *to);
+    rows.iter()
+        .map(|row| {
+            let mut hasher = DefaultHasher::new();
+            match row {
+                PanelRow::File(path) => {
+                    ("f", path, marks.collapsed.contains(path), marks.viewed.contains(path)).hash(&mut hasher);
+                }
+                PanelRow::Note(path, text) => ("n", path, text).hash(&mut hasher),
+                PanelRow::Line(path, index) | PanelRow::Pair(path, index) => {
+                    (matches!(row, PanelRow::Pair(..)), path, index, marks.versions.get(path)).hash(&mut hasher);
+                    let mut mark = |at: usize| {
+                        let key = (path.clone(), at);
+                        (picked(path, at), marks.highlighted.contains(&key), marks.markers.get(&key)).hash(&mut hasher);
+                    };
+                    match row {
+                        PanelRow::Line(_, index) => mark(*index),
+                        _ => {
+                            if let Some((drawing, Some(SplitRow::Pair { left, right, .. }))) = drawings.get(path.as_str()).map(|drawing| (drawing, drawing.pairs.get(*index))) {
+                                for at in [left, right].iter().filter_map(|side| side.as_ref().and_then(|row| drawing.index_by_key.get(&row.key).copied())) {
+                                    mark(at);
+                                }
+                            }
+                        }
+                    }
+                    if let Some((needle, active)) = &marks.find {
+                        (needle, active.as_ref().map(|hit| (&hit.path, &hit.key, hit.occurrence))).hash(&mut hasher);
+                    }
+                }
+                PanelRow::Composer(path) => ("c", path, marks.editing).hash(&mut hasher),
+            }
+            hasher.finish()
+        })
+        .collect()
+}
+
+fn stop_order(rows: &[PanelRow], drawings: &HashMap<&str, &Rc<DrawnFile>>, selected: &Option<(String, usize, usize)>) -> Vec<Stop> {
+    let picked = |path: &str, key: &str| -> bool {
+        let index = drawings.get(path).and_then(|drawing| drawing.index_by_key.get(key).copied());
+        selected.as_ref().zip(index).is_some_and(|((of, from, to), index)| of == path && index >= *from && index <= *to)
+    };
+    let mut order = Vec::new();
+    for (at, row) in rows.iter().enumerate() {
+        match row {
+            PanelRow::File(path) => order.push(Stop { key: file_stop(path), row: at, line: None }),
+            PanelRow::Line(path, index) => {
+                if let Some(line) = drawings.get(path.as_str()).map(|drawing| &drawing.rows[*index]).filter(|line| line.kind != DiffLineKind::Hunk) {
+                    order.push(Stop { key: gutter_stop(path, &line.key, None), row: at, line: Some((path.clone(), line.key.clone(), None, picked(path, &line.key))) });
+                }
+            }
+            PanelRow::Pair(path, index) => {
+                if let Some(SplitRow::Pair { left, right, .. }) = drawings.get(path.as_str()).map(|drawing| &drawing.pairs[*index]) {
+                    for (side, cell) in [(DiffSide::Old, left), (DiffSide::New, right)] {
+                        if let Some(line) = cell.as_ref().filter(|line| line.kind != DiffLineKind::Hunk) {
+                            order.push(Stop { key: gutter_stop(path, &line.key, Some(side)), row: at, line: Some((path.clone(), line.key.clone(), Some(side), picked(path, &line.key))) });
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    order
+}
+
 fn empty_patch_note(file: &DiffFileSummary) -> String {
     if file.additions == 0 && file.deletions == 0 {
         "No changes to the file's contents".into()
@@ -331,6 +482,7 @@ pub struct DiffCache {
     stops: Rc<RefCell<HashMap<String, gpui::FocusHandle>>>,
     /// The stops in the order the review draws them.
     stop_order: Vec<Stop>,
+    cut: Option<Cut>,
 }
 
 impl Default for DiffCache {
@@ -365,6 +517,7 @@ impl Default for DiffCache {
             focus: None,
             stops: Rc::default(),
             stop_order: Vec::new(),
+            cut: None,
         }
     }
 }
@@ -756,48 +909,33 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
     let comments = index_comments(anchored_comments(&subject.annotations, &comparison, &drawn));
     let dragging = root.dock.diff.dragging.is_some();
 
-    // Rows.
-    let mut rows: Vec<PanelRow> = Vec::new();
-    if !settling {
-        for file in &files {
-            rows.push(PanelRow::File(file.path.clone()));
-            if collapsed.contains(&file.path) {
-                continue;
-            }
-            if file.binary {
-                rows.push(PanelRow::Note(file.path.clone(), "Binary file".into()));
-                continue;
-            }
-            let Some(drawing) = drawn.get(&file.path) else {
-                let patch = versions.get(&file.path).and_then(|key| root.dock.diff.patches.get(key));
-                rows.push(PanelRow::Note(file.path.clone(), patch_note(patch).unwrap_or_else(|| "Reading the patch…".into())));
-                continue;
-            };
-            if drawing.rows.is_empty() {
-                rows.push(PanelRow::Note(file.path.clone(), empty_patch_note(file)));
-                continue;
-            }
-            let commenting = span.as_ref().filter(|(path, _)| *path == file.path && !dragging).map(|(_, (_, to))| *to);
-            if split {
-                for (index, pair) in drawing.pairs.iter().enumerate() {
-                    rows.push(PanelRow::Pair(file.path.clone(), index));
-                    if let (Some(to), SplitRow::Pair { left, right, .. }) = (commenting, pair) {
-                        let reached = [left, right].iter().any(|side| side.as_ref().and_then(|row| drawing.index_by_key.get(&row.key)) == Some(&to));
-                        if reached {
-                            rows.push(PanelRow::Composer(file.path.clone()));
-                        }
-                    }
-                }
-            } else {
-                for index in 0..drawing.rows.len() {
-                    rows.push(PanelRow::Line(file.path.clone(), index));
-                    if commenting == Some(index) {
-                        rows.push(PanelRow::Composer(file.path.clone()));
-                    }
-                }
-            }
+    // Rows, cut again only when what they show changed.
+    let shape = |file: &DiffFileSummary| {
+        if collapsed.contains(&file.path) {
+            return FileShape::Folded;
         }
-    }
+        if file.binary {
+            return FileShape::Note("Binary file".into());
+        }
+        match drawn.get(&file.path) {
+            None => {
+                let patch = versions.get(&file.path).and_then(|key| root.dock.diff.patches.get(key));
+                FileShape::Note(patch_note(patch).unwrap_or_else(|| "Reading the patch…".into()))
+            }
+            Some(drawing) if drawing.rows.is_empty() => FileShape::Note(empty_patch_note(file)),
+            Some(drawing) => FileShape::Drawn(Drawing(drawing.clone())),
+        }
+    };
+    let rows_from = RowsFrom {
+        files: if settling { Vec::new() } else { files.iter().map(|file| (file.path.clone(), shape(file))).collect() },
+        split,
+        commenting: span.as_ref().filter(|_| !dragging).map(|(path, (_, to))| (path.clone(), *to)),
+    };
+    let mut cut = match root.dock.diff.cut.take() {
+        Some(cut) if cut.rows_from == rows_from => cut,
+        _ => Cut { rows: Rc::new(cut_rows(&rows_from)), rows_from, marks_from: None, signatures: Vec::new() },
+    };
+    let rows = cut.rows.clone();
 
     // Find: count over the data, hold the match being read, and bring it into view.
     let mut active_hit: Option<ReviewHit> = None;
@@ -867,72 +1005,38 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
     // Keep the list's measurements for every row that did not change.
     let viewed: HashSet<String> = diff.viewed.keys().cloned().collect();
     let selected_range = span.as_ref().map(|(path, (from, to))| (path.clone(), *from, *to));
-    let signatures: Vec<u64> = rows
-        .iter()
-        .map(|row| {
-            let mut hasher = DefaultHasher::new();
-            match row {
-                PanelRow::File(path) => {
-                    ("f", path, collapsed.contains(path), viewed.contains(path)).hash(&mut hasher);
-                }
-                PanelRow::Note(path, text) => ("n", path, text).hash(&mut hasher),
-                PanelRow::Line(path, index) | PanelRow::Pair(path, index) => {
-                    (matches!(row, PanelRow::Pair(..)), path, index, versions.get(path)).hash(&mut hasher);
-                    let rows_of: Vec<usize> = match row {
-                        PanelRow::Line(_, index) => vec![*index],
-                        _ => drawn
-                            .get(path)
-                            .and_then(|drawing| match drawing.pairs.get(*index) {
-                                Some(SplitRow::Pair { left, right, .. }) => Some([left, right].iter().filter_map(|side| side.as_ref().and_then(|row| drawing.index_by_key.get(&row.key).copied())).collect()),
-                                _ => None,
-                            })
-                            .unwrap_or_default(),
-                    };
-                    for at in rows_of {
-                        let picked = selected_range.as_ref().is_some_and(|(of, from, to)| of == path && at >= *from && at <= *to);
-                        (picked, comments.highlighted.contains(&(path.clone(), at)), comments.markers.get(&(path.clone(), at)).map(|list| list.iter().map(|comment| comment.annotation.note.clone()).collect::<Vec<_>>())).hash(&mut hasher);
-                    }
-                    if !needle.is_empty() {
-                        (&needle, active_hit.as_ref().map(|hit| (&hit.path, &hit.key, hit.occurrence))).hash(&mut hasher);
-                    }
-                }
-                PanelRow::Composer(path) => ("c", path, root.dock.diff.editing.is_some()).hash(&mut hasher),
-            }
-            hasher.finish()
-        })
-        .collect();
+    let marks_from = MarksFrom {
+        collapsed: collapsed.clone(),
+        viewed: viewed.clone(),
+        versions: versions.clone(),
+        selected: selected_range.clone(),
+        highlighted: comments.highlighted.clone(),
+        markers: comments.markers.iter().map(|(at, list)| (at.clone(), list.iter().map(|comment| comment.annotation.note.clone()).collect())).collect(),
+        find: (!needle.is_empty()).then(|| (needle.clone(), active_hit.clone())),
+        editing: root.dock.diff.editing.is_some(),
+    };
+    if cut.marks_from.as_ref() != Some(&marks_from) {
+        let drawings: HashMap<&str, &Rc<DrawnFile>> = cut
+            .rows_from
+            .files
+            .iter()
+            .filter_map(|(path, shape)| match shape {
+                FileShape::Drawn(Drawing(drawing)) => Some((path.as_str(), drawing)),
+                _ => None,
+            })
+            .collect();
+        cut.signatures = signatures(&cut.rows, &drawings, &marks_from);
+        let order = stop_order(&cut.rows, &drawings, &marks_from.selected);
+        let live: HashSet<&str> = order.iter().map(|stop| stop.key.as_str()).collect();
+        root.dock.diff.stops.borrow_mut().retain(|key, _| live.contains(key.as_str()));
+        root.dock.diff.stop_order = order;
+        cut.marks_from = Some(marks_from);
+    }
     let text_system = window.text_system();
     let ch = text_system.ch_advance(text_system.resolve_font(&gpui::font(mono.clone())), px(m.text_meta)).map(f32::from).unwrap_or(m.text_meta * 0.6);
     let list_width = panel_width - root.dock.diff.gutter;
-    sync_list(&mut root.dock.diff, signatures, (list_width / ch).floor() as i32, |at| row_estimate(&rows[at], &drawn, list_width, ch));
-    let mut stop_order = Vec::new();
-    for (at, row) in rows.iter().enumerate() {
-        let picked = |path: &str, key: &str| -> bool {
-            let index = drawn.get(path).and_then(|drawing| drawing.index_by_key.get(key).copied());
-            selected_range.as_ref().zip(index).is_some_and(|((of, from, to), index)| of == path && index >= *from && index <= *to)
-        };
-        match row {
-            PanelRow::File(path) => stop_order.push(Stop { key: file_stop(path), row: at, line: None }),
-            PanelRow::Line(path, index) => {
-                if let Some(line) = drawn.get(path).map(|drawing| &drawing.rows[*index]).filter(|line| line.kind != DiffLineKind::Hunk) {
-                    stop_order.push(Stop { key: gutter_stop(path, &line.key, None), row: at, line: Some((path.clone(), line.key.clone(), None, picked(path, &line.key))) });
-                }
-            }
-            PanelRow::Pair(path, index) => {
-                if let Some(SplitRow::Pair { left, right, .. }) = drawn.get(path).map(|drawing| &drawing.pairs[*index]) {
-                    for (side, cell) in [(DiffSide::Old, left), (DiffSide::New, right)] {
-                        if let Some(line) = cell.as_ref().filter(|line| line.kind != DiffLineKind::Hunk) {
-                            stop_order.push(Stop { key: gutter_stop(path, &line.key, Some(side)), row: at, line: Some((path.clone(), line.key.clone(), Some(side), picked(path, &line.key))) });
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    let live: HashSet<&str> = stop_order.iter().map(|stop| stop.key.as_str()).collect();
-    root.dock.diff.stops.borrow_mut().retain(|key, _| live.contains(key.as_str()));
-    root.dock.diff.stop_order = stop_order;
+    sync_list(&mut root.dock.diff, &cut.signatures, (list_width / ch).floor() as i32, |at| row_estimate(&rows[at], &drawn, list_width, ch));
+    root.dock.diff.cut = Some(cut);
     if let Some(path) = root.dock.diff.want_file.clone() {
         if let Some(index) = rows.iter().position(|row| matches!(row, PanelRow::File(of) if *of == path)) {
             root.dock.diff.want_file = None;
@@ -1144,19 +1248,19 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         .into_any_element()
 }
 
-fn sync_list(cache: &mut DiffCache, signatures: Vec<u64>, columns: i32, estimate: impl Fn(usize) -> f32) {
+fn sync_list(cache: &mut DiffCache, signatures: &[u64], columns: i32, estimate: impl Fn(usize) -> f32) {
     let old = &cache.signatures;
     // Rows spliced into an empty list would push its top below them, so it opens at the top.
     if old.is_empty() && !signatures.is_empty() {
         cache.list.reset_estimated((0..signatures.len()).map(|at| px(estimate(at))));
-        cache.signatures = signatures;
-    } else if old.len() != signatures.len() || old != &signatures {
-        let first = old.iter().zip(&signatures).position(|(a, b)| a != b).unwrap_or(old.len().min(signatures.len()));
+        cache.signatures = signatures.to_vec();
+    } else if old != signatures {
+        let first = old.iter().zip(signatures).position(|(a, b)| a != b).unwrap_or(old.len().min(signatures.len()));
         let last_old = old.len();
         let last_new = signatures.len();
         let tail = old.iter().rev().zip(signatures.iter().rev()).take_while(|(a, b)| a == b).count().min(last_old - first).min(last_new - first);
         cache.list.splice_estimated(first..last_old - tail, (first..last_new - tail).map(|at| px(estimate(at))));
-        cache.signatures = signatures;
+        cache.signatures = signatures.to_vec();
     }
     // Rows wrap again at a new width, so every row is counted afresh but the one the scroll holds by.
     if columns != cache.estimated_columns {
@@ -1495,7 +1599,7 @@ fn branch_entries(branches: Option<&Result<Branches, String>>, query: &str, extr
 
 /// What every row of the review is drawn from, held once per frame.
 struct DiffModel {
-    rows: Vec<PanelRow>,
+    rows: Rc<Vec<PanelRow>>,
     drawn: HashMap<String, Rc<DrawnFile>>,
     files: HashMap<String, DiffFileSummary>,
     collapsed: HashSet<String>,
@@ -2211,10 +2315,10 @@ mod tests {
     #[test]
     fn rows_loaded_into_an_emptied_review_open_at_the_top() {
         let mut cache = DiffCache::default();
-        sync_list(&mut cache, (0..50).collect(), 40, |_| 20.0);
+        sync_list(&mut cache, &(0..50).collect::<Vec<_>>(), 40, |_| 20.0);
         cache.list.scroll_to(ListOffset { item_ix: 30, offset_in_item: px(4.0) });
-        sync_list(&mut cache, Vec::new(), 40, |_| 20.0);
-        sync_list(&mut cache, (100..140).collect(), 40, |_| 20.0);
+        sync_list(&mut cache, &[], 40, |_| 20.0);
+        sync_list(&mut cache, &(100..140).collect::<Vec<_>>(), 40, |_| 20.0);
         assert_eq!(cache.list.logical_scroll_top().item_ix, 0);
     }
 

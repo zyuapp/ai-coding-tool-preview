@@ -210,22 +210,18 @@ fn own_checkout_instructions(workspace_root: &str, project_root: &str) -> String
 /// A coordination role is told how to work whether or not its tools are offered.
 pub fn coordination_instructions(run: &BriefRun, dialect: &BriefDialect) -> Vec<String> {
     match run.coordination_role {
-        Some(CoordinationRole::Coordinator) => vec![coordinator_instructions(&dialect.coordinator_reads)],
+        Some(CoordinationRole::Coordinator) => vec![coordinator_instructions(dialect.coordinator_reads)],
         Some(CoordinationRole::Member) => match &run.project_root {
             None => vec![MEMBER_INSTRUCTIONS.to_string()],
             Some(project_root) => {
                 let mut lines = vec![MEMBER_INSTRUCTIONS.to_string(), own_checkout_instructions(&run.workspace_root, project_root)];
-                lines.extend(dialect.own_checkout_commits.clone());
+                lines.extend(dialect.own_checkout_commits.map(String::from));
                 lines
             }
         },
         None => Vec::new(),
     }
 }
-
-/// Claude's own tools a coordinator has, and the only ones. Named rather than withheld, so a tool a
-/// newer Claude Code adds never reaches a coordinator unasked.
-pub const COORDINATOR_TOOLS: [&str; 12] = ["Read", "Grep", "Glob", "LSP", "WebSearch", "WebFetch", "Skill", "ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "EnterPlanMode", "ExitPlanMode"];
 
 pub fn server() -> ToolServer {
     let mut definitions = names_of(&coordination_definitions(CoordinationRole::Member));
@@ -260,7 +256,7 @@ mod tests {
     #[test]
     fn a_member_in_its_own_checkout_is_told_whose_the_project_is() {
         let run = BriefRun { coordination_role: Some(CoordinationRole::Member), workspace_root: "/wt".into(), project_root: Some("/repo".into()) };
-        let dialect = BriefDialect { own_checkout_commits: Some("Commit with git.".into()), ..Default::default() };
+        let dialect = BriefDialect { own_checkout_commits: Some("Commit with git."), ..Default::default() };
         let lines = coordination_instructions(&run, &dialect);
         assert_eq!(lines.len(), 3);
         assert!(lines[1].contains("/wt") && lines[1].contains("/repo"));

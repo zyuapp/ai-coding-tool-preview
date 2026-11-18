@@ -363,7 +363,7 @@ impl OpenCodeSession {
             }
             state
                 .turns
-                .announce(Continuation::new(AgentEngine::OpenCode, &session_id));
+                .announce(Continuation::new(AgentEngine::Opencode, &session_id));
             (client, session_id)
         };
         let started = async {
@@ -558,8 +558,8 @@ impl OpenCodeSession {
         state
             .variants
             .get(&input.model)
-            .filter(|variants| variants.contains(input.effort.id()))
-            .map(|_| input.effort.id().to_string())
+            .filter(|variants| variants.contains(input.effort.as_str()))
+            .map(|_| input.effort.as_str().to_string())
     }
 
     fn rules(input: &RunInput) -> Vec<PermissionRule> {

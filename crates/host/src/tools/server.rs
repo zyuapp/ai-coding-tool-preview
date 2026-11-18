@@ -2,14 +2,16 @@
 
 use std::sync::Arc;
 
-use super::automation::{AutomationBridge, FindingBridge, AUTOMATION_SERVER_NAME};
+pub use act_core::domain::engine::BriefDialect;
+
+use super::automation::{AutomationBridge, FindingBridge};
 use super::browser::BrowserBridge;
 use super::coordination::CoordinationBridge;
 use super::definition::{BoundTool, ToolName};
 use super::simulator::SimulatorBridge;
 use super::terminal::TerminalBridge;
-use super::threads::{ThreadBridge, THREAD_SERVER_NAME};
-use super::types::{CoordinationRole, RunChannel};
+use super::threads::ThreadBridge;
+use super::types::CoordinationRole;
 use super::{automation, browser, computer_use, coordination, simulator, terminal, threads};
 
 /// Which of a server's tools run without approval: every one, only its read-only ones, or none.
@@ -18,19 +20,6 @@ pub enum Grants {
     All,
     ReadOnly,
     None,
-}
-
-/// The few words an engine needs said its own way.
-#[derive(Debug, Clone, Default)]
-pub struct BriefDialect {
-    /// The engine's own sessions and helpers, which an app thread ID never names.
-    pub native_work: String,
-    /// The engine's own way to make a worktree, which the app would never hear about.
-    pub native_worktree: Option<String>,
-    /// How a coordinator reads on this engine, said so it is told only of tools it really has.
-    pub coordinator_reads: String,
-    /// How a member in a checkout of its own commits there, where the engine's sandbox needs it said.
-    pub own_checkout_commits: Option<String>,
 }
 
 /// What a server's brief may read of the run besides what it was offered.
@@ -113,65 +102,6 @@ pub fn tool_servers() -> Vec<ToolServer> {
     vec![computer_use::server(), automation::server(), threads::server(), coordination::server(), browser::server(), simulator::server(), terminal::server()]
 }
 
-/// One of the app's own tools, by the server it is filed under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WithheldTool {
-    pub server: &'static str,
-    pub tool: &'static str,
-}
-
-/// Asked through the UI instead, on every channel.
-pub const ALWAYS_WITHHELD: [&str; 3] = ["AskUserQuestion", "EnterWorktree", "ExitWorktree"];
-
-/// A side chat is discarded when it closes, so it must not leave anything scheduled behind, raise a
-/// finding no list shows, or move a checkout it shares with its thread.
-pub fn withheld_by_channel(channel: RunChannel) -> &'static [WithheldTool] {
-    const SIDE: [WithheldTool; 6] = [
-        WithheldTool { server: AUTOMATION_SERVER_NAME, tool: "schedule" },
-        WithheldTool { server: AUTOMATION_SERVER_NAME, tool: "update" },
-        WithheldTool { server: AUTOMATION_SERVER_NAME, tool: "stop" },
-        WithheldTool { server: AUTOMATION_SERVER_NAME, tool: "notify" },
-        WithheldTool { server: AUTOMATION_SERVER_NAME, tool: "nothing_to_report" },
-        WithheldTool { server: THREAD_SERVER_NAME, tool: "move_to_worktree" },
-    ];
-    match channel {
-        RunChannel::Main => &[],
-        RunChannel::Side => &SIDE,
-    }
-}
-
-/// The names Claude is told not to use on a channel.
-pub fn withheld_tools(channel: RunChannel) -> Vec<String> {
-    ALWAYS_WITHHELD.iter().map(|name| name.to_string()).chain(withheld_by_channel(channel).iter().map(|entry| mcp_tool_name(entry.server, entry.tool))).collect()
-}
-
-/// A server's tools short of what the channel withholds.
-pub fn offered_on(channel: RunChannel, server: &str, tools: Vec<BoundTool>) -> Vec<BoundTool> {
-    let withheld = withheld_by_channel(channel);
-    tools.into_iter().filter(|tool| !withheld.iter().any(|entry| entry.server == server && entry.tool == tool.name)).collect()
-}
-
-pub struct ServedToolSet {
-    pub server: &'static str,
-    pub tools: Vec<BoundTool>,
-}
-
-/// Every app tool a run reaches, grouped by server and already short of what the channel withholds.
-pub fn run_tools(run: &ToolRun, channel: RunChannel) -> Vec<ServedToolSet> {
-    tool_servers().into_iter().filter_map(|server| (server.serve)(run).map(|tools| ServedToolSet { server: server.name, tools: offered_on(channel, server.name, tools) })).collect()
-}
-
-/// What every server tells the run, gated on the tools it was left.
-pub fn server_briefs(tools: &[ServedToolSet], dialect: &BriefDialect, run: &BriefRun) -> Vec<String> {
-    tool_servers()
-        .into_iter()
-        .flat_map(|server| {
-            let set = tools.iter().find(|set| set.server == server.name).map(|set| set.tools.as_slice());
-            (server.brief)(&Offers::new(set), dialect, run)
-        })
-        .collect()
-}
-
 /// How every engine names a tool an MCP server offers, and what the app's grants are written against.
 pub fn mcp_tool_name(server: &str, name: &str) -> String {
     format!("mcp__{server}__{name}")
@@ -206,42 +136,6 @@ pub fn tool_reach(tool_name: &str) -> ToolReach {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::automation::{AutomationDraft, AutomationPatch, AutomationView};
-    use futures::future::BoxFuture;
-    use futures::FutureExt;
-
-    struct NoAutomation;
-
-    impl AutomationBridge for NoAutomation {
-        fn read(&self) -> BoxFuture<'_, Result<Option<AutomationView>, String>> {
-            async { Ok(None) }.boxed()
-        }
-        fn list(&self) -> BoxFuture<'_, Result<Vec<AutomationView>, String>> {
-            async { Ok(Vec::new()) }.boxed()
-        }
-        fn save(&self, _draft: AutomationDraft) -> BoxFuture<'_, Result<AutomationView, String>> {
-            async { Err("no".to_string()) }.boxed()
-        }
-        fn update(&self, _patch: AutomationPatch) -> BoxFuture<'_, Result<AutomationView, String>> {
-            async { Err("no".to_string()) }.boxed()
-        }
-        fn remove(&self) -> BoxFuture<'_, Result<bool, String>> {
-            async { Ok(false) }.boxed()
-        }
-    }
-
-    #[test]
-    fn a_side_chat_reads_automations_but_is_not_told_to_schedule() {
-        let run = ToolRun { automations: Some(Arc::new(NoAutomation)), ..Default::default() };
-        let main = run_tools(&run, RunChannel::Main);
-        let side = run_tools(&run, RunChannel::Side);
-        let names = |sets: &[ServedToolSet]| sets[0].tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>();
-        assert_eq!(names(&main), vec!["schedule", "status", "update", "stop", "list_all"]);
-        assert_eq!(names(&side), vec!["status", "list_all"]);
-        let dialect = BriefDialect::default();
-        assert_eq!(server_briefs(&main, &dialect, &BriefRun::default()).len(), 1);
-        assert!(server_briefs(&side, &dialect, &BriefRun::default()).is_empty());
-    }
 
     #[test]
     fn reach_follows_each_servers_grants() {

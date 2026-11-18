@@ -13,7 +13,7 @@ use tokio::task::AbortHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::brief::RunToolkit;
-use crate::catalog::capabilities;
+use act_core::domain::engine::capabilities_for;
 use crate::provider::{
     AgentProvider, AgentTurn, ProviderEvent, ProviderResult, ResultStatus, RunHooks, RunInput,
     ToolDecision,
@@ -409,7 +409,7 @@ impl RunCoordinator {
             engine: command.engine,
             model: command.model,
             effort: command.effort,
-            fast_mode: capabilities(command.engine)
+            fast_mode: capabilities_for(command.engine)
                 .fast_mode
                 .then(|| command.fast_mode.unwrap_or(false)),
             operation: command.operation,

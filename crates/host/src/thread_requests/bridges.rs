@@ -56,7 +56,7 @@ fn proposals_full() -> String {
     format!("At most {MAX_PROPOSALS} suggestions wait at once. Wait for the user to start or dismiss some.")
 }
 
-/// One run's bridges into the window, for every server `serve_run` offers it.
+/// One run's bridges into the window, for every app tool server it is offered.
 #[derive(Clone)]
 pub struct RunBridges {
     host: Arc<dyn RequestHost>,

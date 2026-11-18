@@ -7,10 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use act_engines::brief::{BriefDialect, BriefRun, Offers, RunToolkit};
-use act_engines::claude::ClaudeAgentProvider;
-use act_engines::codex::{CodexAgentProvider, CodexProviderOptions};
 use act_engines::mcp_http::McpHttpHost;
-use act_engines::opencode::OpenCodeAgentProvider;
 use act_engines::provider::{AgentProvider, AgentTurn, RunHooks, RunInput, ToolDecision};
 use act_engines::session_pool::SessionPool;
 use act_engines::steer::{SteerChannel, SteerMessage};
@@ -88,18 +85,13 @@ async fn main() {
     }
     let pool = SessionPool::default();
     let host: Arc<dyn ToolHost> = Arc::new(McpHttpHost::new());
-    let provider: Arc<dyn AgentProvider> = match engine {
-        AgentEngine::Claude => Arc::new(ClaudeAgentProvider::new(pool)),
-        AgentEngine::Codex => Arc::new(CodexAgentProvider::new(
-            pool,
-            CodexProviderOptions::new(Some(host), None),
-        )),
-        AgentEngine::OpenCode => Arc::new(OpenCodeAgentProvider::new(pool, Some(host))),
-    };
+    let provider: Arc<dyn AgentProvider> = act_engines::engines::engine(engine)
+        .expect("an engine this build runs")
+        .provider(pool, Some(host), None);
     let default_model = match engine {
-        AgentEngine::Claude => "haiku",
         AgentEngine::Codex => "gpt-6-luna",
-        AgentEngine::OpenCode => "opencode/big-pickle",
+        AgentEngine::Opencode => "opencode/big-pickle",
+        _ => "haiku",
     };
     let last = Arc::new(Mutex::new(None::<Continuation>));
     for (index, turn) in scenario["turns"].as_array().unwrap().iter().enumerate() {

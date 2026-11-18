@@ -10,6 +10,7 @@ use super::definition::{bind_tools, names_of, report, BoundTool, ToolDefinition}
 use super::schema::{boolean, enumeration, number, string, Args, Field, Input};
 use super::server::{BriefDialect, Grants, Offers, ToolRun, ToolServer};
 use super::types::*;
+use act_core::domain::engine::{is_model_id, AGENT_ENGINES, ENGINE_IDS};
 
 pub const THREAD_SERVER_NAME: &str = "aicodingtool-threads";
 
@@ -30,19 +31,19 @@ pub struct ThreadToolContext {
 const MINUTE: f64 = 60_000.0;
 const DEFAULT_WAIT_MS: u64 = 5 * 60_000;
 
-pub const AGENT_ENGINES: [&str; 3] = ["claude", "codex", "opencode"];
 pub const AGENT_EFFORTS: [&str; 6] = ["ultra", "max", "xhigh", "high", "medium", "low"];
 pub const THREAD_ROLES: [&str; 4] = ["coordinator", "implementer", "reviewer", "researcher"];
 pub const DELIVERIES: [&str; 3] = ["pull-request", "commit", "report"];
-/// The models this build ships knowing, as the picker names them where that is not the id itself.
-const BUILT_IN_MODELS: [&str; 8] = ["fable", "opus", "sonnet", "haiku", "gpt-6-astra (Astra)", "gpt-6.1-sol (Sol)", "gpt-6.1-terra (Terra)", "gpt-6-luna (Luna)"];
-
-/// Names every object inherits, which never key a plain record, so never a model id.
-const PROTOTYPE_NAMES: [&str; 12] = ["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty", "__lookupGetter__", "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString", "valueOf", "__proto__", "toLocaleString"];
-
-/// True for a well-formed model id, known here or not.
-pub fn is_model_id(value: &str) -> bool {
-    value.encode_utf16().count() <= 256 && !value.is_empty() && value.chars().all(|character| !character.is_whitespace() && !character.is_control()) && !PROTOTYPE_NAMES.contains(&value)
+/// The models this build ships knowing, each with the name the picker gives it where that is not the id itself.
+fn built_in_models() -> Vec<String> {
+    let mut named: Vec<String> = Vec::new();
+    for model in AGENT_ENGINES.iter().flat_map(|engine| engine.spec().models) {
+        let shown = if model.label.to_lowercase() == model.id { model.id.to_string() } else { format!("{} ({})", model.id, model.label) };
+        if !named.contains(&shown) {
+            named.push(shown);
+        }
+    }
+    named
 }
 
 fn hyphenate(name: String) -> String {
@@ -80,8 +81,8 @@ fn model_field(omitted: &str) -> Field {
         .optional()
         .describe(format!(
             "Model for the new thread: one of {}; an engine ({}) for that engine's default model; or any other model in the app's model picker. Name a model by its id or by the name the picker shows; a name several providers offer resolves to the one the user pinned. Omit to {omitted}",
-            BUILT_IN_MODELS.join(", "),
-            AGENT_ENGINES.join(", ")
+            built_in_models().join(", "),
+            ENGINE_IDS.join(", ")
         ))
 }
 
@@ -102,7 +103,7 @@ fn new_thread_input() -> Input {
         ("worktree", boolean().optional().describe("Run the new thread in its own new git worktree, detached at whatever the project has checked out, so its edits never touch this thread's checkout. Name files in its prompt relative to the project, never by this checkout's absolute path, which would send it back here.")),
         ("worktreeId", string().trim().max(MAX_ID_LENGTH).optional().describe("Start the thread in another worktree that already exists, as list_threads reports it, on the computer it starts on. Omit both worktree fields to share this thread's checkout. Takes precedence over worktree.")),
         ("model", model_field("inherit the calling thread's model.")),
-        ("engine", enumeration(&AGENT_ENGINES).optional().describe("The engine to run model on, needed only when more than one engine offers it.")),
+        ("engine", enumeration(&ENGINE_IDS).optional().describe("The engine to run model on, needed only when more than one engine offers it.")),
         ("effort", effort_field("inherit the calling thread's effort when the selected model supports it, otherwise use that engine's default.")),
         ("role", role_field()),
         ("intent", string().trim().max(MAX_BRIEF_FIELD).optional().describe("Part of the brief a coordinator must give: the user's own words for this piece of work.")),

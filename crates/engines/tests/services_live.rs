@@ -2,7 +2,7 @@
 //! and readiness. Codex and OpenCode keep their state under /tmp.
 //! `cargo test -p act_engines --test services_live -- --ignored --nocapture`
 
-use act_engines::engines::{engine_commands, plan_usage, readiness, suggest_title};
+use act_engines::engines::engine;
 use act_engines::types::{AgentEngine, EngineAccess, PlanUsage};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -35,32 +35,33 @@ async fn engines_answer_outside_a_run() {
     }
     let workspace = scratch.path().to_string_lossy().into_owned();
 
-    let claude = readiness(AgentEngine::Claude).await;
+    let claude_engine = engine(AgentEngine::Claude).unwrap();
+    let claude = claude_engine.readiness().await;
     println!("claude readiness: {claude:?}");
     assert_eq!(claude.access, EngineAccess::Ready);
     assert!(claude.version.is_some());
 
-    let commands = engine_commands(AgentEngine::Claude, &workspace, true)
-        .await
-        .unwrap();
+    let commands = claude_engine.commands(&workspace, true).await.unwrap();
     println!("claude commands: {}", commands.len());
     assert!(commands.iter().any(|command| command.name == "compact"));
 
-    let title = suggest_title(
-        AgentEngine::Claude,
-        "Please fix the flaky login test in the auth service",
-        &[],
-        None,
-    )
-    .await;
+    let title = claude_engine
+        .suggest_title(
+            "Please fix the flaky login test in the auth service",
+            &[],
+            None,
+        )
+        .await;
     println!("claude title: {title:?}");
     assert!(title.is_some_and(|title| !title.is_empty() && title.chars().count() <= 52));
 
-    let usage = plan_usage(AgentEngine::Claude).await;
+    let usage = claude_engine.plan_usage().await;
     println!("claude usage: {usage:?}");
     assert!(!matches!(usage, PlanUsage::Unavailable { .. }));
 
-    let codex = engine_commands(AgentEngine::Codex, &workspace, true)
+    let codex = engine(AgentEngine::Codex)
+        .unwrap()
+        .commands(&workspace, true)
         .await
         .unwrap();
     println!(
@@ -72,11 +73,10 @@ async fn engines_answer_outside_a_run() {
     );
     assert_eq!(codex[0].name, "goal");
 
-    let opencode = engine_commands(AgentEngine::OpenCode, &workspace, true)
-        .await
-        .unwrap();
+    let opencode_engine = engine(AgentEngine::Opencode).unwrap();
+    let opencode = opencode_engine.commands(&workspace, true).await.unwrap();
     println!("opencode commands: {}", opencode.len());
-    let ready = readiness(AgentEngine::OpenCode).await;
+    let ready = opencode_engine.readiness().await;
     println!(
         "opencode readiness: {:?} {:?}",
         ready.access,

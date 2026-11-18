@@ -12,7 +12,6 @@ use serde_json::{json, Value};
 
 use crate::app_plugin::{unqualified_skill_name, APP_PLUGIN_NAME};
 use crate::binary::{installed_engine, upgrade_engine, version_readiness, CLAUDE_BINARY};
-use crate::catalog::built_in_models;
 use crate::title::{
     readable_images, title_of, title_question, title_schema, IMAGE_BYTE_LIMIT, TITLE_INSTRUCTIONS,
 };
@@ -113,9 +112,11 @@ pub async fn discover_claude_models() -> Option<Vec<String>> {
         .iter()
         .flat_map(model_names)
         .collect();
-    let supported: Vec<String> = built_in_models(AgentEngine::Claude)
-        .into_iter()
-        .map(|spec| spec.id)
+    let supported: Vec<String> = AgentEngine::Claude
+        .spec()
+        .models
+        .iter()
+        .map(|model| model.id.to_string())
         .filter(|id| {
             offered
                 .iter()

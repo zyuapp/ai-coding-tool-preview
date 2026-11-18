@@ -196,7 +196,7 @@ fn app_item(target: &Target, remote: &WorkspaceState, own: Option<&AppBuild>) ->
 /// any only a newer build knows. Until it has reported any, this build's own.
 fn reported_engines(remote: &WorkspaceState) -> Vec<AgentEngine> {
     let status = remote.engine_status.clone().unwrap_or_default();
-    let mut reported: Vec<AgentEngine> = status.others.keys().map(|name| AgentEngine::read(name)).collect();
+    let mut reported: Vec<AgentEngine> = status.engines().filter(|engine| !engine.is_known()).collect();
     reported.extend(remote.engine_updating);
     reported.extend(remote.engine_update_queue.iter().copied());
     let known: HashSet<AgentEngine> = AGENT_ENGINES.iter().copied().filter(|engine| status.get(*engine).is_some() || reported.contains(engine)).collect();

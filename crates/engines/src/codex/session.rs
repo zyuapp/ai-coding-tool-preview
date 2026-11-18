@@ -462,7 +462,7 @@ impl CodexSession {
             "threadId": thread_id,
             "input": skills.input(&prompt).await,
             "model": input.model,
-            "effort": input.effort.id(),
+            "effort": input.effort.as_str(),
             "serviceTier": if input.fast_mode == Some(true) { "priority" } else { "default" },
             "approvalPolicy": policy.approval_policy,
             "approvalsReviewer": policy.approvals_reviewer,
@@ -762,7 +762,7 @@ impl CodexSession {
             "approvalPolicy": policy.approval_policy,
             "sandbox": policy.sandbox.id(),
             "approvalsReviewer": policy.approvals_reviewer,
-            "config": { "model_reasoning_effort": seed.effort.id() },
+            "config": { "model_reasoning_effort": seed.effort.as_str() },
             "developerInstructions": brief.instructions.join("\n\n"),
         });
         let continuation = seed.continuation_value().map(String::from);

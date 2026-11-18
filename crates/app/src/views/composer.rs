@@ -115,7 +115,7 @@ impl ComposerState {
     /// A composer writing to `task`, or the page's own composer when None.
     pub fn scoped(task: Option<String>, window: &mut Window, cx: &mut Context<Root>) -> ComposerState {
         let input = cx.new(|cx| {
-            let mut input = TextInput::new(cx).multiline(Autosize { min_rows: 1, max_height: Some(px(420.0)) }).submit_on_enter(true).placeholder("Ask Claude anything").label(if task.is_none() { "Task prompt" } else { "Thread prompt" });
+            let mut input = TextInput::new(cx).multiline(Autosize { min_rows: 1, max_height: Some(px(420.0)) }).submit_on_enter(true).placeholder(format!("Ask {} anything", engine_label(act_core::domain::engine::DEFAULT_ENGINE))).label(if task.is_none() { "Task prompt" } else { "Thread prompt" });
             // The prompt scrolls through the field's padding, as a textarea's text does.
             input.set_bleed(px(FIELD_TOP), px(FIELD_BOTTOM), cx);
             input

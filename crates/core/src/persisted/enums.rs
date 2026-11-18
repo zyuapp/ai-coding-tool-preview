@@ -46,10 +46,7 @@ macro_rules! string_enum {
     };
 }
 
-string_enum!(
-    /// The backends that can run a thread.
-    AgentEngine { Claude = "claude", Codex = "codex", Opencode = "opencode" }
-);
+pub use crate::domain::engine::AgentEngine;
 
 string_enum!(
     /// How much reasoning a run asks for.

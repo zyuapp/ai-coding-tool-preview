@@ -62,9 +62,8 @@ pub fn commits(workspace_id: String, hashes: Vec<String>, cx: &App) -> impl Futu
 /// `commands`: the engine's commands in a checkout, or in the projectless workspace without one.
 pub fn commands(workspace_id: Option<String>, engine: AgentEngine, cx: &App) -> impl Future<Output = Result<Vec<AvailableCommand>, String>> {
     let host = host(cx);
-    let engine = convert::<_, act_engines::types::AgentEngine>(&engine);
     off_window(async move {
-        let engine = engine?;
+        let runs = act_engines::engines::engine(engine).ok_or_else(|| format!("unknown engine `{}`", engine.as_str()))?;
         if let Some(id) = workspace_id {
             let query = serde_json::json!({ "kind": "commands", "workspaceId": id, "engine": engine });
             let value = host.read_content(query, ReadOwner::Workspace(id)).await?;
@@ -74,7 +73,7 @@ pub fn commands(workspace_id: Option<String>, engine: AgentEngine, cx: &App) -> 
             return serde_json::from_value(value.get("commands").cloned().unwrap_or_default()).map_err(|error| error.to_string());
         }
         let root = host.services.workspaces.projectless().await.map_err(|error| error.to_string())?.root;
-        act_engines::engines::engine_commands(engine, &root, true).await.map_err(|error| error.to_string())
+        runs.commands(&root, true).await.map_err(|error| error.to_string())
     })
 }
 

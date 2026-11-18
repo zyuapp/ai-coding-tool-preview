@@ -1,7 +1,7 @@
 //! The engines that run threads, the models each offers, and what each model takes.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::coordination::CoordinationRole;
 use super::run::{AgentEffort, ExecutionPolicy, EXECUTION_POLICIES, POLICY_CHOICES};
@@ -17,23 +17,33 @@ pub enum AgentEngine {
 }
 
 impl AgentEngine {
-    pub fn as_str(self) -> &'static str {
+    /// What this build knows of the engine; nothing for one only a newer build knows.
+    pub const fn spec(self) -> &'static EngineSpec {
         match self {
-            AgentEngine::Claude => "claude",
-            AgentEngine::Codex => "codex",
-            AgentEngine::Opencode => "opencode",
+            AgentEngine::Claude => &CLAUDE,
+            AgentEngine::Codex => &CODEX,
+            AgentEngine::Opencode => &OPENCODE,
+            AgentEngine::Other(_) => &UNKNOWN_ENGINE,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
             AgentEngine::Other(name) => name,
+            known => known.spec().id,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            AgentEngine::Other(name) => name,
+            known => known.spec().label,
         }
     }
 
     /// One of this build's engines, or None.
     pub fn parse(value: &str) -> Option<AgentEngine> {
-        match value {
-            "claude" => Some(AgentEngine::Claude),
-            "codex" => Some(AgentEngine::Codex),
-            "opencode" => Some(AgentEngine::Opencode),
-            _ => None,
-        }
+        AGENT_ENGINES.into_iter().find(|engine| engine.as_str() == value)
     }
 
     /// The engine as another build sent it, kept as sent when this build does not know it.
@@ -53,11 +63,148 @@ pub const DEFAULT_ENGINE: AgentEngine = AgentEngine::Claude;
 /// Every engine, in the order pickers list them.
 pub const AGENT_ENGINES: [AgentEngine; 3] = [AgentEngine::Claude, AgentEngine::Codex, AgentEngine::Opencode];
 
+/// Every engine's id, in the order pickers list them.
+pub const ENGINE_IDS: [&str; AGENT_ENGINES.len()] = {
+    let mut ids = [""; AGENT_ENGINES.len()];
+    let mut index = 0;
+    while index < ids.len() {
+        ids[index] = AGENT_ENGINES[index].as_str();
+        index += 1;
+    }
+    ids
+};
+
 /// A model id as an engine names it.
 pub type AgentModel = String;
 
 /// The default engine's own default, which a draft lands on when its engine has none to offer.
-pub const DEFAULT_MODEL: &str = "opus";
+pub const DEFAULT_MODEL: &str = match DEFAULT_ENGINE.spec().default_model {
+    Some(model) => model,
+    None => panic!("the default engine must name a default model"),
+};
+
+/// One engine as this build knows it.
+#[derive(Debug)]
+pub struct EngineSpec {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// The models it ships knowing.
+    pub models: &'static [BuiltInModel],
+    /// The engine names its models once asked, so none are known before it answers.
+    pub names_own_models: bool,
+    /// The model a thread starts on; None for an engine that names its own.
+    pub default_model: Option<&'static str>,
+    pub capabilities: EngineCapabilities,
+}
+
+/// A model an engine ships knowing.
+#[derive(Debug)]
+pub struct BuiltInModel {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+    pub context_window: i64,
+    /// Deepest first. Empty for a model that takes no effort at all.
+    pub efforts: &'static [AgentEffort],
+    pub manual_compaction: bool,
+}
+
+/// The panels and controls an engine can feed; one that cannot is not drawn for its threads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EngineCapabilities {
+    pub fast_mode: bool,
+    pub workflows: bool,
+    pub subagents: bool,
+    pub subagent_metadata: bool,
+    pub review: bool,
+    pub chrome_browser: bool,
+    /// The user signs in through the app rather than where the engine is installed.
+    pub sign_in: bool,
+    pub policies: &'static [ExecutionPolicy],
+    pub unattended_policy: ExecutionPolicy,
+}
+
+const EFFORTS_THROUGH_MAX: &[AgentEffort] = &[AgentEffort::Max, AgentEffort::Xhigh, AgentEffort::High, AgentEffort::Medium, AgentEffort::Low];
+const EFFORTS_THROUGH_ULTRA: &[AgentEffort] = &AGENT_EFFORTS;
+
+/// The default context window in Codex's model catalogue, used until the server reports its own.
+const CODEX_CONTEXT_WINDOW: i64 = 272_000;
+
+const fn built_in(id: &'static str, label: &'static str, description: &'static str, context_window: i64, efforts: &'static [AgentEffort]) -> BuiltInModel {
+    BuiltInModel { id, label, description, context_window, efforts, manual_compaction: true }
+}
+
+const CLAUDE: EngineSpec = EngineSpec {
+    id: "claude",
+    label: "Claude",
+    models: &[
+        built_in("fable", "Fable", "Most capable for demanding work", 1_000_000, EFFORTS_THROUGH_MAX),
+        built_in("opus", "Opus", "Best for complex reasoning", 1_000_000, EFFORTS_THROUGH_MAX),
+        built_in("sonnet", "Sonnet", "Balanced speed and capability", 1_000_000, EFFORTS_THROUGH_MAX),
+        built_in("haiku", "Haiku", "Fastest for lightweight work", 200_000, &[]),
+    ],
+    names_own_models: false,
+    default_model: Some("opus"),
+    capabilities: EngineCapabilities { fast_mode: false, workflows: true, subagents: true, subagent_metadata: true, review: false, chrome_browser: true, sign_in: false, policies: &EXECUTION_POLICIES, unattended_policy: ExecutionPolicy::Autonomous },
+};
+
+const CODEX: EngineSpec = EngineSpec {
+    id: "codex",
+    label: "Codex",
+    models: &[
+        built_in("gpt-6-astra", "Astra", "Most capable model for complex, demanding work", CODEX_CONTEXT_WINDOW, EFFORTS_THROUGH_ULTRA),
+        built_in("gpt-6.1-sol", "Sol", "Strong coding model for everyday work", CODEX_CONTEXT_WINDOW, EFFORTS_THROUGH_ULTRA),
+        built_in("gpt-6.1-terra", "Terra", "Balanced agentic coding model for everyday work", CODEX_CONTEXT_WINDOW, EFFORTS_THROUGH_ULTRA),
+        built_in("gpt-6-luna", "Luna", "Efficient model for lightweight work", CODEX_CONTEXT_WINDOW, EFFORTS_THROUGH_MAX),
+    ],
+    names_own_models: false,
+    default_model: Some("gpt-6.1-sol"),
+    capabilities: EngineCapabilities { fast_mode: true, workflows: false, subagents: true, subagent_metadata: true, review: true, chrome_browser: false, sign_in: true, policies: &EXECUTION_POLICIES, unattended_policy: ExecutionPolicy::Autonomous },
+};
+
+const OPENCODE: EngineSpec = EngineSpec {
+    id: "opencode",
+    label: "OpenCode",
+    models: &[],
+    names_own_models: true,
+    default_model: None,
+    capabilities: EngineCapabilities {
+        fast_mode: false,
+        workflows: false,
+        subagents: false,
+        subagent_metadata: false,
+        review: false,
+        chrome_browser: false,
+        sign_in: false,
+        policies: &[ExecutionPolicy::Confirm, ExecutionPolicy::Plan, ExecutionPolicy::AllowEdits, ExecutionPolicy::Bypass],
+        unattended_policy: ExecutionPolicy::Bypass,
+    },
+};
+
+const UNKNOWN_ENGINE: EngineSpec = EngineSpec {
+    id: "",
+    label: "",
+    models: &[],
+    names_own_models: false,
+    default_model: None,
+    capabilities: EngineCapabilities { fast_mode: false, workflows: false, subagents: false, subagent_metadata: false, review: false, chrome_browser: false, sign_in: false, policies: &[], unattended_policy: ExecutionPolicy::Confirm },
+};
+
+/// Models the catalogue replaced, each read as its successor wherever a saved setting still names it.
+pub const RETIRED_MODELS: [(&str, &str); 3] = [("gpt-5.6-sol", "gpt-6.1-sol"), ("gpt-6-sol", "gpt-6.1-sol"), ("gpt-5.6-luna", "gpt-6-luna")];
+
+/// The few words an engine needs said its own way in the app's tool briefs.
+#[derive(Debug, Clone, Default)]
+pub struct BriefDialect {
+    /// The engine's own sessions and helpers, which an app thread ID never names.
+    pub native_work: &'static str,
+    /// The engine's own way to make a worktree, which the app would never hear about.
+    pub native_worktree: Option<&'static str>,
+    /// How a coordinator reads on this engine, said so it is told only of tools it really has.
+    pub coordinator_reads: &'static str,
+    /// How a member in a checkout of its own commits there, where the engine's sandbox needs it said.
+    pub own_checkout_commits: Option<&'static str>,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,31 +235,11 @@ pub struct ModelSpec {
     pub provider: Option<String>,
 }
 
-/// The panels and controls an engine can feed; one that cannot is not drawn for its threads.
-#[derive(Clone, Debug, PartialEq)]
-pub struct EngineCapabilities {
-    pub fast_mode: bool,
-    pub workflows: bool,
-    pub subagents: bool,
-    pub subagent_metadata: bool,
-    pub review: bool,
-    pub chrome_browser: bool,
-    pub policies: &'static [ExecutionPolicy],
-    pub unattended_policy: ExecutionPolicy,
-}
-
-const OPENCODE_POLICIES: [ExecutionPolicy; 4] = [ExecutionPolicy::Confirm, ExecutionPolicy::Plan, ExecutionPolicy::AllowEdits, ExecutionPolicy::Bypass];
-
 /// Asking least first. A mode an engine lacks falls to the nearest one after it.
 const POLICY_ORDER: [ExecutionPolicy; 4] = [ExecutionPolicy::Bypass, ExecutionPolicy::Autonomous, ExecutionPolicy::AllowEdits, ExecutionPolicy::Confirm];
 
 pub fn capabilities_for(engine: AgentEngine) -> EngineCapabilities {
-    match engine {
-        AgentEngine::Claude => EngineCapabilities { fast_mode: false, workflows: true, subagents: true, subagent_metadata: true, review: false, chrome_browser: true, policies: &EXECUTION_POLICIES, unattended_policy: ExecutionPolicy::Autonomous },
-        AgentEngine::Codex => EngineCapabilities { fast_mode: true, workflows: false, subagents: true, subagent_metadata: true, review: true, chrome_browser: false, policies: &EXECUTION_POLICIES, unattended_policy: ExecutionPolicy::Autonomous },
-        AgentEngine::Opencode => EngineCapabilities { fast_mode: false, workflows: false, subagents: false, subagent_metadata: false, review: false, chrome_browser: false, policies: &OPENCODE_POLICIES, unattended_policy: ExecutionPolicy::Bypass },
-        AgentEngine::Other(_) => EngineCapabilities { fast_mode: false, workflows: false, subagents: false, subagent_metadata: false, review: false, chrome_browser: false, policies: &[], unattended_policy: ExecutionPolicy::Confirm },
-    }
+    engine.spec().capabilities
 }
 
 /// Whether an engine can take a run right now, or what stands in the way.
@@ -148,47 +275,58 @@ pub struct EngineReadiness {
 }
 
 impl EngineReadiness {
+    pub fn of(access: EngineAccess) -> Self {
+        EngineReadiness { access, version: None, required: None, latest: None, fix: None, models: None, catalog: None }
+    }
+
     pub fn ready() -> Self {
-        EngineReadiness { access: EngineAccess::Ready, version: None, required: None, latest: None, fix: None, models: None, catalog: None }
+        EngineReadiness::of(EngineAccess::Ready)
     }
 }
 
-/// The readiness of the engines whose readiness can change. One not named is always ready.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct EngineStatus {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude: Option<EngineReadiness>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<EngineReadiness>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opencode: Option<EngineReadiness>,
-    /// Engines only a newer build on a paired computer knows, by its own ids.
-    #[serde(flatten, default)]
-    pub others: std::collections::BTreeMap<String, EngineReadiness>,
-}
+/// The readiness of the engines whose readiness can change, by engine. One not named is always ready.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EngineStatus(BTreeMap<AgentEngine, EngineReadiness>);
 
 impl EngineStatus {
     pub fn get(&self, engine: AgentEngine) -> Option<&EngineReadiness> {
-        match engine {
-            AgentEngine::Claude => self.claude.as_ref(),
-            AgentEngine::Codex => self.codex.as_ref(),
-            AgentEngine::Opencode => self.opencode.as_ref(),
-            AgentEngine::Other(name) => self.others.get(name),
-        }
+        self.0.get(&engine)
+    }
+
+    pub fn get_mut(&mut self, engine: AgentEngine) -> Option<&mut EngineReadiness> {
+        self.0.get_mut(&engine)
     }
 
     pub fn set(&mut self, engine: AgentEngine, readiness: Option<EngineReadiness>) {
-        match engine {
-            AgentEngine::Claude => self.claude = readiness,
-            AgentEngine::Codex => self.codex = readiness,
-            AgentEngine::Opencode => self.opencode = readiness,
-            AgentEngine::Other(name) => {
-                match readiness {
-                    Some(readiness) => self.others.insert(name.to_string(), readiness),
-                    None => self.others.remove(name),
-                };
-            }
-        }
+        match readiness {
+            Some(readiness) => self.0.insert(engine, readiness),
+            None => self.0.remove(&engine),
+        };
+    }
+
+    /// The engines named, this build's in picker order, then any only a newer build knows.
+    pub fn engines(&self) -> impl Iterator<Item = AgentEngine> + '_ {
+        self.0.keys().copied()
+    }
+}
+
+impl FromIterator<(AgentEngine, EngineReadiness)> for EngineStatus {
+    fn from_iter<I: IntoIterator<Item = (AgentEngine, EngineReadiness)>>(entries: I) -> Self {
+        EngineStatus(entries.into_iter().collect())
+    }
+}
+
+impl Serialize for EngineStatus {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.0.iter().map(|(engine, readiness)| (engine.as_str(), readiness)))
+    }
+}
+
+/// Keeps an engine only a newer build knows by its own id.
+impl<'de> Deserialize<'de> for EngineStatus {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let named = BTreeMap::<String, Option<EngineReadiness>>::deserialize(deserializer)?;
+        Ok(named.into_iter().filter_map(|(engine, readiness)| Some((AgentEngine::read(&engine), readiness?))).collect())
     }
 }
 
@@ -202,12 +340,7 @@ pub struct EngineNotice {
 }
 
 pub fn engine_label(engine: AgentEngine) -> &'static str {
-    match engine {
-        AgentEngine::Claude => "Claude",
-        AgentEngine::Codex => "Codex",
-        AgentEngine::Opencode => "OpenCode",
-        AgentEngine::Other(name) => name,
-    }
+    engine.label()
 }
 
 /// What is wrong with this engine on this machine, or nothing when it is fine.
@@ -321,14 +454,6 @@ pub fn efforts(ids: &[AgentEffort]) -> Vec<EffortSpec> {
     AGENT_EFFORTS.iter().filter(|id| ids.contains(id)).map(|id| effort_spec(*id)).collect()
 }
 
-fn efforts_through_max() -> Vec<EffortSpec> {
-    efforts(&[AgentEffort::Max, AgentEffort::Xhigh, AgentEffort::High, AgentEffort::Medium, AgentEffort::Low])
-}
-
-fn efforts_through_ultra() -> Vec<EffortSpec> {
-    efforts(&AGENT_EFFORTS)
-}
-
 pub fn effort_label(value: AgentEffort) -> &'static str {
     match value {
         AgentEffort::Ultra => "Ultra",
@@ -341,43 +466,27 @@ pub fn effort_label(value: AgentEffort) -> &'static str {
     }
 }
 
-/// The default context window in Codex's model catalogue, used until the server reports its own.
-const CODEX_CONTEXT_WINDOW: i64 = 272_000;
-
-fn model(id: &str, label: &str, description: &str, context_window: i64, efforts: Vec<EffortSpec>) -> ModelSpec {
-    ModelSpec { id: id.into(), label: label.into(), description: description.into(), context_window, efforts, manual_compaction: Some(true), provider: None }
-}
-
 fn built_in_list(engine: AgentEngine) -> Vec<ModelSpec> {
-    match engine {
-        AgentEngine::Claude => vec![
-            model("fable", "Fable", "Most capable for demanding work", 1_000_000, efforts_through_max()),
-            model("opus", "Opus", "Best for complex reasoning", 1_000_000, efforts_through_max()),
-            model("sonnet", "Sonnet", "Balanced speed and capability", 1_000_000, efforts_through_max()),
-            model("haiku", "Haiku", "Fastest for lightweight work", 200_000, Vec::new()),
-        ],
-        AgentEngine::Codex => vec![
-            model("gpt-6-astra", "Astra", "Most capable model for complex, demanding work", CODEX_CONTEXT_WINDOW, efforts_through_ultra()),
-            model("gpt-6.1-sol", "Sol", "Strong coding model for everyday work", CODEX_CONTEXT_WINDOW, efforts_through_ultra()),
-            model("gpt-6.1-terra", "Terra", "Balanced agentic coding model for everyday work", CODEX_CONTEXT_WINDOW, efforts_through_ultra()),
-            model("gpt-6-luna", "Luna", "Efficient model for lightweight work", CODEX_CONTEXT_WINDOW, efforts_through_max()),
-        ],
-        AgentEngine::Opencode | AgentEngine::Other(_) => Vec::new(),
-    }
+    let spec = |model: &BuiltInModel| ModelSpec {
+        id: model.id.into(),
+        label: model.label.into(),
+        description: model.description.into(),
+        context_window: model.context_window,
+        efforts: efforts(model.efforts),
+        manual_compaction: model.manual_compaction.then_some(true),
+        provider: None,
+    };
+    engine.spec().models.iter().map(spec).collect()
 }
 
 /// Whether the engine ships knowing its models, or only learns them once it names them.
 fn models_built_in(engine: AgentEngine) -> bool {
-    !matches!(engine, AgentEngine::Opencode)
+    !engine.spec().names_own_models
 }
 
 /// The default this build ships for the engine; none for one whose models are only known once it names them.
 pub fn default_model_for(engine: AgentEngine) -> Option<&'static str> {
-    match engine {
-        AgentEngine::Claude => Some(DEFAULT_MODEL),
-        AgentEngine::Codex => Some("gpt-6.1-sol"),
-        AgentEngine::Opencode | AgentEngine::Other(_) => None,
-    }
+    engine.spec().default_model
 }
 
 pub fn default_effort_for(_engine: AgentEngine) -> AgentEffort {
@@ -397,13 +506,9 @@ pub fn is_model_id(value: &str) -> bool {
         && !OBJECT_PROTOTYPE_NAMES.contains(&value)
 }
 
-/// Models the catalogue replaced, each read as its successor wherever a saved setting still names it.
+/// The model a retired id is now read as; any other id is itself.
 pub fn current_model(value: &str) -> &str {
-    match value {
-        "gpt-5.6-sol" | "gpt-6-sol" => "gpt-6.1-sol",
-        "gpt-5.6-luna" => "gpt-6-luna",
-        other => other,
-    }
+    RETIRED_MODELS.iter().find(|(retired, _)| *retired == value).map(|(_, current)| *current).unwrap_or(value)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -697,7 +802,7 @@ mod tests {
     }
 
     fn codex_naming(catalog: Vec<ModelSpec>) -> EngineStatus {
-        EngineStatus { codex: Some(EngineReadiness { catalog: Some(catalog), ..EngineReadiness::ready() }), ..EngineStatus::default() }
+        [(AgentEngine::Codex, EngineReadiness { catalog: Some(catalog), ..EngineReadiness::ready() })].into_iter().collect()
     }
 
     #[test]
@@ -722,6 +827,27 @@ mod tests {
         assert!(model_supports_manual_compaction(catalog, AgentEngine::Codex, "gpt-6-astra"));
         assert!(model_supports_manual_compaction(catalog, AgentEngine::Claude, "opus"));
         assert!(!model_supports_manual_compaction(catalog, AgentEngine::Claude, "gpt-6.1-sol"));
+    }
+
+    #[test]
+    fn a_signed_out_engine_needs_no_notice_but_a_behind_one_does() {
+        assert_eq!(engine_notice(AgentEngine::Codex, &EngineReadiness::of(EngineAccess::SignedOut)), None);
+        let behind = EngineReadiness { version: Some("2.0.0".into()), required: Some("2.1.0".into()), fix: Some("claude update".into()), ..EngineReadiness::ready() };
+        let notice = engine_notice(AgentEngine::Claude, &behind).unwrap();
+        assert!(!notice.blocking && notice.updatable);
+        assert_eq!(notice.message, "Claude 2.0.0 is behind 2.1.0, so some models are hidden.");
+        let empty = EngineReadiness { catalog: Some(Vec::new()), ..EngineReadiness::ready() };
+        assert!(engine_notice(AgentEngine::Opencode, &empty).unwrap().blocking);
+    }
+
+    #[test]
+    fn engine_status_is_keyed_by_engine_id_and_keeps_unknown_engines() {
+        let wire = serde_json::json!({ "codex": { "access": "signed-out" }, "claude": { "access": "ready" }, "opencode": null, "gemini": { "access": "missing" } });
+        let status: EngineStatus = serde_json::from_value(wire).unwrap();
+        assert_eq!(status.get(AgentEngine::Codex).map(|readiness| readiness.access), Some(EngineAccess::SignedOut));
+        assert_eq!(status.get(AgentEngine::Opencode), None);
+        assert_eq!(status.engines().map(AgentEngine::as_str).collect::<Vec<_>>(), ["claude", "codex", "gemini"]);
+        assert_eq!(serde_json::to_string(&status).unwrap(), r#"{"claude":{"access":"ready"},"codex":{"access":"signed-out"},"gemini":{"access":"missing"}}"#);
     }
 
     #[test]

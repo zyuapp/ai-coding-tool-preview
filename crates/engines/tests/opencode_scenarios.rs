@@ -58,7 +58,7 @@ async fn denies_interrupts_steers_and_asks_on_one_thread() {
     let (dir, root) = workspace("act-opencode-scenarios-");
     let provider = OpenCodeAgentProvider::new(SessionPool::default(), None);
     let rec = Recorder::new();
-    let turn = |prompt: &str| Turn::new(AgentEngine::OpenCode, &model, prompt);
+    let turn = |prompt: &str| Turn::new(AgentEngine::Opencode, &model, prompt);
 
     let mut denied = turn("Use your bash tool to run `echo denied-test > d.txt`. If it is refused, reply with the single word refused.")
         .policy(ExecutionPolicy::Confirm);

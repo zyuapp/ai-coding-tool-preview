@@ -2,7 +2,8 @@
 
 use serde_json::{json, Value};
 
-use crate::catalog::{efforts, is_model_id};
+use act_core::domain::engine::{efforts, is_model_id};
+
 use crate::types::{AgentEffort, ModelSpec};
 
 /// An app model id is the provider and the provider's id joined, as OpenCode writes it.
@@ -64,9 +65,9 @@ pub fn open_code_catalog(
                     .unwrap_or_default()
                     .to_string(),
                 description: model["id"].as_str().unwrap_or_default().to_string(),
-                context_window: model["limit"]["context"].as_u64().unwrap_or(0),
+                context_window: model["limit"]["context"].as_u64().unwrap_or(0) as i64,
                 efforts: efforts(&offered),
-                manual_compaction: true,
+                manual_compaction: Some(true),
                 provider: Some(names(model["providerID"].as_str().unwrap_or_default())),
             })
         })

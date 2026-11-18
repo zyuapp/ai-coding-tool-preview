@@ -329,7 +329,7 @@ pub fn thread_view<'a>(shown: &'a WorkspaceState, window: &WorkspaceState) -> Th
         engine_label: engine_label(engine),
         engine_locked: current.is_some(),
         engine_access: AGENT_ENGINES.iter().map(|engine| (*engine, shown.engine_readiness(*engine))).collect(),
-        capabilities: capabilities.clone(),
+        capabilities,
         subagents: if capabilities.subagents { current.and_then(|thread| shown.subagents.get(&thread.id)).map(Vec::as_slice).unwrap_or(&[]) } else { &[] },
         workflows: if capabilities.workflows { shown.current_id.as_deref().and_then(|id| shown.workflows.get(id)).map(Vec::as_slice).unwrap_or(&[]) } else { &[] },
         coordinating: role.is_some(),

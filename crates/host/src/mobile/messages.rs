@@ -156,7 +156,7 @@ pub fn is_computer_query(value: &Value) -> bool {
         "diff-patch" => is_id(field("workspaceId")) && is_diff_range(field("range")) && is_string(field("path"), MAX_PATH_LENGTH) && optional(field("previousPath"), |value| is_string(value, MAX_PATH_LENGTH)) && optional(field("ignoreWhitespace"), is_bool),
         "branches" => is_id(field("workspaceId")),
         "commits" => is_id(field("workspaceId")) && field("hashes").and_then(Value::as_array).is_some_and(|hashes| !hashes.is_empty() && hashes.len() <= COMMIT_CHECKS && hashes.iter().all(|hash| hash.as_str().is_some_and(|hash| (7..=40).contains(&hash.len()) && hash.bytes().all(|byte| byte.is_ascii_hexdigit())))),
-        "commands" => is_id(field("workspaceId")) && matches!(field("engine").and_then(Value::as_str), Some("claude" | "codex" | "opencode")),
+        "commands" => is_id(field("workspaceId")) && field("engine").and_then(Value::as_str).and_then(act_core::domain::engine::AgentEngine::parse).is_some(),
         _ => false,
     }
 }

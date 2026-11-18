@@ -129,12 +129,6 @@ impl RunToolkit for AppToolkit {
     }
 
     fn brief(&self, offers: Offers<'_>, dialect: &BriefDialect, run: &BriefRun<'_>) -> Vec<String> {
-        let dialect = act_host::tools::BriefDialect {
-            native_work: dialect.native_work.to_string(),
-            native_worktree: dialect.native_worktree.map(str::to_string),
-            coordinator_reads: dialect.coordinator_reads.to_string(),
-            own_checkout_commits: dialect.own_checkout_commits.map(str::to_string),
-        };
         let run = act_host::tools::BriefRun {
             coordination_role: run.coordination_role.map(|role| match role {
                 CoordinationRole::Coordinator => ToolRole::Coordinator,
@@ -150,7 +144,7 @@ impl RunToolkit for AppToolkit {
                 let left: Option<Vec<act_host::tools::BoundTool>> = offers(server.name, None).then(|| {
                     served.iter().find(|(name, _)| *name == server.name).map(|(_, tools)| tools.iter().filter(|tool| offers(server.name, Some(&tool.name))).cloned().collect()).unwrap_or_default()
                 });
-                (server.brief)(&act_host::tools::server::Offers::new(left.as_deref()), &dialect, &run)
+                (server.brief)(&act_host::tools::server::Offers::new(left.as_deref()), dialect, &run)
             })
             .collect()
     }

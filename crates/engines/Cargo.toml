@@ -5,6 +5,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+act_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

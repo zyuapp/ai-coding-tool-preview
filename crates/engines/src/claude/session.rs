@@ -508,7 +508,7 @@ impl ClaudeSession {
         };
         if effort_changed {
             let _ = query
-                .apply_flag_settings(json!({ "effortLevel": effort.map(AgentEffort::id) }))
+                .apply_flag_settings(json!({ "effortLevel": effort.map(AgentEffort::as_str) }))
                 .await;
         }
     }

@@ -162,7 +162,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
     let t = &theme.tokens;
     let m = &theme.metrics;
     let mono = theme.typography.mono_family.clone();
-    let engine = state.current_thread().map(|thread| act_core::domain::engine::engine_label(thread.engine)).unwrap_or("Claude");
+    let engine = state.current_thread().map_or(state.draft_engine, |thread| thread.engine).label();
     let workspace_id = state.current_thread().and_then(|thread| act_core::workspace::location::thread_workspace_id(state, Some(thread)));
     let review = &mut root.composer.review;
     review.open = true;
@@ -428,7 +428,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut gpui::Window
                     cx.notify();
                 }
                 "enter" | "space" if targets_step => {
-                    let engine = state.current_thread().map(|thread| act_core::domain::engine::engine_label(thread.engine)).unwrap_or("Claude");
+                    let engine = state.current_thread().map_or(state.draft_engine, |thread| thread.engine).label();
                     let (step, target, ..) = targets(engine)[root.composer.review.focused_target % 4].clone();
                     match (target, step) {
                         (Some(target), _) => root.review(target, cx),

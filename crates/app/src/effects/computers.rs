@@ -187,8 +187,8 @@ impl QueryHost for Queries {
 
     fn commands(&self, root: String, projectless: bool, engine: String) -> BoxFuture<'static, Result<Value, String>> {
         async move {
-            let Ok(engine) = serde_json::from_value::<act_engines::types::AgentEngine>(json!(engine)) else { return Ok(json!({ "status": "error", "message": "Unknown engine." })) };
-            match act_engines::engines::engine_commands(engine, &root, projectless).await {
+            let Some(engine) = act_core::domain::engine::AgentEngine::parse(&engine).and_then(act_engines::engines::engine) else { return Ok(json!({ "status": "error", "message": "Unknown engine." })) };
+            match engine.commands(&root, projectless).await {
                 Ok(commands) => Ok(json!({ "status": "available", "commands": commands })),
                 Err(error) => Ok(json!({ "status": "error", "message": error.to_string() })),
             }

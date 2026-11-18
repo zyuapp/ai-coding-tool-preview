@@ -42,7 +42,7 @@ fn run_input(
             message: "off".into(),
         },
         policy,
-        engine: AgentEngine::OpenCode,
+        engine: AgentEngine::Opencode,
         model: model.into(),
         effort: AgentEffort::Low,
         fast_mode: None,

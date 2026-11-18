@@ -124,7 +124,7 @@ fn run_options(input: &RunInput, brief: &RunBrief) -> anyhow::Result<ClaudeOptio
         grants_tool(ToolReach::Workspace, Some(input.scope()));
     options.model = Some(input.model.clone());
     if model_takes_effort(AgentEngine::Claude, &input.model) {
-        options.effort = Some(claude_effort(input.effort).id().into());
+        options.effort = Some(claude_effort(input.effort).as_str().into());
     }
     options.betas = vec!["context-1m-2025-08-07".into()];
     if drives_chrome(input) {

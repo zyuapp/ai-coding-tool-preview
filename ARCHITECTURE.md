@@ -31,6 +31,11 @@ Same as the original:
 
 Dependencies point downward only: app → browser/devices/ui/markdown/terminal/host → engines/store → core.
 
+## Engines
+- `act_core::domain::engine` is the catalogue: each `AgentEngine`'s `EngineSpec` (id, name, built-in models, default model, capabilities such as fast mode, review and sign-in). Validation, stored records, views, the host's tools and the engines all read it; wire names are the spec ids.
+- `act_engines::engines::Engine` is what an engine does: its provider for a channel, readiness, updates, commands, titles, plan usage, sign-in, subagent settings. `engines::engine` maps each `AgentEngine` to its implementation; `EngineRouter` and `EngineAccessHost` go through it.
+- Adding an engine is a variant and an `EngineSpec` in core and an `Engine` in `act_engines`; the compiler names every match that must learn it (icons, tool-call descriptions).
+
 ## Shared state
 The window holds one `Rc<WorkspaceState>`; the reducer changes it in place. Threads and messages are shared between versions (`act_core::shared::Shared`, copy-on-write), so snapshots (the persistence baseline, the coordination facts taken before an input) copy pointers, not threads. `Workspace::revision` moves on every change and `outline_revision` on every change but text streaming into existing messages; views key what they derive on these and keep only weak handles to the state across updates.
 

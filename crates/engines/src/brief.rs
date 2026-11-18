@@ -2,6 +2,8 @@
 
 use serde_json::{json, Value};
 
+pub use act_core::domain::engine::BriefDialect;
+
 use crate::provider::RunInput;
 use crate::tools::{offered_on, ServedToolSet};
 use crate::types::{ComputerUseRunConfig, CoordinationRole, RunChannel};
@@ -16,19 +18,6 @@ pub const SIDE_CHAT_BOUNDARY: &str = include_str!("text/side_chat_boundary.txt")
 pub fn needs_side_chat_boundary(input: &RunInput) -> bool {
     input.channel == RunChannel::Side
         && (input.continuation_value().is_none() || input.fork_continuation)
-}
-
-/// The few words an engine needs said its own way.
-#[derive(Debug, Clone, Default)]
-pub struct BriefDialect {
-    /// The engine's own sessions and helpers, which an app thread ID never names.
-    pub native_work: &'static str,
-    /// The engine's own way to make a worktree.
-    pub native_worktree: Option<&'static str>,
-    /// How a coordinator reads on this engine.
-    pub coordinator_reads: &'static str,
-    /// How a member in a checkout of its own commits there, where the sandbox gets in the way.
-    pub own_checkout_commits: Option<&'static str>,
 }
 
 /// What a server's brief may read of the run besides what it was offered.

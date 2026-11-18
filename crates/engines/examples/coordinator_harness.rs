@@ -5,10 +5,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use act_engines::claude::ClaudeAgentProvider;
-use act_engines::codex::{CodexAgentProvider, CodexProviderOptions};
 use act_engines::coordinator::{CoordinatorOptions, RunCoordinator, StartRun};
-use act_engines::opencode::OpenCodeAgentProvider;
 use act_engines::provider::AgentProvider;
 use act_engines::session_pool::SessionPool;
 use act_engines::types::*;
@@ -20,14 +17,9 @@ async fn main() {
     let engine: AgentEngine =
         serde_json::from_value(s["engine"].clone()).unwrap_or(AgentEngine::Claude);
     let pool = SessionPool::default();
-    let provider: Arc<dyn AgentProvider> = match engine {
-        AgentEngine::Claude => Arc::new(ClaudeAgentProvider::new(pool)),
-        AgentEngine::Codex => Arc::new(CodexAgentProvider::new(
-            pool,
-            CodexProviderOptions::new(None, None),
-        )),
-        AgentEngine::OpenCode => Arc::new(OpenCodeAgentProvider::new(pool, None)),
-    };
+    let provider: Arc<dyn AgentProvider> = act_engines::engines::engine(engine)
+        .expect("an engine this build runs")
+        .provider(pool, None, None);
     let slot: Arc<Mutex<Option<RunCoordinator>>> = Arc::default();
     let (done_tx, mut done_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let answer = s["answer"].as_str().unwrap_or("Blue").to_string();

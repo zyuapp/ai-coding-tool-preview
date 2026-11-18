@@ -379,15 +379,15 @@ pub async fn resolve_run_workspace(host: &Arc<Host>, work: EffectWork) {
 
 /// A title costs a model turn, so it lands on its own rather than holding back the send that asked for it.
 pub async fn suggest_title(sink: &Sink, task_id: String, engine: AgentEngine, model: String, text: String, attachments: Vec<String>) {
-    let Ok(engine) = convert(&engine) else { return };
-    if let Some(title) = act_engines::engines::suggest_title(engine, &text, &attachments, Some(&model)).await {
+    let Some(engine) = act_engines::engines::engine(engine) else { return };
+    if let Some(title) = engine.suggest_title(&text, &attachments, Some(&model)).await {
         sink.event(WorkspaceEvent::TitleSuggested { task_id, title });
     }
 }
 
 pub async fn subagent_metadata(sink: &Sink, task_id: String, subagent_id: String, engine: AgentEngine, session_id: Option<String>) {
-    let Ok(engine) = convert(&engine) else { return };
-    let Some(metadata) = act_engines::engines::subagent_metadata(engine, &subagent_id, session_id.as_deref()).await else { return };
+    let Some(engine) = act_engines::engines::engine(engine) else { return };
+    let Some(metadata) = engine.subagent_metadata(&subagent_id, session_id.as_deref()).await else { return };
     let Ok(Value::Object(mut fields)) = serde_json::to_value(&metadata) else { return };
     if !fields.contains_key("model") && !fields.contains_key("effort") {
         return;

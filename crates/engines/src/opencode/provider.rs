@@ -100,7 +100,7 @@ impl AgentProvider for OpenCodeAgentProvider {
         continuation: Option<Continuation>,
         archived: bool,
     ) -> bool {
-        let handle = handle_for(continuation.as_ref(), AgentEngine::OpenCode).map(String::from);
+        let handle = handle_for(continuation.as_ref(), AgentEngine::Opencode).map(String::from);
         if continuation.is_some() && handle.is_none() {
             return false;
         }

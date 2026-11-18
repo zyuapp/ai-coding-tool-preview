@@ -6,46 +6,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The backends that can run a task.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentEngine {
-    Claude,
-    Codex,
-    #[serde(rename = "opencode")]
-    OpenCode,
-}
-
-impl AgentEngine {
-    /// Every engine, in the order pickers list them.
-    pub const ALL: [AgentEngine; 3] = [
-        AgentEngine::Claude,
-        AgentEngine::Codex,
-        AgentEngine::OpenCode,
-    ];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            AgentEngine::Claude => "claude",
-            AgentEngine::Codex => "codex",
-            AgentEngine::OpenCode => "opencode",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            AgentEngine::Claude => "Claude",
-            AgentEngine::Codex => "Codex",
-            AgentEngine::OpenCode => "OpenCode",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<AgentEngine> {
-        AgentEngine::ALL
-            .into_iter()
-            .find(|engine| engine.id() == value)
-    }
-}
+pub use act_core::domain::engine::{
+    AgentEngine, EffortSpec, EngineAccess, EngineReadiness, ModelSpec,
+};
+pub use act_core::domain::run::AgentEffort;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -65,58 +29,6 @@ impl ExecutionPolicy {
         ExecutionPolicy::Autonomous,
         ExecutionPolicy::Bypass,
     ];
-}
-
-/// How much reasoning a run asks for, deepest last in declaration order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentEffort {
-    Low,
-    Medium,
-    High,
-    Xhigh,
-    Max,
-    Ultra,
-}
-
-impl AgentEffort {
-    /// Every effort, deepest first, which is the order pickers list them in.
-    pub const DEEPEST_FIRST: [AgentEffort; 6] = [
-        AgentEffort::Ultra,
-        AgentEffort::Max,
-        AgentEffort::Xhigh,
-        AgentEffort::High,
-        AgentEffort::Medium,
-        AgentEffort::Low,
-    ];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            AgentEffort::Low => "low",
-            AgentEffort::Medium => "medium",
-            AgentEffort::High => "high",
-            AgentEffort::Xhigh => "xhigh",
-            AgentEffort::Max => "max",
-            AgentEffort::Ultra => "ultra",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            AgentEffort::Ultra => "Ultra",
-            AgentEffort::Max => "Max",
-            AgentEffort::Xhigh => "Extra high",
-            AgentEffort::High => "High",
-            AgentEffort::Medium => "Medium",
-            AgentEffort::Low => "Low",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<AgentEffort> {
-        AgentEffort::DEEPEST_FIRST
-            .into_iter()
-            .find(|effort| effort.id() == value)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -143,7 +55,7 @@ pub struct Continuation {
 impl Continuation {
     pub fn new(engine: AgentEngine, value: impl Into<String>) -> Self {
         Continuation {
-            provider: engine.id().to_string(),
+            provider: engine.as_str().to_string(),
             value: value.into(),
         }
     }
@@ -152,7 +64,7 @@ impl Continuation {
 /// The handle a continuation holds for `engine`; another engine's continuation means nothing to it.
 pub fn handle_for(continuation: Option<&Continuation>, engine: AgentEngine) -> Option<&str> {
     continuation
-        .filter(|c| c.provider == engine.id())
+        .filter(|c| c.provider == engine.as_str())
         .map(|c| c.value.as_str())
 }
 
@@ -587,72 +499,6 @@ pub enum RunOperation {
     Review {
         target: Value,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum EngineAccess {
-    Ready,
-    SignedOut,
-    Unavailable,
-    Missing,
-    Outdated,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EffortSpec {
-    pub id: AgentEffort,
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
-    pub delegates: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelSpec {
-    pub id: String,
-    pub label: String,
-    pub description: String,
-    pub context_window: u64,
-    pub efforts: Vec<EffortSpec>,
-    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
-    pub manual_compaction: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider: Option<String>,
-}
-
-/// What the app found out about an engine on this machine.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EngineReadiness {
-    pub access: EngineAccess,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub required: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub latest: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fix: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub models: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub catalog: Option<Vec<ModelSpec>>,
-}
-
-impl EngineReadiness {
-    pub fn of(access: EngineAccess) -> Self {
-        EngineReadiness {
-            access,
-            version: None,
-            required: None,
-            latest: None,
-            fix: None,
-            models: None,
-            catalog: None,
-        }
-    }
 }
 
 /// A slash command or skill an engine offers the composer.

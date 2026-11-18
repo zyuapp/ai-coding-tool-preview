@@ -65,7 +65,13 @@ mod tests {
 }
 
 /// The face `system` mono stands for: the first of the platform's monospace families installed.
+/// Listing the installed fonts takes milliseconds, so the answer is found once per launch.
 pub fn system_mono_family(cx: &App) -> &'static str {
+    static FAMILY: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    FAMILY.get_or_init(|| find_system_mono_family(cx))
+}
+
+fn find_system_mono_family(cx: &App) -> &'static str {
     let names = cx.text_system().all_font_names();
     if cfg!(target_os = "macos") {
         // Chromium skips `ui-monospace`, so `--system-mono-font` is SFMono-Regular where SF Mono is

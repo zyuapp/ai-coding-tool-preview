@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use act_browser::{BrowserHost, BrowserScope, BrowserWorkspace, PanelBridge};
+use act_browser::{BrowserEvent, BrowserHost, BrowserScope, BrowserWorkspace, PanelBridge};
 use act_core::effects::EffectWork;
 use act_core::events::WorkspaceInput;
 use act_core::CommandResult;
@@ -74,6 +74,12 @@ impl BrowserTools {
 impl Workspace {
     /// Takes the window's browser host, and starts the simulator host beside it.
     pub fn install_browser(&mut self, host: Entity<BrowserHost>, cx: &mut Context<Self>) {
+        cx.subscribe(&host, |workspace, _, event: &BrowserEvent, cx| {
+            if let Some(event) = act_browser::workspace_event(event) {
+                workspace.dispatch(WorkspaceInput::Event(event), cx);
+            }
+        })
+        .detach();
         let remote = host.update(cx, |host, cx| host.remote(cx));
         let (requests, mut incoming) = mpsc::unbounded::<Request>();
         let _ = BROWSER_TOOLS.set(BrowserTools { requests, remote });

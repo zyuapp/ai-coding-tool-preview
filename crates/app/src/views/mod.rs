@@ -36,7 +36,6 @@ pub mod mark_render;
 pub mod model_library;
 pub mod parts;
 pub mod needs_you;
-pub mod pull_request_reads;
 pub mod queued_row;
 pub mod review_picker;
 pub mod ring;

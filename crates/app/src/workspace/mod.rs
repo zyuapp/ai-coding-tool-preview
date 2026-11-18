@@ -4,13 +4,15 @@
 pub mod devices;
 mod history;
 mod persistence;
+mod plan_usage_reads;
+mod pull_request_reads;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use act_core::effects::{Effect, EffectWork};
-use act_core::events::{AgentEvent, WorkspaceEvent, WorkspaceInput};
+use act_core::events::{AgentEvent, ViewEvent, WorkspaceEvent, WorkspaceInput};
 use act_core::state::{shown_thread_tab, WorkspaceState, NEW_THREAD_DRAFT};
 use act_core::workspace::preferences::read_view_preferences;
 use act_core::{reduce_transition, AppCommand};
@@ -23,6 +25,8 @@ use crate::effects::tracking::Tracker;
 use crate::effects::{Host, Inbound, StoreReply};
 use history::Reply;
 use persistence::Persistence;
+use plan_usage_reads::PlanUsageReads;
+use pull_request_reads::PullRequestReads;
 
 /// What the window's own views are asked to do beside the state change: effects that belong to
 /// a view rather than to the host.
@@ -48,6 +52,8 @@ pub struct Workspace {
     toast_timers: HashMap<i64, Task<()>>,
     environment_poll: Option<Task<()>>,
     environment_key: Option<String>,
+    plan_usage: PlanUsageReads,
+    pull_requests: PullRequestReads,
     started: bool,
     /// Coalesces what paired computers and phones are told.
     outside_timer: Option<Task<()>>,
@@ -86,6 +92,12 @@ pub fn dispatch(command: AppCommand, cx: &mut App) {
     workspace.update(cx, |workspace, cx| workspace.request(WorkspaceInput::Command(command), Reply::None, cx));
 }
 
+/// Sends what a view found, such as a search's count, from any view.
+pub fn report(event: ViewEvent, cx: &mut App) {
+    let workspace = workspace(cx);
+    workspace.update(cx, |workspace, cx| workspace.dispatch(event.into(), cx));
+}
+
 impl EventEmitter<Surface> for Workspace {}
 
 impl Workspace {
@@ -107,6 +119,8 @@ impl Workspace {
             toast_timers: HashMap::new(),
             environment_poll: None,
             environment_key: None,
+            plan_usage: PlanUsageReads::default(),
+            pull_requests: PullRequestReads::default(),
             started: false,
             outside_timer: None,
             revision: 0,
@@ -276,8 +290,45 @@ impl Workspace {
         self.poll_environment(cx);
         match streamed {
             Some(tasks) => cx.emit(Surface::Streamed { tasks }),
-            None => cx.notify(),
+            None => {
+                self.ask_reads(cx);
+                cx.notify();
+            }
         }
+    }
+
+    /// Asks for what the views on screen show and only a read keeps current: plan limits and pull
+    /// requests.
+    fn ask_reads(&mut self, cx: &mut Context<Self>) {
+        let mut commands = self.pull_requests.due_reads(&self.state);
+        if self.plan_usage.due(&self.state) {
+            commands.push(AppCommand::UsageRead { everywhere: None });
+        }
+        self.poll_pull_requests(cx);
+        if !commands.is_empty() {
+            cx.defer(move |cx| {
+                for command in commands {
+                    dispatch(command, cx);
+                }
+            });
+        }
+    }
+
+    fn poll_pull_requests(&mut self, cx: &mut Context<Self>) {
+        if !self.pull_requests.needs_poll() {
+            return;
+        }
+        self.pull_requests.poll = Some(cx.spawn(async |this, cx| {
+            cx.background_executor().timer(Duration::from_millis(act_core::domain::pull_request::PULL_REQUEST_POLL_MS as u64)).await;
+            let _ = this.update(cx, |workspace, cx| {
+                workspace.pull_requests.poll = None;
+                let commands = workspace.pull_requests.due_reads(&workspace.state);
+                workspace.poll_pull_requests(cx);
+                for command in commands {
+                    workspace.command(command, cx);
+                }
+            });
+        }));
     }
 
     pub fn command(&mut self, command: AppCommand, cx: &mut Context<Self>) {

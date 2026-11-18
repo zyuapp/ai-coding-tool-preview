@@ -1,9 +1,8 @@
 //! The browser tab: act_browser's panel mounted in the dock, the host that owns the window's pages,
 //! and the find bar placed above the page (BrowserPanel.tsx, browser-view.ts).
 
-use act_browser::{BrowserEvent, BrowserHost, BrowserPanel};
+use act_browser::{BrowserHost, BrowserPanel};
 use act_core::domain::platform::BrowserTab;
-use act_core::events::WorkspaceInput;
 use act_core::state::WorkspaceState;
 use gpui::{div, prelude::*, px, AnyElement, AnyView, App, Context, Entity, Render, WeakEntity, Window};
 
@@ -21,16 +20,9 @@ pub struct BrowserDock {
     fronted: Option<String>,
 }
 
-/// Starts the window's pages and hands their effects and events to the workspace.
+/// Starts the window's pages and hands them to the workspace.
 pub fn install(root: &mut Root, workspace: &Entity<Workspace>, window: &mut Window, cx: &mut Context<Root>) {
     let host = cx.new(|cx| BrowserHost::new(window, cx));
-    let target = workspace.downgrade();
-    cx.subscribe(&host, move |_, _, event: &BrowserEvent, cx| {
-        if let Some(event) = act_browser::workspace_event(event) {
-            let _ = target.update(cx, |workspace, cx| workspace.dispatch(WorkspaceInput::Event(event), cx));
-        }
-    })
-    .detach();
     workspace.update(cx, |workspace, cx| workspace.install_browser(host.clone(), cx));
     root.dock.browser.host = Some(host);
 }

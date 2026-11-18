@@ -659,6 +659,24 @@ impl From<WorkspaceEvent> for WorkspaceInput {
     }
 }
 
+/// What a window reports besides its commands: the only events a view sends.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ViewEvent {
+    /// What a page or a shell found, counted by whoever holds the text.
+    FindResults { target: FindTarget, results: FindResults },
+    /// The keystroke settings were waiting for, or None when Escape gave up.
+    ShortcutCaptured { binding: Option<String> },
+}
+
+impl From<ViewEvent> for WorkspaceInput {
+    fn from(event: ViewEvent) -> Self {
+        WorkspaceInput::Event(match event {
+            ViewEvent::FindResults { target, results } => WorkspaceEvent::FindResults { target, results },
+            ViewEvent::ShortcutCaptured { binding } => WorkspaceEvent::ShortcutCaptured { binding },
+        })
+    }
+}
+
 impl WorkspaceInput {
     /// The wire name of the input, as its `type` field carries it.
     pub fn type_name(&self) -> String {

@@ -13,7 +13,7 @@ use std::rc::Rc;
 use act_core::domain::conversation::{Annotation, AnnotationAnchor, DiffSide};
 use act_core::domain::diff::{comment_quote, diff_rows, DiffHunk, file_fingerprint, folded_for_size, hunk_text, hunk_text_index, line_on, parse_file_patch, range_key, split_rows, DiffFile, DiffFileStatus, DiffFileSummary, DiffLineKind, DiffMode, DiffRange, DiffRow, SplitRow};
 use act_core::domain::find::{match_offsets, review_hits, FindResults, FindTarget, ReviewFile, ReviewHit};
-use act_core::events::{ChangedFilesResult, DiffSummaryResult, WorkspaceEvent, WorkspaceInput};
+use act_core::events::{ChangedFilesResult, DiffSummaryResult, ViewEvent};
 use act_core::state::{diff_for, dock_subject, DiffState, DiffStateMode, WorkspaceState, DIFF_MODE_MENU};
 use act_core::view::find::find_view;
 use act_core::workspace::location::thread_workspace_id;
@@ -541,11 +541,6 @@ fn version_key(workspace_id: &str, range: &DiffRange, ignore_whitespace: bool, f
     format!("{workspace_id}|{}|{ignore_whitespace}|{}|{}", range_key(range), file.path, file_fingerprint(file))
 }
 
-fn event(event: WorkspaceEvent, cx: &mut App) {
-    let workspace = crate::workspace::workspace(cx);
-    workspace.update(cx, |workspace, cx| workspace.dispatch(WorkspaceInput::Event(event), cx));
-}
-
 /// What the review is about: the thread tab a coordinator is reviewing, else the dock's own thread.
 struct Subject {
     task_id: Option<String>,
@@ -969,7 +964,7 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
             root.dock.diff.reported = Some(report);
             let results = FindResults { matches: report.0, index: report.1, counting: report.2.then_some(true) };
             let target = FindTarget::Review { owner: owner.to_string() };
-            cx.defer(move |cx| event(WorkspaceEvent::FindResults { target, results }, cx));
+            cx.defer(move |cx| crate::workspace::report(ViewEvent::FindResults { target, results }, cx));
         }
         active_hit = (!needle.is_empty()).then(|| count.hits.get(at as usize).cloned()).flatten();
         if let Some(hit) = &active_hit {

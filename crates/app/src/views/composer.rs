@@ -2,7 +2,6 @@
 //! or Stop (ConversationComposer.tsx, WorkspaceComposer.tsx, composer-input.ts, composer-recall.ts).
 
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
 
 use act_core::domain::conversation::{OutgoingAttachment, RecalledMessage, MAX_ATTACHMENTS};
 use act_core::domain::engine::{engine_label, thread_model};
@@ -28,7 +27,6 @@ use super::root::Root;
 use super::{composer_attached, composer_dictation, composer_menus, composer_meters, composer_question, model_library, queued_row};
 use crate::workspace::dispatch;
 
-const PLAN_USAGE_POLL: Duration = Duration::from_secs(15 * 60);
 /// A paste past either of these rides as a pill rather than filling the prompt.
 const PASTE_PILL_LINES: usize = 12;
 const PASTE_PILL_CHARS: usize = 900;
@@ -63,8 +61,6 @@ pub struct ComposerState {
     text: String,
     pub caret: usize,
     focus_token: i64,
-    usage_asked: Option<Instant>,
-    was_running: bool,
     was_focused_window: bool,
     pub focused: bool,
     /// The prompt whose menus were dismissed, so typing on brings them back.
@@ -175,8 +171,6 @@ impl ComposerState {
             text: String::new(),
             caret: 0,
             focus_token: -1,
-            usage_asked: None,
-            was_running: false,
             was_focused_window: true,
             focused: false,
             dismissed: None,
@@ -312,16 +306,6 @@ impl ComposerState {
             self.menus.commands.stale = true;
         }
         self.was_focused_window = state.focused;
-        let running = state.current_id.as_ref().is_some_and(|id| state.active_runs.contains_key(id));
-        let due = match self.usage_asked {
-            None => true,
-            Some(at) => at.elapsed() >= PLAN_USAGE_POLL || (self.was_running && !running && at.elapsed() >= Duration::from_secs(30)),
-        };
-        self.was_running = running;
-        if due && state.restored {
-            self.usage_asked = Some(Instant::now());
-            cx.defer(|cx| dispatch(AppCommand::UsageRead { everywhere: None }, cx));
-        }
         let sends = state.dictation.sends;
         if self.sends_seen.is_some_and(|seen| seen != sends) {
             // Spoken words landed with a send asked of them, so the draft goes as Enter sends it.

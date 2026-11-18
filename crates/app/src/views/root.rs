@@ -66,7 +66,6 @@ pub struct Root {
     pub find: find_bar::FindState,
     pub session: session_panel::SessionState,
     pub library: Option<super::model_library::LibraryState>,
-    pub pull_requests: super::pull_request_reads::PullRequestReads,
     pub automation: Option<super::automation_panel::AutomationForm>,
     /// The thread whose name is being typed in its sidebar row or heading.
     pub renaming: Option<String>,
@@ -122,7 +121,6 @@ impl Root {
             find: find_bar::FindState::default(),
             session: session_panel::SessionState::default(),
             library: None,
-            pull_requests: Default::default(),
             automation: None,
             renaming: None,
             renaming_heading: None,
@@ -436,7 +434,6 @@ impl Render for Root {
         // The sidebar draws Priority and Threads always, each with its expanded toggle while open.
         act_ui::style::set_frame_expanded(state.sections.priority || state.sections.threads);
         crate::desktop_capture::sync(&state, cx);
-        super::pull_request_reads::sync(self, &state, cx);
         self.place_visuals(&state, window, cx);
         let theme = cx.theme().clone();
         let t = &theme.tokens;

@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use act_core::domain::settings_catalog::{rank_settings_jumps, settings_jump_options, settings_page_label, SettingsJumpOption};
 use act_core::domain::sidebar::{SettingsSection, SETTINGS_SECTIONS};
-use act_core::events::WorkspaceEvent;
+use act_core::events::ViewEvent;
 use act_core::state::WorkspaceState;
 use act_core::AppCommand;
 use act_ui::components::button::Button;
@@ -38,7 +38,7 @@ use gpui::{
 use super::common::{icon, ink_icon, rimmed};
 use super::letter_spacing::LetterSpacing;
 use super::root::Root;
-use crate::workspace::dispatch;
+use crate::workspace::{dispatch, report};
 
 /// A field a page owns while it is drawn.
 pub(super) struct Held {
@@ -244,11 +244,6 @@ fn mount(section: SettingsSection, cx: &mut App) {
     }
 }
 
-pub(super) fn event(event: WorkspaceEvent, cx: &mut App) {
-    let workspace = crate::workspace::workspace(cx);
-    workspace.update(cx, |workspace, cx| workspace.dispatch(act_core::events::WorkspaceInput::Event(event), cx));
-}
-
 /// While a shortcut row waits for a keystroke, every keystroke goes to it: Escape gives up, and one
 /// held with a modifier becomes the binding. Returns whether the keystroke was taken.
 pub fn capture_key(state: &WorkspaceState, keystroke: &gpui::Keystroke, cx: &mut App) -> bool {
@@ -256,14 +251,14 @@ pub fn capture_key(state: &WorkspaceState, keystroke: &gpui::Keystroke, cx: &mut
         return false;
     }
     if keystroke.key == "escape" {
-        event(WorkspaceEvent::ShortcutCaptured { binding: None }, cx);
+        report(ViewEvent::ShortcutCaptured { binding: None }, cx);
         return true;
     }
     let Some(stroke) = crate::keys::keystroke(keystroke) else { return false };
     if !(stroke.r#mod || stroke.ctrl || stroke.alt) {
         return false;
     }
-    event(WorkspaceEvent::ShortcutCaptured { binding: Some(act_core::domain::shortcuts::format_shortcut(&stroke)) }, cx);
+    report(ViewEvent::ShortcutCaptured { binding: Some(act_core::domain::shortcuts::format_shortcut(&stroke)) }, cx);
     true
 }
 

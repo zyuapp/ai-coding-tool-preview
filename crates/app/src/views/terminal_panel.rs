@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use act_core::domain::terminal::{TerminalSession, TerminalStatus};
 use act_core::domain::platform::ComputerStatus;
+use act_core::events::ViewEvent;
 use act_core::AppCommand;
 use act_terminal::theme::{TerminalFont, TerminalTheme};
 use act_terminal::view::{TerminalView, TerminalViewEvent};
@@ -17,7 +18,7 @@ use super::common::{icon, Ellipsis};
 use super::root::Root;
 use super::sidebar::send;
 use crate::effects::window_desktop;
-use crate::workspace::dispatch;
+use crate::workspace::{dispatch, report};
 
 /// The views the dock has drawn, kept while their shells live so scrollback and selection survive
 /// switching tabs. A paired computer's shell is followed only while its tab is drawn.
@@ -106,12 +107,11 @@ impl Terminals {
             TerminalViewEvent::Input(data) => dispatch(AppCommand::TerminalInput { terminal_id: id.clone(), data: data.clone() }, cx),
             TerminalViewEvent::Resize { cols, rows } => dispatch(AppCommand::TerminalResize { terminal_id: id.clone(), cols: i64::from(*cols), rows: i64::from(*rows) }, cx),
             TerminalViewEvent::FindResults(results) => {
-                let event = act_core::events::WorkspaceEvent::FindResults {
+                let event = ViewEvent::FindResults {
                     target: act_core::domain::find::FindTarget::Terminal { terminal_id: id.clone() },
                     results: act_core::domain::find::FindResults { matches: results.matches as i64, index: Some(results.index as i64), counting: None },
                 };
-                let workspace = crate::workspace::workspace(cx);
-                workspace.update(cx, |workspace, cx| workspace.dispatch(act_core::events::WorkspaceInput::Event(event), cx));
+                report(event, cx);
             }
             TerminalViewEvent::RemoteStatus(status) => {
                 let terminals = &mut root.dock.terminals;

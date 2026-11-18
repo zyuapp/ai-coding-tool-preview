@@ -1464,6 +1464,8 @@ pub struct Window {
     focus_listeners: SingleSubscriberSet<AnyWindowFocusListener>,
     pub(crate) focus_lost_listeners: SingleSubscriberSet<AnyObserver>,
     focus_lost_path: SmallVec<[FocusId; 8]>,
+    /// Hover listeners of hovered elements the last frame stopped drawing, to call with `false`.
+    pub(crate) unhovered: Rc<RefCell<Vec<Rc<Box<dyn Fn(&bool, &mut Window, &mut App)>>>>>,
     default_prevented: bool,
     mouse_position: Point<Pixels>,
     /// Whether the pointer has moved in the window yet. Until it has, nothing is hovered, as in a
@@ -2612,6 +2614,7 @@ impl Window {
             focus_listeners: SingleSubscriberSet::new(),
             focus_lost_listeners: SingleSubscriberSet::new(),
             focus_lost_path: SmallVec::new(),
+            unhovered: Rc::default(),
             default_prevented: true,
             mouse_position,
             pointer_seen: false,
@@ -4040,6 +4043,11 @@ impl Window {
             self.focus_listeners
                 .clone()
                 .retain(|listener| listener(&event, self, cx));
+        }
+
+        let unhovered = mem::take(&mut *self.unhovered.borrow_mut());
+        for listener in unhovered {
+            listener(&false, self, cx);
         }
 
         // A modal holds the keyboard: focus left outside it moves to its first stop.

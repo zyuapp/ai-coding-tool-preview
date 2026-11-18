@@ -547,8 +547,8 @@ impl Render for Root {
             self.settings.closed();
         }
         let dialogs = dialogs::render(self, &state, window, cx);
-        // A modal or Settings covers the composer, and a meter it hides hears no hover-out, so its cards close.
-        if state.settings_shown() || !dialogs.is_empty() || state.jump.is_some() {
+        // A modal covers the composer, so its hover cards close rather than float over the modal.
+        if !dialogs.is_empty() || state.jump.is_some() {
             self.composer.plan_card = false;
             self.composer.context_card = false;
         }

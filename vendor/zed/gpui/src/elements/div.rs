@@ -3515,7 +3515,17 @@ impl Interactivity {
                     .pending_mouse_down
                     .get_or_insert_with(Default::default)
                     .clone();
-                let hover_listener = Rc::new(hover_listener);
+                let hover_listener: HoverListener = Rc::new(hover_listener);
+                match &mut element_state.hover_guard {
+                    Some(guard) => guard.listener = hover_listener.clone(),
+                    guard @ None => {
+                        *guard = Some(HoverGuard {
+                            hovered: was_hovered.clone(),
+                            listener: hover_listener.clone(),
+                            unhovered: window.unhovered.clone(),
+                        })
+                    }
+                }
                 let hover_listener_state = was_hovered.clone();
                 let update_hover = move |is_hovered: bool, window: &mut Window, cx: &mut App| {
                     let mut was_hovered = hover_listener_state.borrow_mut();
@@ -4071,6 +4081,7 @@ pub struct InteractiveElementState {
     pub(crate) clicked_state: Option<Rc<RefCell<ElementClickedState>>>,
     pub(crate) hover_state: Option<Rc<RefCell<ElementHoverState>>>,
     pub(crate) hover_listener_state: Option<Rc<RefCell<bool>>>,
+    hover_guard: Option<HoverGuard>,
     pub(crate) pending_mouse_down: Option<Rc<RefCell<Option<MouseDownEvent>>>>,
     /// Set to the window's [`focus_generation`](crate::Window::focus_generation)
     /// when a Space keydown is received while this element is focused,
@@ -4087,6 +4098,25 @@ pub struct InteractiveElementState {
     pub(crate) transition: Option<Box<super::transition::TransitionState>>,
     /// The transform the element was last painted with, which hit testing follows.
     pub(crate) painted_transform: Option<crate::ElementTransform>,
+}
+
+type HoverListener = Rc<Box<dyn Fn(&bool, &mut Window, &mut App)>>;
+
+/// Lives in a hover-listening element's state, so it drops when the element is no longer drawn.
+/// Dropped while hovered, it queues the listener for the window to call with `false`, as a
+/// browser fires `mouseleave` when an element is removed from under the pointer.
+struct HoverGuard {
+    hovered: Rc<RefCell<bool>>,
+    listener: HoverListener,
+    unhovered: Rc<RefCell<Vec<HoverListener>>>,
+}
+
+impl Drop for HoverGuard {
+    fn drop(&mut self) {
+        if *self.hovered.borrow() {
+            self.unhovered.borrow_mut().push(self.listener.clone());
+        }
+    }
 }
 
 /// Whether or not the element or a group that contains it is clicked by the mouse.
@@ -5114,6 +5144,63 @@ mod tests {
         cx.update_window(any_window, |_, window, cx| window.draw(cx).clear(cx))
             .unwrap();
         assert_eq!(*hover_transitions.borrow(), [true]);
+    }
+
+    struct HoverListenerRemovalTestView {
+        shown: bool,
+        hover_transitions: Rc<RefCell<Vec<bool>>>,
+    }
+
+    impl Render for HoverListenerRemovalTestView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let hover_transitions = self.hover_transitions.clone();
+            div().size_full().when(self.shown, |root| {
+                root.child(div().id("hover-target").size(px(20.)).on_hover(
+                    move |is_hovered, _, _| {
+                        hover_transitions.borrow_mut().push(*is_hovered);
+                    },
+                ))
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn hover_listener_hears_false_when_its_element_stops_drawing(cx: &mut TestAppContext) {
+        let hover_transitions = Rc::new(RefCell::new(Vec::new()));
+        let window = cx.add_window({
+            let hover_transitions = hover_transitions.clone();
+            move |_, _| HoverListenerRemovalTestView {
+                shown: true,
+                hover_transitions,
+            }
+        });
+        let any_window = AnyWindowHandle::from(window);
+        let redraw = |cx: &mut TestAppContext, shown: bool| {
+            window
+                .update(cx, |view, _, cx| {
+                    view.shown = shown;
+                    cx.notify();
+                })
+                .unwrap();
+            cx.update_window(any_window, |_, window, cx| window.draw(cx).clear(cx))
+                .unwrap();
+        };
+
+        cx.update_window(any_window, |_, window, cx| {
+            window.draw(cx).clear(cx);
+            window.simulate_mouse_move(point(px(10.), px(10.)), cx);
+        })
+        .unwrap();
+        assert_eq!(*hover_transitions.borrow(), [true]);
+
+        redraw(cx, true);
+        assert_eq!(*hover_transitions.borrow(), [true]);
+
+        redraw(cx, false);
+        assert_eq!(*hover_transitions.borrow(), [true, false]);
+
+        redraw(cx, true);
+        assert_eq!(*hover_transitions.borrow(), [true, false]);
     }
 
     struct HoverListenerModeLayoutTestView {

@@ -11,6 +11,7 @@ use crate::domain::run::{SubagentGroup, SubagentGroups};
 use crate::domain::shortcuts::{shortcut_action, shortcut_overrides, shortcut_problem, ShortcutOverrides};
 use crate::domain::sidebar::{SidebarSection, SidebarSections};
 use crate::domain::terminal::{is_import_site, is_import_source_id, BrowserImportMemory, MAX_IMPORT_SITES};
+use crate::domain::platform::MAX_DISMISSED_USAGE_WARNINGS;
 use crate::domain::toast::MAX_REMEMBERED_TOASTS;
 use crate::state::{WorkspaceState, DRAFT_DOCK, MAX_DISCARDED_LEADS};
 use crate::util::{js_len, Map};
@@ -59,6 +60,7 @@ pub fn view_preferences(state: &WorkspaceState) -> ViewPreferences {
         browser_origins: Some(state.browser_origins.clone()),
         browser_import: state.browser_import.last.clone(),
         dismissed_toasts: (!state.dismissed_toasts.is_empty()).then(|| state.dismissed_toasts.clone()),
+        dismissed_usage_warnings: (!state.plan_usage.dismissed.is_empty()).then(|| state.plan_usage.dismissed.clone()),
         recent_projects: (!state.recent_projects.is_empty()).then(|| state.recent_projects.clone()),
         discarded_leads: (!state.computers.discarded_leads.is_empty()).then(|| state.computers.discarded_leads.clone()),
     }
@@ -89,6 +91,7 @@ pub fn apply_view_preferences(state: &mut WorkspaceState, preferences: &ViewPref
     state.shortcuts = preferences.shortcuts.clone().unwrap_or_default();
     state.browser_origins = preferences.browser_origins.clone().unwrap_or_default();
     state.dismissed_toasts = preferences.dismissed_toasts.clone().unwrap_or_default();
+    state.plan_usage.dismissed = preferences.dismissed_usage_warnings.clone().unwrap_or_default();
     state.recent_projects = preferences.recent_projects.clone().unwrap_or_default();
 }
 
@@ -243,6 +246,10 @@ pub fn read_view_preferences(raw: Option<&str>) -> ViewPreferences {
     if let Some(dismissed) = keys("dismissedToasts") {
         let skip = dismissed.len().saturating_sub(MAX_REMEMBERED_TOASTS);
         preferences.dismissed_toasts = Some(dismissed.into_iter().skip(skip).collect());
+    }
+    if let Some(warnings) = keys("dismissedUsageWarnings") {
+        let skip = warnings.len().saturating_sub(MAX_DISMISSED_USAGE_WARNINGS);
+        preferences.dismissed_usage_warnings = Some(warnings.into_iter().skip(skip).collect());
     }
     if let Some(leads) = keys("discardedLeads").filter(|leads| !leads.is_empty()) {
         let skip = leads.len().saturating_sub(MAX_DISCARDED_LEADS);

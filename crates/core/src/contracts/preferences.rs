@@ -49,6 +49,8 @@ pub struct ViewPreferences {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dismissed_toasts: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismissed_usage_warnings: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recent_projects: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discarded_leads: Option<Vec<String>>,

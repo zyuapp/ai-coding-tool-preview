@@ -706,10 +706,13 @@ pub fn reduce_plan_usage(state: &mut WorkspaceState, input: &WorkspaceInput) -> 
             Step::effects(effects)
         }
         WorkspaceInput::Command(AppCommand::UsageDismissWarning { warning }) => {
-            if !state.plan_usage.dismissed.contains(warning) {
-                state.plan_usage.dismissed.push(warning.clone());
+            if state.plan_usage.dismissed.contains(warning) {
+                return Step::none();
             }
-            Step::none()
+            state.plan_usage.dismissed.push(warning.clone());
+            let excess = state.plan_usage.dismissed.len().saturating_sub(crate::domain::platform::MAX_DISMISSED_USAGE_WARNINGS);
+            state.plan_usage.dismissed.drain(..excess);
+            Step::persisting()
         }
         WorkspaceInput::Event(WorkspaceEvent::UsageReported { engine, read, usage }) => {
             if *read != state.plan_usage.read {

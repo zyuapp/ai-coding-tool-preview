@@ -778,10 +778,17 @@ pub fn session_and_week(windows: &[UsageWindow]) -> (Option<UsageWindow>, Option
 }
 
 /// What a warning about `window` is called once dismissed.
+/// Names a warning until its window resets. Providers jitter the reset by fractions of a second
+/// between reads, so it counts to the nearest minute.
 pub fn usage_warning_key(engine: &str, window: &UsageWindow) -> String {
     let share = window.utilization.unwrap_or(0.0);
-    format!("{engine}:{}:{}:{}", window.id, window.resets_at.as_deref().unwrap_or(""), if share >= 100.0 { "reached" } else { "near" })
+    let reset = window.resets_at.as_deref().unwrap_or("");
+    let reset = chrono::DateTime::parse_from_rfc3339(reset).map_or_else(|_| reset.to_string(), |at| ((at.timestamp_millis() + 30_000).div_euclid(60_000)).to_string());
+    format!("{engine}:{}:{reset}:{}", window.id, if share >= 100.0 { "reached" } else { "near" })
 }
+
+/// How many put-away usage warnings the window remembers between launches.
+pub const MAX_DISMISSED_USAGE_WARNINGS: usize = 32;
 
 // The terminal command.
 
@@ -865,5 +872,13 @@ mod tests {
     fn spoken_words_join_typed_text() {
         assert_eq!(with_spoken_words("hello", " world "), "hello world");
         assert_eq!(with_spoken_words("hello\n", "world"), "hello\nworld");
+    }
+
+    #[test]
+    fn usage_warnings_outlast_reset_jitter() {
+        let window = |resets_at: &str| UsageWindow { id: "seven_day".into(), label: String::new(), utilization: Some(91.0), resets_at: Some(resets_at.into()), model: None, period: None, minutes: None };
+        let key = usage_warning_key("claude", &window("2026-11-21T21:59:59.581923+00:00"));
+        assert_eq!(key, usage_warning_key("claude", &window("2026-11-21T22:00:00.104277+00:00")));
+        assert_ne!(key, usage_warning_key("claude", &window("2026-11-28T21:59:59.581923+00:00")));
     }
 }

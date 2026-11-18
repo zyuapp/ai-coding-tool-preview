@@ -23,13 +23,12 @@ use act_ui::components::button::{Button, ButtonSize, ButtonVariant, IconButton, 
 use act_ui::components::confirm_action::ConfirmAction;
 use act_ui::components::field::Checkbox;
 use act_ui::components::menu::{Menu, MenuEntry, MenuItem};
-use act_ui::components::meter::{Meter, MeterSize};
 use act_ui::components::notice::{Notice, NoticeTone};
 use act_ui::components::spinner::Spinner;
 use act_ui::input::{Autosize, InputEvent, TextInput};
 use act_ui::overlay::{bounds_cell, bounds_probe, Align, BoundsCell, Placement};
 use act_ui::style::{PaneFill, Raised};
-use act_ui::theme::{ActiveTheme, Tokens, Tone};
+use act_ui::theme::{ActiveTheme, Tokens};
 use act_ui::tooltip::{shortcut_tip, Tippable};
 use act_ui::IconName;
 use gpui::{div, list, prelude::*, px, relative, AnyElement, App, Context, Entity, FontWeight, Hsla, ListAlignment, ListOffset, ListState, MouseButton, Rgba, SharedString, StyledText, Subscription, TextRun, WeakEntity, Window};
@@ -1091,8 +1090,10 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
                     .on_click(cx.listener(|root, _, _, cx| root.next_unviewed(cx)))
                     .into_any_element()
             } else {
+                // Its text starts where the review mode's label above it does.
                 div()
-                    .px(px(5.0))
+                    .pl(px(9.0))
+                    .pr(px(5.0))
                     .py(px(3.0))
                     .flex()
                     .items_center()
@@ -1103,6 +1104,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
                     .child(if files.len() == 1 { "Viewed".to_string() } else { format!("All {} viewed", files.len()) })
                     .into_any_element()
             };
+            // The share viewed fills the line dividing the header from the files, so nothing shows until a file is ticked.
+            let share = done as f32 / files.len() as f32;
             Some(
                 div()
                     .relative()
@@ -1110,14 +1113,13 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
                     .items_center()
                     .justify_between()
                     .gap(px(8.0))
-                    .pl(px(7.0))
-                    .pr(px(12.0))
+                    .px(px(10.0))
                     .pb(px(7.0))
                     .text_color(t.quiet_strong)
                     .text_size(px(m.text_meta))
                     .child(lead)
                     .child(change_counts(*additions, *deletions, &t))
-                    .child(div().absolute().left(px(12.0)).right(px(12.0)).bottom_0().child(Meter::new(done as f32 / files.len() as f32).size(MeterSize::Hair).tone(Tone::Success)))
+                    .child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).child(div().h_full().w(relative(share)).bg(t.success)))
                     .into_any_element(),
             )
         }
@@ -1185,7 +1187,8 @@ pub fn render(root: &mut Root, state: &WorkspaceState, owner: &str, window: &mut
         let strip = act_ui::style::glass(div(), &model.tokens, act_ui::style::GlassKind::Strip, None, None);
         // Its frost is laid over the code rather than standing in for it, so the code ghosts through as in Chromium.
         let ghost = gpui::canvas(|_, _, _| {}, |bounds, _, window, _| window.draw_over_backdrops(bounds)).absolute().top_0().left_0().size_full();
-        div().absolute().top_0().left_0().right_0().occlude().child(strip.child(file_header(&model, file, true, window, cx))).child(ghost)
+        // Its glass runs over the scrollbar, but its contents keep to the list's width, over the row they echo.
+        div().absolute().top_0().left_0().right_0().occlude().child(strip.child(file_header(&model, file, true, window, cx).pr(px(8.0 + gutter)))).child(ghost)
     });
     let drag_weak = weak.clone();
     let up_weak = weak.clone();

@@ -240,7 +240,7 @@ impl RenderOnce for Toasts {
                         ),
                     );
             }
-            let card = card.id(ElementId::NamedInteger("toast".into(), toast.id));
+            let card = card.id(ElementId::NamedInteger("toast".into(), toast.id)).occlude();
             if t.reduced_motion {
                 card.into_any_element()
             } else {

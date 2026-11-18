@@ -676,7 +676,7 @@ fn user_message(model: &RowModel, message: &ConversationMessage, newest: bool, r
         .flex_col()
         .items_end()
         .child(div().map(|wrap| if model.docked { wrap.w(relative(0.92)) } else { wrap.w(relative(0.72)).max_w(px(680.0)) }).flex().flex_col().items_end().child(stack))
-        .child(div().w_full().mt(px(4.0)).mb(px(if model.docked { 0.0 } else { -32.0 })).child(actions(message, newest, "Copy the message", row_group, window, cx)))
+        .child(div().w_full().mt(px(4.0)).mb(px(if model.docked { 0.0 } else { -28.0 })).child(actions(message, newest, "Copy the message", row_group, window, cx)))
         .into_any_element()
 }
 

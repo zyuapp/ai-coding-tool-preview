@@ -1,10 +1,10 @@
-# AI Coding Tool Preview
+# AI Coding Tool
 
-A native preview of [AI Coding Tool](https://github.com/zyuapp/ai-coding-tool), a desktop app for working with Claude Code, Codex and OpenCode, rewritten in Rust with [GPUI](https://www.gpui.rs).
+The native rewrite of [AI Coding Tool](https://github.com/zyuapp/ai-coding-tool), a desktop app for working with Claude Code, Codex and OpenCode, rewritten in Rust with [GPUI](https://www.gpui.rs).
 
 ## Status
 
-This is a preview. It runs beside the Electron app with its own data, terminal command (`aic-preview`) and updates. On first launch it copies the Electron app's threads, projects and settings, and leaves the original untouched.
+It replaces the Electron app: it installs under the same name, reads the same threads, projects and settings, and answers the same `aic` terminal command.
 
 ## Platforms
 

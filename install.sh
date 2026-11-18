@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the latest AI Coding Tool Preview release.
+# Install the latest AI Coding Tool release.
 #
 #   curl -fsSL https://raw.githubusercontent.com/zyuapp/ai-coding-tool-preview/main/install.sh | sh
 #
@@ -9,7 +9,7 @@ set -eu
 
 REPO="zyuapp/ai-coding-tool-preview"
 DOWNLOAD="https://github.com/$REPO/releases/latest/download"
-APP="AI Coding Tool Preview"
+APP="AI Coding Tool"
 
 fail() { printf '\nInstall failed: %s\n' "$1" >&2; exit 1; }
 say() { printf '%s\n' "$1"; }
@@ -85,7 +85,7 @@ fi
 mkdir -p "$applications"
 
 # Stage inside the destination so the final move is a rename on the same filesystem.
-staging="$applications/.aicodingtool-preview-install.$$"
+staging="$applications/.aicodingtool-install.$$"
 rm -rf "$staging"
 mkdir "$staging"
 trap 'rm -rf "$staging"' EXIT INT TERM
@@ -109,7 +109,7 @@ if [ "$system" = Darwin ]; then
   say "Installed $target"
   open -a "$target"
 else
-  target="$applications/AICodingToolPreview.AppImage"
+  target="$applications/AICodingTool.AppImage"
   chmod 755 "$staging/$asset"
   mv -f "$staging/$asset" "$target"
   say "Installed $target"

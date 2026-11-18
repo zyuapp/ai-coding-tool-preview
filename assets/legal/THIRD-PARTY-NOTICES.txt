@@ -1,10 +1,10 @@
-AI Coding Tool Preview open source notices
-==========================================
+AI Coding Tool open source notices
+==================================
 
-AI Coding Tool Preview is licensed under the MIT License. It is built with the open source software
-below. The files beside this one hold the notices for the rest of what it ships:
+AI Coding Tool is licensed under the MIT License. It is built with the open source software below.
+The files beside this one hold the notices for the rest of what it ships:
 
-AI-CODING-TOOL-MIT.txt                  AI Coding Tool Preview's own license.
+AI-CODING-TOOL-MIT.txt                  AI Coding Tool's own license.
 FONTS.txt                               The bundled fonts (SIL Open Font License 1.1).
 ICONS.txt                               Lucide, Bootstrap Icons and Simple Icons glyphs.
 MERMAID-THIRD-PARTY-NOTICES.txt         Mermaid and the JavaScript packages it bundles.
@@ -30,11 +30,11 @@ Rust crates
 -----------
 
 The crates below are compiled into the app and its helpers, each used under the license named beside
-it. Where a crate offers a choice of licenses, AI Coding Tool Preview uses it under the one whose
-text is given below. Crates marked modified are changed copies; the NOTICE file in each one's folder
-under vendor/ in the AI Coding Tool Preview source describes the changes, and is reproduced at the
-end. Crates under the Mozilla Public License 2.0 are used unmodified; their source is available from
-crates.io at the version listed (https://crates.io/crates/<name>/<version>), and the license is in
+it. Where a crate offers a choice of licenses, AI Coding Tool uses it under the one whose text is
+given below. Crates marked modified are changed copies; the NOTICE file in each one's folder under
+vendor/ in the AI Coding Tool source describes the changes, and is reproduced at the end. Crates
+under the Mozilla Public License 2.0 are used unmodified; their source is available from crates.io
+at the version listed (https://crates.io/crates/<name>/<version>), and the license is in
 MPL-2.0.txt.
 
 accesskit 0.25.2                         MIT OR Apache-2.0

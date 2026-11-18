@@ -71,8 +71,8 @@ pub fn open_services(profile: &Profile) -> Option<HostServices> {
 /// Names a profile folder to import from instead of the Electron app's own.
 const IMPORT_FROM_ENV: &str = "ACT_IMPORT_FROM";
 
-/// A first launch copies the Electron app's profile: the installed app's for an installed build, the
-/// source checkout's for a source build. A profile named by `ACT_PROFILE_DIR` imports only from
+/// A first launch copies an Electron profile the app does not already own: the installed app's
+/// first name for an installed build, the source checkout's for a source build. A profile named by `ACT_PROFILE_DIR` imports only from
 /// `ACT_IMPORT_FROM`, so a scratch profile never picks up the user's data.
 pub fn import_electron_profile(profile: &Profile, packaged: bool) {
     use act_store::import::{electron_sources, find_source, import_profile, is_empty_profile, ImportSource};
@@ -82,6 +82,7 @@ pub fn import_electron_profile(profile: &Profile, packaged: bool) {
     let Some(home) = act_store::profile::home_dir() else { return };
     let Some(app_data) = act_store::profile::app_data_dir(Some(&home)) else { return };
     let mut sources = electron_sources(&app_data, &home, packaged);
+    sources.retain(|source| source.user_data != profile.user_data);
     if let Some(folder) = std::env::var_os(IMPORT_FROM_ENV).filter(|folder| !folder.is_empty()) {
         let worktrees_root = sources[0].worktrees_root.clone();
         sources = vec![ImportSource { user_data: std::path::absolute(&folder).unwrap_or_else(|_| folder.into()), worktrees_root }];

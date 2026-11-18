@@ -1,7 +1,7 @@
 Cua Driver 0.53.0 for Linux: Rust crates
 ========================================
 
-The Linux Cua Driver that AI Coding Tool Preview bundles is built by trycua/cua from its
+The Linux Cua Driver that AI Coding Tool bundles is built by trycua/cua from its
 cua-driver-rs-v0.53.0 tag
 (https://github.com/trycua/cua/tree/cua-driver-rs-v0.53.0/libs/cua-driver/rust) for x86_64 and
 arm64. The Cua Driver's own crates are under the MIT License in CUA-MIT.txt, with the code they

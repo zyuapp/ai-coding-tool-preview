@@ -1,5 +1,5 @@
-//! Where a profile keeps its data (`src/main/user-data.ts`). The app owns a profile and a checkout
-//! root of its own (`act_core::identity`), so it never writes over the Electron app's data.
+//! Where a profile keeps its data (`src/main/user-data.ts`). The installed app reads the Electron
+//! app's profile and checkouts; a source build has its own (`act_core::identity`).
 
 use std::path::{Path, PathBuf};
 
@@ -184,6 +184,6 @@ mod tests {
         assert!(profile.worktrees_root.ends_with(".aicodingtool-preview-dev/worktrees"));
         let default = Profile::resolve_for(true).unwrap();
         assert!(default.user_data.ends_with(PROFILE_NAME));
-        assert!(default.worktrees_root.ends_with(".aicodingtool-preview/worktrees"));
+        assert!(default.worktrees_root.ends_with(".aicodingtool/worktrees"));
     }
 }

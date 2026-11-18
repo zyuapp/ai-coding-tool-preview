@@ -1,7 +1,7 @@
 AppImage runtime notices
 ========================
 
-The AppImage of AI Coding Tool Preview starts with the AppImage type 2 runtime, the small program that
+The AppImage of AI Coding Tool starts with the AppImage type 2 runtime, the small program that
 mounts the package and starts the app. The runtime is built from AppImage/type2-runtime at commit
 fedfad51acc2860b2916a1eef32ba4a500ff31ef, and statically links the libraries below.
 
@@ -45,7 +45,7 @@ the MIT License, so you may change libfuse and relink: build the runtime from th
 your libfuse (see BUILD.md in type2-runtime), extract the AppImage with --appimage-extract, and repack
 the extracted folder with appimagetool --runtime-file <your runtime>.
 
-Written offer: for at least three years after you received this AppImage, the AI Coding Tool Preview
+Written offer: for at least three years after you received this AppImage, the AI Coding Tool
 maintainers will give anyone who asks a complete machine-readable copy of the source code of libfuse
 3.15.0 with the change above, and of the runtime that links it, for no more than the cost of
 distributing it. Ask at https://github.com/zyuapp/ai-coding-tool-preview/issues.

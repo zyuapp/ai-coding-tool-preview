@@ -65,11 +65,13 @@ pub struct ViewerState {
     focused_for: Option<String>,
     /// What had the keys before the viewer opened, which decides where they go when it closes.
     previous: Option<FocusHandle>,
+    /// The open image's source, its file and natural size, read once while it stays open.
+    picture: Option<(String, std::path::PathBuf, (f32, f32))>,
 }
 
 impl Default for ViewerState {
     fn default() -> Self {
-        ViewerState { shown: None, chosen: None, scroll: ScrollHandle::new(), focus: None, focused_for: None, previous: None }
+        ViewerState { shown: None, chosen: None, scroll: ScrollHandle::new(), focus: None, focused_for: None, previous: None, picture: None }
     }
 }
 
@@ -100,7 +102,10 @@ pub fn render(root: &mut Root, state: &WorkspaceState, window: &mut Window, cx: 
     }
     let Some(source) = state.viewing_image.clone() else {
         // Keys go back to the dock tab that held them, else to the thread's composer.
-        let closed = with_state(|viewer| viewer.focused_for.take().map(|_| viewer.previous.take()));
+        let closed = with_state(|viewer| {
+            viewer.picture = None;
+            viewer.focused_for.take().map(|_| viewer.previous.take())
+        });
         if let Some(previous) = closed {
             if !previous.is_some_and(|previous| root.dock.restore_focus(&previous, window, cx)) {
                 cx.defer(|cx| dispatch(AppCommand::FocusComposer { recover: Some(true) }, cx));
@@ -262,8 +267,17 @@ fn image_viewer(source: &str, gallery: &[String], window: &mut Window, cx: &mut 
     let index = if gallery.len() > 1 { gallery.iter().position(|item| item == source) } else { None };
     let stepping = index.is_some();
     let focus = sync(source, window, cx);
-    let path = window_desktop::image_file(source, cx);
-    let size = window_desktop::image_size(&path);
+    let (path, size) = match with_state(|viewer| viewer.picture.clone()).filter(|(of, ..)| of == source) {
+        Some((_, path, size)) => (path, Some(size)),
+        None => {
+            let path = window_desktop::image_file(source, cx);
+            let size = window_desktop::image_size(&path);
+            if let Some(size) = size {
+                with_state(|viewer| viewer.picture = Some((source.to_string(), path.clone(), size)));
+            }
+            (path, size)
+        }
+    };
     let room = stage_room(window, stepping);
     let fit = size.map(|size| fit_for(size, room)).unwrap_or(1.0);
     let (scale, scroll) = with_state(|viewer| (clamp(viewer.chosen.unwrap_or(fit), fit), viewer.scroll.clone()));

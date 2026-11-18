@@ -18,6 +18,7 @@ use serde_json::json;
 
 use super::root::Root;
 use super::sidebar::send;
+use crate::effects::window_desktop;
 use crate::workspace::dispatch;
 
 const DAY: i64 = 86_400_000;
@@ -170,11 +171,10 @@ fn schedule_problem(schedule: &str) -> Option<String> {
     if !is_one_shot_schedule(schedule) && schedule_field_count(schedule) > 5 {
         return Some("Runs at most once a minute, so use five fields".into());
     }
-    let Ok(parsed) = act_host::automation::schedule::Schedule::parse(schedule, None) else { return Some(CRON_HINT.into()) };
-    if act_host::automation::scheduler::assert_schedule(schedule, None).is_err() && parsed.next_after(chrono::Utc::now()).is_some() {
-        return Some(CRON_HINT.into());
+    match window_desktop::schedule_next_run(schedule) {
+        Err(()) => Some(CRON_HINT.into()),
+        Ok(next) => next.is_none().then(|| "Never runs again".into()),
     }
-    parsed.next_after(chrono::Utc::now()).is_none().then(|| "Never runs again".into())
 }
 
 /// A schedule read back in words, or why it cannot be saved; None for a valid cron too unusual to say.
@@ -187,7 +187,7 @@ fn describe(schedule: &str) -> Option<Result<String, String>> {
         return Some(Err(problem));
     }
     if is_one_shot_schedule(trimmed) {
-        let at = act_host::automation::schedule::parse_iso_instant(trimmed, None)?;
+        let at = window_desktop::one_shot_instant(trimmed)?;
         let when = local(at.timestamp_millis());
         return Some(Ok(format!("Once, {} {}, {}", when.format("%b"), when.day(), clock(when.time()))));
     }

@@ -619,7 +619,7 @@ fn user_message(model: &RowModel, message: &ConversationMessage, newest: bool, r
         let gallery: Vec<String> = attachments.clone();
         stack = stack.child(div().flex().flex_wrap().justify_end().gap(px(8.0)).max_w_full().children(attachments.iter().enumerate().map(|(index, file)| {
             let path = crate::effects::window_desktop::image_file(file, cx);
-            let name = act_host::attachments::attachment_name(file).to_string();
+            let name = crate::effects::window_desktop::attachment_name(file).to_string();
             let source = file.clone();
             let gallery = gallery.clone();
             div()

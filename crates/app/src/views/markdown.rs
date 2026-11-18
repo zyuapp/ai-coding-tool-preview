@@ -153,11 +153,11 @@ pub fn follow_link(link: &LinkEvent, task_id: Option<String>, window: &mut Windo
 
 /// The images a message links, shown in order, each opening the viewer over all of them.
 fn message_gallery(text: &str, scope: &ImageScope, task_id: Option<&str>) -> Vec<String> {
-    linked_images(&scope.message_id, text).iter().map(|image| act_host::image_download::message_image_url(&image.path, &scope.root, &scope.message_id, false, task_id)).collect()
+    linked_images(&scope.message_id, text).iter().map(|image| window_desktop::message_image_url(&image.path, &scope.root, &scope.message_id, false, task_id)).collect()
 }
 
 fn open_message_image(path: &str, scope: &ImageScope, task_id: Option<&str>, cx: &mut App) {
-    let source = act_host::image_download::message_image_url(path, &scope.root, &scope.message_id, false, task_id);
+    let source = window_desktop::message_image_url(path, &scope.root, &scope.message_id, false, task_id);
     let text = MESSAGE_IMAGES.with(|cache| cache.borrow().get(&scope.message_id).map(|(text, _)| text.clone()));
     let gallery = text.map(|text| message_gallery(&text, scope, task_id)).filter(|gallery| gallery.len() > 1);
     dispatch(AppCommand::ImageOpen { source, gallery }, cx);
@@ -166,8 +166,6 @@ fn open_message_image(path: &str, scope: &ImageScope, task_id: Option<&str>, cx:
 thread_local! {
     /// Each message's linked images by id, with the text they were read from.
     static MESSAGE_IMAGES: std::cell::RefCell<std::collections::HashMap<String, (String, std::rc::Rc<Vec<act_markdown::images::MessageImage>>)>> = Default::default();
-    /// Previews asked for, and those that could not be made.
-    static PREVIEWS: std::cell::RefCell<(std::collections::HashSet<std::path::PathBuf>, std::collections::HashSet<std::path::PathBuf>)> = Default::default();
     /// Each message's preview strip scroll, which its edge fades follow.
     static STRIPS: std::cell::RefCell<std::collections::HashMap<String, gpui::ScrollHandle>> = Default::default();
 }
@@ -213,21 +211,9 @@ pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx:
         row = row.edge_fade(fade);
     }
     for (index, image) in images.iter().enumerate() {
-        let Some(window_desktop::MessageImage { original, shown }) = window_desktop::message_image(&image.path, &scope.root, &scope.message_id, cx) else { continue };
-        let failed = PREVIEWS.with(|previews| previews.borrow().1.contains(&original));
-        if shown.is_none() && !failed && PREVIEWS.with(|previews| previews.borrow_mut().0.insert(original.clone())) {
-            let key = original.clone();
-            let copied = window_desktop::preserve_message_image(image.path.clone(), scope.root.clone(), scope.message_id.clone(), cx);
-            cx.spawn(async move |cx| {
-                if copied.await.is_err() {
-                    PREVIEWS.with(|previews| previews.borrow_mut().1.insert(key));
-                }
-                let _ = cx.update(|cx| cx.refresh_windows());
-            })
-            .detach();
-        }
+        let Some(preview) = window_desktop::message_preview(&image.path, &scope.root, &scope.message_id, cx) else { continue };
         let id = gpui::SharedString::from(format!("message-image-{}-{index}", scope.message_id));
-        let preview = if failed {
+        let preview = if matches!(preview, window_desktop::MessagePreview::Unavailable) {
             let path = image.path.clone();
             let task = task_id.map(String::from);
             let size = cx.theme().metrics.text_content * 0.85;
@@ -273,7 +259,7 @@ pub fn image_previews(text: &str, scope: &ImageScope, task_id: Option<&str>, cx:
                 .hover(|style| style.border_color(t.line_strong))
                 .accessible_name(format!("Enlarge {}", image.label))
                 .on_click(move |_, _, cx| dispatch(AppCommand::ImageOpen { source: source.clone(), gallery: (gallery.len() > 1).then(|| gallery.clone()) }, cx));
-            if let Some(shown) = shown {
+            if let window_desktop::MessagePreview::Shown(shown) = preview {
                 button = button.child(img(shown).max_w_full().max_h_full().object_fit(ObjectFit::Contain));
             }
             button.into_any_element()

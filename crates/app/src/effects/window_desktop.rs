@@ -3,6 +3,7 @@
 //! surfaces. None of them changes workspace state or the user's files; anything that does is an
 //! `AppCommand`.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,9 +13,11 @@ use act_core::domain::diff::DiffRange;
 use act_core::domain::engine::AgentEngine;
 use act_host::computers::queries::ReadOwner;
 pub use act_engines::types::AvailableCommand;
+pub use act_host::attachments::attachment_name;
 pub use act_host::git::diff::DiffPatchResult;
 pub use act_host::git::Branches;
-use gpui::App;
+pub use act_host::image_download::message_image_url;
+use gpui::{App, Global};
 
 use super::{convert, Host};
 
@@ -127,23 +130,50 @@ pub fn dictation(cx: &App) -> &'static act_devices::dictation::host::DictationHo
     super::dictation::host(&host(cx).sink)
 }
 
-/// Where the `message-image` read keeps a message's image and its preview, and which of them is
-/// there to show.
-pub struct MessageImage {
-    pub original: PathBuf,
-    pub shown: Option<PathBuf>,
+/// A message's linked image as its preview strip shows it.
+#[derive(Clone)]
+pub enum MessagePreview {
+    Reading,
+    Shown(PathBuf),
+    Unavailable,
 }
 
-pub fn message_image(file: &str, root: &str, message: &str, cx: &App) -> Option<MessageImage> {
-    let (original, thumbnail) = host(cx).services.message_images.copy_paths(file, root, message)?;
-    let shown = if thumbnail.exists() { Some(thumbnail) } else if original.exists() { Some(original.clone()) } else { None };
-    Some(MessageImage { original, shown })
-}
+/// Each linked image's preview, by the path its kept copy takes.
+#[derive(Default)]
+struct MessagePreviews(HashMap<PathBuf, MessagePreview>);
 
-/// `message-image`: keeps a message's image so it previews, as the protocol read does on first sight.
-pub fn preserve_message_image(file: String, root: String, message: String, cx: &App) -> impl Future<Output = Result<(), String>> {
-    let store = host(cx).services.message_images.clone();
-    off_window(async move { store.preserve(&file, &root, &message, None).await.map(|_| ()) })
+impl Global for MessagePreviews {}
+
+/// `message-image`: a message's image to preview, its kept thumbnail or copy, keeping one on first
+/// sight as the protocol read does. Each image is looked for once, off the window, which draws again
+/// once it is found.
+pub fn message_preview(file: &str, root: &str, message: &str, cx: &mut App) -> Option<MessagePreview> {
+    let host = host(cx);
+    let (original, thumbnail) = host.services.message_images.copy_paths(file, root, message)?;
+    let previews = &mut cx.default_global::<MessagePreviews>().0;
+    if let Some(known) = previews.get(&original) {
+        return Some(known.clone());
+    }
+    previews.insert(original.clone(), MessagePreview::Reading);
+    let store = host.services.message_images.clone();
+    let (file, root, message, key) = (file.to_string(), root.to_string(), message.to_string(), original.clone());
+    let read = off_window(async move {
+        let kept = || [&thumbnail, &original].into_iter().find(|path| path.exists()).cloned();
+        if let Some(path) = kept() {
+            return Ok(path);
+        }
+        store.preserve(&file, &root, &message, None).await?;
+        kept().ok_or_else(|| "The kept image is missing.".to_string())
+    });
+    cx.spawn(async move |cx| {
+        let preview = read.await.map_or(MessagePreview::Unavailable, MessagePreview::Shown);
+        cx.update(|cx| {
+            cx.default_global::<MessagePreviews>().0.insert(key, preview);
+            cx.refresh_windows();
+        });
+    })
+    .detach();
+    Some(MessagePreview::Reading)
 }
 
 /// The file behind an image source the viewer shows: a message image's kept copy, one of the app's
@@ -170,6 +200,21 @@ pub fn image_size(path: &Path) -> Option<(f32, f32)> {
     image::image_dimensions(path).ok().map(|(width, height)| (width as f32, height as f32))
 }
 
+/// When a schedule next runs as the scheduler reads it, or Err when the scheduler would turn it down.
+pub fn schedule_next_run(schedule: &str) -> Result<Option<chrono::DateTime<chrono::Utc>>, ()> {
+    let parsed = act_host::automation::schedule::Schedule::parse(schedule, None).map_err(|_| ())?;
+    let next = parsed.next_after(chrono::Utc::now());
+    if act_host::automation::scheduler::assert_schedule(schedule, None).is_err() && next.is_some() {
+        return Err(());
+    }
+    Ok(next)
+}
+
+/// The moment a one-shot schedule names, in this computer's zone.
+pub fn one_shot_instant(schedule: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    act_host::automation::schedule::parse_iso_instant(schedule, None)
+}
+
 /// The IANA zone this computer keeps time in, as `Intl.DateTimeFormat().resolvedOptions().timeZone` names it.
 pub fn time_zone() -> String {
     if let Ok(zone) = std::env::var("TZ") {
@@ -184,4 +229,59 @@ pub fn time_zone() -> String {
             link.split("zoneinfo/").nth(1).map(String::from)
         })
         .unwrap_or_else(|| "UTC".into())
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' && at + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&text[at + 1..at + 3], 16) {
+                out.push(byte);
+                at += 3;
+                continue;
+            }
+        }
+        out.push(bytes[at]);
+        at += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Files copied in the Finder, which a paste attaches rather than typing their names.
+#[cfg(target_os = "macos")]
+pub fn pasteboard_files() -> Vec<PathBuf> {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeFileURL};
+    let board = NSPasteboard::generalPasteboard();
+    let Some(items) = board.pasteboardItems() else { return Vec::new() };
+    // SAFETY: the pasteboard type is a static AppKit string.
+    let kind = unsafe { NSPasteboardTypeFileURL };
+    let mut paths = Vec::new();
+    for item in items.iter() {
+        if let Some(url) = item.stringForType(kind) {
+            let url = url.to_string();
+            if let Some(path) = url.strip_prefix("file://") {
+                let path = path.strip_prefix("localhost").unwrap_or(path);
+                let path = percent_decode(path);
+                paths.push(PathBuf::from(if path.len() > 1 { path.trim_end_matches('/') } else { &path }));
+            }
+        }
+    }
+    paths
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn pasteboard_files() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn file_urls_decode_to_paths() {
+        assert_eq!(super::percent_decode("/Users/me/My%20File%E2%80%99s.png"), "/Users/me/My File\u{2019}s.png");
+        assert_eq!(super::percent_decode("/tmp/a%2"), "/tmp/a%2");
+    }
 }

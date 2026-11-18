@@ -494,7 +494,7 @@ impl Root {
 
     /// A paste of images or files attaches them; a long paste rides as a pill; anything else is typed.
     fn paste(&mut self, cx: &mut Context<Root>) -> bool {
-        let files = super::attachments::pasteboard_files();
+        let files = crate::effects::window_desktop::pasteboard_files();
         if !files.is_empty() {
             super::attachments::attach_paths(files, self.composer.task.clone(), cx);
             return true;

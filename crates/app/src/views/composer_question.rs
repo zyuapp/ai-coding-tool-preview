@@ -38,7 +38,7 @@ fn address(question: &PendingQuestion) -> (String, String, String) {
 
 impl Root {
     fn answer_question(&mut self, cx: &mut Context<Root>) {
-        let state = self.state(cx);
+        let state = self.shown(cx);
         let Some(task_id) = self.composer.task_id(&state) else { return };
         let Some(question) = current_question(&state, &task_id).cloned() else { return };
         if question.submitting || question.answer.as_deref().unwrap_or("").trim().is_empty() {
@@ -49,7 +49,7 @@ impl Root {
     }
 
     fn set_question_answer(&mut self, text: String, cx: &mut Context<Root>) {
-        let state = self.state(cx);
+        let state = self.shown(cx);
         let Some(task_id) = self.composer.task_id(&state) else { return };
         let Some(question) = current_question(&state, &task_id).cloned() else { return };
         let (run_id, request_id, question_id) = address(&question);

@@ -316,7 +316,7 @@ impl Root {
         if let Some(action) = entry.action {
             self.composer.dismissed = None;
             self.composer.input.update(cx, |input, cx| input.set_text("", cx));
-            let task_id = self.composer.task_id(&self.state(cx));
+            let task_id = self.composer.task_id(&self.shown(cx));
             match action {
                 AppAction::Compact => dispatch(AppCommand::RunCompact { task_id }, cx),
                 AppAction::Review => dispatch(AppCommand::ReviewOpen { task_id }, cx),

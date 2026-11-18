@@ -358,7 +358,7 @@ impl Root {
     }
 
     pub fn running(&self, cx: &gpui::App) -> bool {
-        let state = self.state(cx);
+        let state = self.shown(cx);
         self.composer.task_id(&state).is_some_and(|id| state.active_runs.contains_key(&id))
     }
 
@@ -377,7 +377,8 @@ impl Root {
     }
 
     fn submit_now(&mut self, steer: bool, cx: &mut Context<Root>) {
-        let state = self.state(cx);
+        // The thread on screen, which may be another computer's; this window's own current thread is not it then.
+        let state = self.shown(cx);
         let key = self.composer.key(&state);
         let task_id = self.composer.task_id(&state);
         let disabled = self.composer.disabled(&state);
@@ -440,7 +441,7 @@ impl Root {
 
     /// Steps ↑/↓ through what was sent; the live draft is stashed and comes back below the newest.
     fn step_recall(&mut self, step: i64, cx: &mut Context<Root>) -> bool {
-        let state = self.state(cx);
+        let state = self.shown(cx);
         let prompt = self.composer.text.clone();
         if self.composer.recall.is_none() && (step == 1 || !prompt.is_empty()) {
             return false;

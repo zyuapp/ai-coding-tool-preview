@@ -536,7 +536,16 @@ pub fn reduce_computer_command(state: &mut WorkspaceState, command: &AppCommand)
             AppCommand::ComputersDiscover => {
                 computers.searching = true;
                 computers.search_error = None;
-                Step::effect(EffectWork::ComputerDiscover)
+                let mut effects: Vec<Effect> = vec![EffectWork::ComputerDiscover.into()];
+                // Looking again also has each connected computer check for newer versions of itself and its engines.
+                for computer in computers.paired.iter().filter(|computer| computer.link.status == ComputerStatus::Connected) {
+                    let checks = [AppCommand::AppCheckForUpdates { quiet: true }, AppCommand::EngineRead { refresh: Some(true) }];
+                    let inputs: Vec<WorkspaceInput> = checks.into_iter().filter(|check| supports_computer_command(computer.link.capabilities.as_deref(), check)).map(Into::into).collect();
+                    if !inputs.is_empty() {
+                        effects.push(EffectWork::ComputerForward { id: computer.link.id.clone(), inputs, project_add_request: None, draft: None, proposal: None, silent: true }.into());
+                    }
+                }
+                Step::effects(effects)
             }
             AppCommand::ComputersPair { host, name, code } => {
                 computers.pairing = Some(crate::domain::platform::ComputerPairing { host: host.clone(), name: name.clone(), busy: !code.is_empty(), error: None });

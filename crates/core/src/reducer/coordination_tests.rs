@@ -299,6 +299,21 @@ fn a_command_about_a_paired_computers_thread_goes_there_and_an_offline_one_is_re
 }
 
 #[test]
+fn looking_again_has_each_connected_computer_check_for_updates() {
+    let mut state = WorkspaceState::default();
+    state.computers.paired = ["studio", "laptop"].map(|id| PairedComputer { link: link(id, ComputerStatus::Connected), state: Some(Box::new(WorkspaceState::default())) }).to_vec();
+    state.computers.paired[1].link.status = ComputerStatus::Offline;
+    let step = reduce_transition(&mut state, AppCommand::ComputersDiscover);
+    let checked: Vec<(&str, &Vec<WorkspaceInput>)> = step.effects.iter().filter_map(|effect| match &effect.work {
+        EffectWork::ComputerForward { id, inputs, .. } => Some((id.as_str(), inputs)),
+        _ => None,
+    }).collect();
+    assert_eq!(checked.iter().map(|(id, _)| *id).collect::<Vec<_>>(), ["studio"]);
+    assert!(checked[0].1.contains(&AppCommand::AppCheckForUpdates { quiet: true }.into()));
+    assert!(checked[0].1.contains(&AppCommand::EngineRead { refresh: Some(true) }.into()));
+}
+
+#[test]
 fn a_project_added_on_a_paired_computer_goes_there_as_its_own() {
     let mut state = WorkspaceState::default();
     state.computers.paired = vec![PairedComputer { link: link("studio", ComputerStatus::Connected), state: Some(Box::new(WorkspaceState::default())) }];
